@@ -1,0 +1,85 @@
+# Testing And QA
+
+There is no automated browser test suite yet. Current verification is a mix of
+TypeScript checking and manual/in-browser QA.
+
+## Required Check
+
+```sh
+docker compose run --rm dashboard npm run check
+```
+
+## Host Clean Check
+
+```sh
+test ! -d node_modules && test ! -d dist && echo "host clean"
+```
+
+## Manual Browser Smoke Test
+
+Open:
+
+```text
+http://127.0.0.1:5173
+```
+
+Check:
+
+- Dashboard heading is visible.
+- GPU status says either `WebGPU · ...` or `Canvas fallback`.
+- Four rail icons are visible.
+- App strip shows Cinema, Arcade, Studio, Party, and Settings.
+- Clicking a tile updates the featured app.
+- Double-clicking a tile opens the app detail panel.
+- Open/details buttons open the focused app detail panel.
+- Close button hides the panel.
+- Search, Library, and Settings rail buttons open shell panels.
+- Home rail button clears shell panels.
+
+## Keyboard Test
+
+- ArrowRight/ArrowDown moves focus forward.
+- ArrowLeft/ArrowUp moves focus backward.
+- Enter opens the focused app panel.
+- Escape closes panels and returns rail state to Home.
+
+## Icon Regression Test
+
+Rail icons previously duplicated because icon creation happened inside a repeated
+render path.
+
+Expected:
+
+- `.rail-button` count is `4`.
+- `.rail-button svg` count is `4`.
+- Each rail button has exactly one `svg`.
+- Repeated rail clicks do not change those counts.
+
+Browser console snippet:
+
+```js
+Array.from(document.querySelectorAll(".rail-button")).map((button) => ({
+  nav: button.getAttribute("data-nav"),
+  icons: button.querySelectorAll("svg").length
+}));
+```
+
+Every `icons` value should be `1`.
+
+## Responsive Test
+
+At a phone-like viewport, for example `390 x 844`:
+
+- Bottom rail is visible.
+- Detail panel does not overlap the bottom rail.
+- App strip scrolls horizontally.
+- Status pills wrap without text overlap.
+
+## Future Automated Tests
+
+Good next additions:
+
+- Playwright smoke test in Docker.
+- DOM tests for rail icon counts and panel state transitions.
+- Visual screenshot checks for desktop and mobile.
+- WebGPU capability test that accepts both WebGPU and Canvas fallback modes.

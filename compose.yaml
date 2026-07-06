@@ -1,0 +1,13 @@
+services:
+  dashboard:
+    build:
+      context: .
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./index.html:/app/index.html
+      - ./package.json:/app/package.json
+      - ./tsconfig.json:/app/tsconfig.json
+      - ./src:/app/src
+    environment:
+      - CHOKIDAR_USEPOLLING=true
