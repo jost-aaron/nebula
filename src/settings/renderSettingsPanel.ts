@@ -1,0 +1,123 @@
+import type { DiagnosticsSnapshot } from "../diagnostics/types";
+
+const formatNumber = (value: number, digits = 1) => (Number.isFinite(value) ? value.toFixed(digits) : "0.0");
+
+const statusText = (value: boolean) => (value ? "Available" : "Unavailable");
+
+const renderMetric = (label: string, value: string) => `
+  <span class="diagnostic-metric">
+    <small>${label}</small>
+    <strong>${value}</strong>
+  </span>
+`;
+
+const renderSection = (title: string, body: string) => `
+  <section class="diagnostic-section" data-diagnostic-section="${title.toLowerCase().replaceAll(" ", "-")}">
+    <h3>${title}</h3>
+    <div class="diagnostic-grid">
+      ${body}
+    </div>
+  </section>
+`;
+
+export function renderSettingsPanel(snapshot: DiagnosticsSnapshot): string {
+  const rendererFeatures =
+    snapshot.renderer.features.length > 0 ? snapshot.renderer.features.slice(0, 6).join(", ") : "No optional features reported";
+
+  const rendererLimits =
+    snapshot.renderer.limits.length > 0
+      ? snapshot.renderer.limits.map(([label, value]) => renderMetric(label, value)).join("")
+      : renderMetric("Limits", "Unavailable");
+
+  const appRows = snapshot.apps.apps
+    .map(
+      (app) => `
+        <span class="app-diagnostic-row" style="--accent: ${app.accent}">
+          <i></i>
+          <strong>${app.name}</strong>
+          <small>${app.id} · ${app.status}</small>
+        </span>
+      `
+    )
+    .join("");
+
+  return `
+    <div class="panel-header">
+      <span class="panel-mark">S</span>
+      <div>
+        <p class="eyebrow">System</p>
+        <h2>Settings</h2>
+      </div>
+      <button id="close-panel" class="icon-command" type="button" aria-label="Close panel" title="Close">×</button>
+    </div>
+    <p class="panel-intro">Runtime settings and diagnostics for the dashboard shell.</p>
+
+    <div class="settings-categories" aria-label="Settings categories">
+      <button class="active" type="button" data-diagnostic-tab="all">Overview</button>
+      <button type="button" data-diagnostic-tab="renderer">Renderer</button>
+      <button type="button" data-diagnostic-tab="display">Display</button>
+      <button type="button" data-diagnostic-tab="performance">Performance</button>
+      <button type="button" data-diagnostic-tab="apps">Apps</button>
+      <button type="button" data-diagnostic-tab="runtime">Runtime</button>
+    </div>
+
+    <div class="diagnostics-board">
+      ${renderSection(
+        "Renderer",
+        [
+          renderMetric("Mode", snapshot.renderer.mode),
+          renderMetric("Adapter", snapshot.renderer.adapterName),
+          renderMetric("WebGPU", statusText(snapshot.renderer.webgpuAvailable)),
+          renderMetric("Canvas format", snapshot.renderer.preferredFormat),
+          renderMetric("Features", rendererFeatures)
+        ].join("")
+      )}
+
+      ${renderSection(
+        "Display",
+        [
+          renderMetric("Viewport", snapshot.display.viewport),
+          renderMetric("Screen", snapshot.display.screen),
+          renderMetric("Pixel ratio", formatNumber(snapshot.display.devicePixelRatio, 2)),
+          renderMetric("Orientation", snapshot.display.orientation),
+          renderMetric("Color scheme", snapshot.display.colorScheme),
+          renderMetric("Reduced motion", snapshot.display.reducedMotion ? "Reduce" : "No preference")
+        ].join("")
+      )}
+
+      ${renderSection(
+        "Performance",
+        [
+          renderMetric("FPS", formatNumber(snapshot.performance.fps)),
+          renderMetric("Frame time", `${formatNumber(snapshot.performance.averageFrameMs, 2)} ms`),
+          renderMetric("Samples", String(snapshot.performance.samples)),
+          renderMetric("Uptime", `${formatNumber(snapshot.performance.uptimeSeconds)} s`)
+        ].join("")
+      )}
+
+      ${renderSection(
+        "Apps",
+        [
+          renderMetric("Installed", String(snapshot.apps.appCount)),
+          renderMetric("Focused", snapshot.apps.focusedApp.name),
+          renderMetric("Rail", snapshot.apps.activeRail),
+          renderMetric("Open panel", snapshot.apps.openPanel),
+          `<div class="app-diagnostic-list">${appRows}</div>`
+        ].join("")
+      )}
+
+      ${renderSection("GPU Limits", rendererLimits)}
+
+      ${renderSection(
+        "Runtime",
+        [
+          renderMetric("Platform", snapshot.runtime.platform),
+          renderMetric("Language", snapshot.runtime.language),
+          renderMetric("Network", snapshot.runtime.online ? "Online" : "Offline"),
+          renderMetric("Updated", new Date(snapshot.timestamp).toLocaleTimeString()),
+          renderMetric("User agent", snapshot.runtime.userAgent)
+        ].join("")
+      )}
+    </div>
+  `;
+}

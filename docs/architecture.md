@@ -13,6 +13,10 @@ flowchart TD
   Renderer["src/webgpuRenderer.ts"]
   Main["src/main.ts"]
   Registry["src/apps.ts"]
+  Diagnostics["src/diagnostics"]
+  Settings["src/settings"]
+  Search["src/search"]
+  Library["src/library"]
   Styles["src/styles.css"]
 
   Browser --> Canvas
@@ -20,6 +24,12 @@ flowchart TD
   Renderer --> Canvas
   Main --> Shell
   Registry --> Main
+  Diagnostics --> Main
+  Settings --> Main
+  Search --> Main
+  Library --> Main
+  Registry --> Search
+  Registry --> Library
   Styles --> Shell
   Styles --> Canvas
 ```
@@ -32,6 +42,7 @@ flowchart TD
 - Renders app tiles and detail panels.
 - Handles keyboard and pointer input.
 - Manages rail navigation state.
+- Launches focused apps into the full-screen app surface.
 - Starts the WebGPU renderer.
 
 `src/apps.ts`
@@ -47,6 +58,26 @@ flowchart TD
 - Draws a full-screen animated fragment shader every frame.
 - Falls back to Canvas 2D when WebGPU is not available.
 
+`src/diagnostics/`
+
+- Collects renderer, display, runtime, performance, and app diagnostics.
+- Keeps browser capability reads separate from shell rendering.
+
+`src/settings/`
+
+- Renders the Settings/Diagnostics system panel.
+- Keeps dense diagnostics markup out of `src/main.ts`.
+
+`src/search/`
+
+- Renders the shared Search UI for the sidebar Search panel and full Search app.
+- Filters app registry entries by name.
+
+`src/library/`
+
+- Renders the installed-app Library grid.
+- Keeps app-library markup separate from rail routing.
+
 `src/styles.css`
 
 - Defines the visual language and responsive layout.
@@ -60,6 +91,7 @@ The current state is deliberately small:
 ```ts
 let focusedIndex = 0;
 let launchedApp: DashboardApp | null = null;
+let activeApp: DashboardApp | null = null;
 let activeRail = "home";
 ```
 
@@ -70,6 +102,9 @@ let activeRail = "home";
 `activeRail` controls which system rail item is active and which shell panel is
 open.
 
+`activeApp` controls the full-screen app surface opened by the primary Open
+command.
+
 ## Rendering Pattern
 
 This app uses explicit render functions instead of a framework:
@@ -79,6 +114,7 @@ This app uses explicit render functions instead of a framework:
 - `renderFocus()`
 - `renderPanel()`
 - `renderRailState()`
+- feature renderers under `src/settings/`, `src/search/`, and `src/library/`
 
 Keep render functions deterministic. If a render function inserts DOM, prefer
 setting/replacing the relevant content instead of appending to existing content.
@@ -109,4 +145,5 @@ splits are:
 - `src/shellState.ts`
 - `src/renderers/panels.ts`
 - `src/renderers/grid.ts`
+- `src/appSurface.ts`
 - `src/input.ts`

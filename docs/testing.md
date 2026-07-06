@@ -28,20 +28,29 @@ Check:
 - Dashboard heading is visible.
 - GPU status says either `WebGPU · ...` or `Canvas fallback`.
 - Four rail icons are visible.
-- App strip shows Cinema, Arcade, Studio, Party, and Settings.
+- App strip shows Cinema, Arcade, Studio, Party, Settings, and Search.
 - Clicking a tile updates the featured app.
-- Double-clicking a tile opens the app detail panel.
-- Open/details buttons open the focused app detail panel.
+- Double-clicking a tile launches the app surface.
+- Open expands the focused app into the full-screen app surface.
+- The details button opens the focused app detail panel.
+- Escape closes the full-screen app surface.
 - Close button hides the panel.
 - Search, Library, and Settings rail buttons open shell panels.
+- Sidebar Search filters apps by name and Enter launches the active result.
+- The Search app filters apps by name and Enter launches the active result.
+- Library shows all installed apps in a grid and clicking an app launches it.
 - Home rail button clears shell panels.
+- Settings shows Renderer, Display, Performance, Apps, GPU Limits, and Runtime
+  diagnostics.
+- The Settings app shows the same Settings menu as the sidebar Settings panel.
 
 ## Keyboard Test
 
 - ArrowRight/ArrowDown moves focus forward.
 - ArrowLeft/ArrowUp moves focus backward.
-- Enter opens the focused app panel.
-- Escape closes panels and returns rail state to Home.
+- Enter launches the focused app surface.
+- Escape closes the active app surface first, otherwise closes panels and
+  returns rail state to Home.
 
 ## Icon Regression Test
 
@@ -72,6 +81,8 @@ At a phone-like viewport, for example `390 x 844`:
 
 - Bottom rail is visible.
 - Detail panel does not overlap the bottom rail.
+- Full-screen app surface fits within the viewport.
+- Library grid uses three columns on phone-sized viewports.
 - App strip scrolls horizontally.
 - Status pills wrap without text overlap.
 

@@ -49,5 +49,13 @@ export const dashboardApps: DashboardApp[] = [
     status: "ready",
     accent: "#c7d0dc",
     description: "System preferences and shell-level configuration."
+  },
+  {
+    id: "search",
+    name: "Search",
+    kind: "system",
+    status: "ready",
+    accent: "#ffffff",
+    description: "Find and launch dashboard apps by name."
   }
 ];

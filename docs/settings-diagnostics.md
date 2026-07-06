@@ -1,0 +1,82 @@
+# Settings And Diagnostics
+
+Settings is the first system app with real runtime data. The sidebar Settings
+rail and the Settings app use the same renderer and diagnostics collectors.
+
+## Current Scope
+
+The Settings rail button opens a wide system panel with diagnostics sections.
+Launching the Settings app opens the same menu inside the full-screen app
+surface.
+
+- Renderer
+- Display
+- Performance
+- Apps
+- GPU Limits
+- Runtime
+
+The panel is rendered by `src/settings/renderSettingsPanel.ts`.
+
+Diagnostics are collected by `src/diagnostics/collectDiagnostics.ts`.
+
+Frame timing is sampled by `src/diagnostics/performanceMonitor.ts`.
+
+Shared types live in `src/diagnostics/types.ts`.
+
+## Data Sources
+
+Renderer:
+
+- Current renderer mode from shell state.
+- Adapter name from `startRenderer()`.
+- Preferred canvas format from `navigator.gpu.getPreferredCanvasFormat()`.
+- Optional WebGPU features from `GPUAdapter.features`.
+- Selected WebGPU limits from `GPUAdapter.limits`.
+
+Display:
+
+- `window.innerWidth` / `window.innerHeight`
+- `screen.width` / `screen.height`
+- `window.devicePixelRatio`
+- `screen.orientation`
+- color scheme and reduced motion media queries
+
+Performance:
+
+- Rolling `requestAnimationFrame` samples.
+- Estimated FPS.
+- Average frame time.
+- Runtime uptime.
+
+Apps:
+
+- App registry from `src/apps.ts`.
+- Focused app index from shell state.
+- Active rail state.
+- Open panel/app state.
+
+Runtime:
+
+- Browser language.
+- Platform.
+- Network online state.
+- User agent.
+
+## Refresh Behavior
+
+The panel is a snapshot when opened. It also refreshes once if the renderer
+finishes initializing while Settings is open.
+
+Do not replace the full Settings panel on a timer without preserving scroll
+position and focus. Full rerenders can make diagnostics panels feel broken while
+the user is scrolling or reading.
+
+## Extension Ideas
+
+- Add category navigation inside Settings.
+- Add input/gamepad diagnostics.
+- Add WebGPU device-lost status.
+- Add a copy diagnostics button.
+- Add warnings for unsupported or degraded capabilities.
+- Add persisted user settings once storage is introduced.

@@ -35,11 +35,15 @@ The host tree should not contain `node_modules` or `dist`.
 
 ## Mental Model
 
-The app has three layers:
+The app has seven main layers:
 
 1. `src/webgpuRenderer.ts` owns the full-screen GPU/canvas background.
 2. `src/main.ts` owns shell state and DOM rendering.
 3. `src/apps.ts` owns the list of app entries shown in the dashboard.
+4. `src/diagnostics/` owns runtime diagnostic data collection.
+5. `src/settings/` owns the Settings panel renderer.
+6. `src/search/` owns the shared Search UI.
+7. `src/library/` owns the installed-app Library grid.
 
 The UI is currently framework-free TypeScript. DOM is rendered with template
 strings and event listeners. If you introduce a framework later, document why and
@@ -47,24 +51,32 @@ keep the migration focused.
 
 ## State Model
 
-`src/main.ts` keeps three pieces of shell state:
+`src/main.ts` keeps four pieces of shell state:
 
 - `focusedIndex` - selected app tile.
 - `launchedApp` - app detail panel currently open, or `null`.
 - `activeRail` - active rail item: `home`, `search`, `library`, or `settings`.
+- `activeApp` - full-screen app surface currently open, or `null`.
 
 Keyboard behavior:
 
 - Arrow keys cycle `focusedIndex`.
-- Enter opens the focused app panel.
-- Escape closes panels and returns the rail to Home.
+- Enter launches the focused app surface.
+- Escape closes the active app surface first, otherwise closes panels and returns
+  the rail to Home.
 
 Mouse behavior:
 
 - Clicking a tile changes focus.
-- Double-clicking a tile opens the app panel.
-- Open/details buttons open the focused app panel.
+- Double-clicking a tile launches the app surface.
+- The primary Open command launches the focused app into the full-screen app
+  surface; the details button opens the compact app panel.
 - Rail buttons open shell panels or return Home.
+- Sidebar Search and the Search app both filter apps by name; Enter launches the
+  active result.
+- Library shows all installed apps from `src/apps.ts`; clicking one launches it.
+- Sidebar Settings and the Settings app use the same Settings/Diagnostics
+  renderer.
 
 ## Known Product Direction
 
@@ -104,6 +116,9 @@ Browser checks:
 
 - `docs/architecture.md`
 - `docs/webgpu-renderer.md`
+- `docs/library.md`
+- `docs/search.md`
+- `docs/settings-diagnostics.md`
 - `docs/development.md`
 - `docs/testing.md`
 - `docs/roadmap.md`
