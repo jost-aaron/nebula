@@ -1,3 +1,4 @@
+import { renderAppIcon } from "../appIcons";
 import type { DashboardApp } from "../apps";
 
 const escapeHtml = (value: string) =>
@@ -37,7 +38,7 @@ export function renderSearchResults(apps: DashboardApp[]): string {
           data-search-result="${escapeHtml(app.id)}"
           style="--accent: ${escapeHtml(app.accent)}"
         >
-          <span class="search-result-mark">${escapeHtml(app.name.slice(0, 1))}</span>
+          <span class="search-result-mark">${renderAppIcon(app, "search-result-icon")}</span>
           <span class="search-result-copy">
             <strong>${escapeHtml(app.name)}</strong>
             <small>${escapeHtml(app.kind)} · ${escapeHtml(app.status)}</small>

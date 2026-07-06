@@ -1,3 +1,4 @@
+import { renderAppIcon } from "../appIcons";
 import type { DashboardApp } from "../apps";
 
 const escapeHtml = (value: string) =>
@@ -25,7 +26,7 @@ export function renderLibraryView(apps: DashboardApp[]) {
                 data-library-app="${escapeHtml(app.id)}"
                 style="--accent: ${escapeHtml(app.accent)}; --delay: ${index * 34}ms"
               >
-                <span class="library-icon">${escapeHtml(app.name.slice(0, 1))}</span>
+                <span class="library-icon">${renderAppIcon(app, "library-app-icon")}</span>
                 <span class="library-label">${escapeHtml(app.name)}</span>
               </button>
             `

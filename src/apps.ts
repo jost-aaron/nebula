@@ -1,4 +1,4 @@
-export type AppKind = "media" | "games" | "system" | "developer" | "social";
+export type AppKind = "media" | "games" | "system" | "developer" | "social" | "files";
 
 export interface DashboardApp {
   id: string;
@@ -6,6 +6,7 @@ export interface DashboardApp {
   kind: AppKind;
   status: "ready" | "prototype" | "planned";
   accent: string;
+  icon: string;
   description: string;
 }
 
@@ -16,6 +17,7 @@ export const dashboardApps: DashboardApp[] = [
     kind: "media",
     status: "prototype",
     accent: "#00d4ff",
+    icon: "Clapperboard",
     description: "A future native video player surface with library, playback, and queue hooks."
   },
   {
@@ -24,6 +26,7 @@ export const dashboardApps: DashboardApp[] = [
     kind: "games",
     status: "planned",
     accent: "#ffcf3f",
+    icon: "Gamepad2",
     description: "Game launcher and controller-first discovery space."
   },
   {
@@ -32,7 +35,17 @@ export const dashboardApps: DashboardApp[] = [
     kind: "developer",
     status: "ready",
     accent: "#72f29d",
+    icon: "Cpu",
     description: "Developer tools, diagnostics, and WebGPU capability probes."
+  },
+  {
+    id: "files",
+    name: "Files",
+    kind: "files",
+    status: "ready",
+    accent: "#4da3ff",
+    icon: "FolderOpen",
+    description: "Browse and manage local dashboard content."
   },
   {
     id: "party",
@@ -40,6 +53,7 @@ export const dashboardApps: DashboardApp[] = [
     kind: "social",
     status: "planned",
     accent: "#ff7bbf",
+    icon: "UsersRound",
     description: "Presence, friends, voice, and shared watch sessions."
   },
   {
@@ -48,6 +62,7 @@ export const dashboardApps: DashboardApp[] = [
     kind: "system",
     status: "ready",
     accent: "#c7d0dc",
+    icon: "SlidersHorizontal",
     description: "System preferences and shell-level configuration."
   },
   {
@@ -56,6 +71,7 @@ export const dashboardApps: DashboardApp[] = [
     kind: "system",
     status: "ready",
     accent: "#ffffff",
+    icon: "Radar",
     description: "Find and launch dashboard apps by name."
   }
 ];

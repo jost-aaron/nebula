@@ -1,0 +1,350 @@
+import { createReadStream } from "node:fs";
+import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { json, readBody } from "./http.mjs";
+import { isAudioFile, isMediaFile, mimeType } from "./storage.mjs";
+
+const candidateWords = (value = "") =>
+  value
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[\W_]+/g, " ")
+    .split(" ")
+    .map((word) => word.trim())
+    .filter((word) => word.length > 1 && !/^(1080p|720p|2160p|480p|x264|x265|h264|h265|web|dl|bluray|webrip|hdrip)$/i.test(word));
+
+const searchPhrase = (words) => words.slice(0, 8).join(" ").trim();
+
+const imagePayload = (frame) => {
+  const image = String(frame.image ?? "");
+  const match = /^data:image\/(?:jpeg|png|webp);base64,(.+)$/i.exec(image);
+  return match?.[1] ?? image;
+};
+
+const googleVisionWebDetection = async (frames) => {
+  const apiKey = process.env.GOOGLE_VISION_API_KEY;
+
+  if (!apiKey) {
+    return {
+      configured: false,
+      provider: "google-vision-web-detection",
+      results: []
+    };
+  }
+
+  const requests = frames.slice(0, 10).map((frame) => ({
+    features: [{ maxResults: 8, type: "WEB_DETECTION" }],
+    image: { content: imagePayload(frame) }
+  }));
+
+  const response = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`, {
+    body: JSON.stringify({ requests }),
+    headers: { "content-type": "application/json" },
+    method: "POST"
+  });
+
+  if (!response.ok) {
+    throw Object.assign(new Error("Google Vision Web Detection failed."), { status: 502 });
+  }
+
+  const body = await response.json();
+
+  return {
+    configured: true,
+    provider: "google-vision-web-detection",
+    results: (body.responses ?? []).map((result, index) => {
+      const web = result.webDetection ?? {};
+
+      return {
+        frameIndex: frames[index]?.index ?? index,
+        pages: (web.pagesWithMatchingImages ?? []).slice(0, 6).map((page) => ({
+          score: page.score ?? 0,
+          title: page.pageTitle ?? page.url ?? "Matching page",
+          url: page.url ?? ""
+        })),
+        visualMatches: (web.visuallySimilarImages ?? []).slice(0, 6).map((match) => match.url ?? "").filter(Boolean),
+        webEntities: (web.webEntities ?? []).slice(0, 8).map((entity) => ({
+          description: entity.description ?? "",
+          score: entity.score ?? 0
+        })).filter((entity) => entity.description)
+      };
+    })
+  };
+};
+
+const mediaCategory = (contentPath) => {
+  const lowerPath = contentPath.toLowerCase();
+  const fileName = path.basename(contentPath);
+
+  if (isAudioFile(fileName)) {
+    return "music";
+  }
+
+  if (
+    lowerPath.includes("/tv/") ||
+    lowerPath.includes("/shows/") ||
+    lowerPath.includes("/series/") ||
+    /\bs\d{1,2}e\d{1,2}\b/i.test(fileName) ||
+    /\b\d{1,2}x\d{1,2}\b/i.test(fileName)
+  ) {
+    return "tv";
+  }
+
+  return "movies";
+};
+
+const defaultTitle = (fileName) => path.basename(fileName, path.extname(fileName)).replace(/[._-]+/g, " ").trim();
+
+const metadataForEntry = (metadata, contentPath, fallbackTitle) => ({
+  cast: "",
+  collection: "",
+  genres: [],
+  posterUrl: "",
+  rating: "",
+  releaseYear: "",
+  sortTitle: fallbackTitle,
+  studio: "",
+  summary: "",
+  tagline: "",
+  title: fallbackTitle,
+  ...metadata[contentPath]
+});
+
+export const createCinemaRoutes = (storage) => {
+  const readCinemaMetadata = async () => {
+    const raw = await readFile(storage.cinemaMetadataPath, "utf8").catch((error) => {
+      if (error.code === "ENOENT") {
+        return "{}";
+      }
+
+      throw error;
+    });
+
+    return JSON.parse(raw);
+  };
+
+  const writeCinemaMetadata = async (metadata) => {
+    await writeFile(storage.cinemaMetadataPath, JSON.stringify(metadata, null, 2));
+  };
+
+  const scanCinemaLibrary = async (folder, metadata, entries = []) => {
+    for (const dirent of await readdir(folder, { withFileTypes: true })) {
+      if (dirent.name === ".uploads") {
+        continue;
+      }
+
+      const entryPath = path.join(folder, dirent.name);
+
+      if (dirent.isDirectory()) {
+        await scanCinemaLibrary(entryPath, metadata, entries);
+        continue;
+      }
+
+      if (!dirent.isFile() || !isMediaFile(dirent.name)) {
+        continue;
+      }
+
+      const entryStats = await stat(entryPath);
+      const contentPath = storage.toContentPath(entryPath);
+      const fallbackTitle = defaultTitle(dirent.name);
+      const mediaMetadata = metadataForEntry(metadata, contentPath, fallbackTitle);
+
+      entries.push({
+        category: mediaCategory(contentPath),
+        cast: mediaMetadata.cast,
+        collection: mediaMetadata.collection,
+        folder: path.dirname(contentPath) === "." ? "" : path.dirname(contentPath).split(path.sep).join("/"),
+        genres: Array.isArray(mediaMetadata.genres) ? mediaMetadata.genres : [],
+        mediaKind: isAudioFile(dirent.name) ? "audio" : "video",
+        modifiedAt: entryStats.mtime.toISOString(),
+        name: dirent.name,
+        path: contentPath,
+        posterUrl: mediaMetadata.posterUrl,
+        rating: mediaMetadata.rating,
+        releaseYear: mediaMetadata.releaseYear,
+        size: entryStats.size,
+        sortTitle: mediaMetadata.sortTitle || mediaMetadata.title || fallbackTitle,
+        streamUrl: `/api/cinema/media?path=${encodeURIComponent(contentPath)}`,
+        studio: mediaMetadata.studio,
+        summary: mediaMetadata.summary,
+        tagline: mediaMetadata.tagline,
+        title: mediaMetadata.title || fallbackTitle
+      });
+    }
+
+    return entries;
+  };
+
+  const listCinemaLibrary = async (request, response) => {
+    const metadata = await readCinemaMetadata();
+    const entries = await scanCinemaLibrary(storage.contentRoot, metadata);
+    entries.sort((a, b) => (a.sortTitle || a.title).localeCompare(b.sortTitle || b.title));
+    json(response, 200, { entries });
+  };
+
+  const updateCinemaMetadata = async (request, response) => {
+    const body = await readBody(request);
+    const contentPath = storage.relativePath(body.path ?? "");
+    const absolutePath = storage.resolveContentPath(contentPath);
+    const stats = await stat(absolutePath).catch(() => null);
+
+    if (!stats || !stats.isFile() || !isMediaFile(absolutePath)) {
+      json(response, 404, { error: "Media file not found." });
+      return;
+    }
+
+    const fallbackTitle = defaultTitle(path.basename(contentPath));
+    const metadata = await readCinemaMetadata();
+    const current = metadataForEntry(metadata, contentPath, fallbackTitle);
+    const genres = Array.isArray(body.genres)
+      ? body.genres
+      : String(body.genres ?? "")
+        .split(",")
+        .map((genre) => genre.trim())
+        .filter(Boolean);
+
+    metadata[contentPath] = {
+      ...current,
+      cast: String(body.cast ?? ""),
+      collection: String(body.collection ?? ""),
+      genres,
+      posterUrl: String(body.posterUrl ?? ""),
+      rating: String(body.rating ?? ""),
+      releaseYear: String(body.releaseYear ?? ""),
+      sortTitle: String(body.sortTitle ?? body.title ?? fallbackTitle),
+      studio: String(body.studio ?? ""),
+      summary: String(body.summary ?? ""),
+      tagline: String(body.tagline ?? ""),
+      title: String(body.title ?? fallbackTitle).trim() || fallbackTitle,
+      updatedAt: new Date().toISOString()
+    };
+
+    await writeCinemaMetadata(metadata);
+    json(response, 200, { metadata: metadata[contentPath], ok: true, path: contentPath });
+  };
+
+  const identifyCinemaFrames = async (request, response) => {
+    const body = await readBody(request);
+    const frames = Array.isArray(body.frames) ? body.frames : [];
+    const titleWords = candidateWords(body.title ?? body.path ?? "");
+    const baseQuery = searchPhrase(titleWords);
+    const frameQueries = frames.slice(0, 10).map((frame) => {
+      const timestamp = Number(frame.time ?? 0);
+      const timestampLabel = Number.isFinite(timestamp) ? `${Math.round(timestamp / 60)} min scene` : "scene";
+      return [baseQuery, timestampLabel, "movie tv show"].filter(Boolean).join(" ");
+    });
+
+    const providers = [await googleVisionWebDetection(frames)];
+    const entityScores = new Map();
+
+    providers.forEach((provider) => {
+      provider.results.forEach((result) => {
+        result.webEntities?.forEach((entity) => {
+          entityScores.set(entity.description, (entityScores.get(entity.description) ?? 0) + Number(entity.score ?? 0));
+        });
+      });
+    });
+
+    const candidates = Array.from(entityScores.entries())
+      .map(([name, score]) => ({ name, score: Number(score.toFixed(3)) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8);
+
+    json(response, 200, {
+      candidates,
+      frameQueries,
+      providers,
+      searchedAt: new Date().toISOString()
+    });
+  };
+
+  const streamCinemaMedia = async (request, response, url) => {
+    const requestedPath = url.searchParams.get("path") ?? "";
+    const absolutePath = storage.resolveContentPath(requestedPath);
+    const stats = await stat(absolutePath).catch(() => null);
+
+    if (!stats || !stats.isFile() || !isMediaFile(absolutePath)) {
+      json(response, 404, { error: "Media file not found." });
+      return;
+    }
+
+    const range = request.headers.range;
+    const headers = {
+      "accept-ranges": "bytes",
+      "content-type": mimeType(absolutePath)
+    };
+
+    if (!range) {
+      response.writeHead(200, {
+        ...headers,
+        "content-length": stats.size
+      });
+
+      if (request.method !== "HEAD") {
+        createReadStream(absolutePath).pipe(response);
+      } else {
+        response.end();
+      }
+      return;
+    }
+
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+
+    if (!match) {
+      response.writeHead(416, {
+        "content-range": `bytes */${stats.size}`
+      });
+      response.end();
+      return;
+    }
+
+    const suffixLength = !match[1] && match[2] ? Number(match[2]) : null;
+    const requestedStart = suffixLength === null ? Number(match[1]) : Math.max(stats.size - suffixLength, 0);
+    const requestedEnd = suffixLength === null && match[2] ? Number(match[2]) : stats.size - 1;
+    const start = Math.min(requestedStart, stats.size - 1);
+    const end = Math.min(requestedEnd, stats.size - 1);
+
+    if (start > end) {
+      response.writeHead(416, {
+        "content-range": `bytes */${stats.size}`
+      });
+      response.end();
+      return;
+    }
+
+    response.writeHead(206, {
+      ...headers,
+      "content-length": end - start + 1,
+      "content-range": `bytes ${start}-${end}/${stats.size}`
+    });
+
+    if (request.method !== "HEAD") {
+      createReadStream(absolutePath, { start, end }).pipe(response);
+    } else {
+      response.end();
+    }
+  };
+
+  return async (request, response, url) => {
+    if (request.method === "GET" && url.pathname === "/api/cinema/library") {
+      await listCinemaLibrary(request, response);
+      return true;
+    }
+
+    if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/cinema/media") {
+      await streamCinemaMedia(request, response, url);
+      return true;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/cinema/identify") {
+      await identifyCinemaFrames(request, response);
+      return true;
+    }
+
+    if (request.method === "PATCH" && url.pathname === "/api/cinema/metadata") {
+      await updateCinemaMetadata(request, response);
+      return true;
+    }
+
+    return false;
+  };
+};

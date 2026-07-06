@@ -14,9 +14,13 @@ flowchart TD
   Main["src/main.ts"]
   Registry["src/apps.ts"]
   Diagnostics["src/diagnostics"]
+  Cinema["src/cinema"]
   Settings["src/settings"]
   Search["src/search"]
   Library["src/library"]
+  Files["src/files"]
+  Server["server/dev.mjs"]
+  Content["content/"]
   Styles["src/styles.css"]
 
   Browser --> Canvas
@@ -25,11 +29,16 @@ flowchart TD
   Main --> Shell
   Registry --> Main
   Diagnostics --> Main
+  Cinema --> Main
   Settings --> Main
   Search --> Main
   Library --> Main
+  Files --> Main
   Registry --> Search
   Registry --> Library
+  Server --> Content
+  Files --> Server
+  Cinema --> Server
   Styles --> Shell
   Styles --> Canvas
 ```
@@ -63,6 +72,25 @@ flowchart TD
 - Collects renderer, display, runtime, performance, and app diagnostics.
 - Keeps browser capability reads separate from shell rendering.
 
+`src/cinema/`
+
+- Renders and binds the Cinema media browser and web player.
+- Talks to the backend through `src/api/cinemaApi.ts`.
+- Generates browser-side preview thumbnails from local video files.
+
+`src/api/`
+
+- Owns frontend API clients.
+- Applies `VITE_API_BASE_URL` through `src/api/http.ts`, so the frontend can
+  later point at a separate API origin without rewriting app surfaces.
+- Also supports a runtime Server URL saved in local storage for native/mobile
+  client shells.
+
+`src/shared/`
+
+- Owns shared TypeScript API contracts used by frontend clients and app views.
+- Cinema request/response shapes currently live in `src/shared/cinemaTypes.ts`.
+
 `src/settings/`
 
 - Renders the Settings/Diagnostics system panel.
@@ -77,6 +105,51 @@ flowchart TD
 
 - Renders the installed-app Library grid.
 - Keeps app-library markup separate from rail routing.
+
+`src/files/`
+
+- Renders and binds the local content file browser.
+- Uses the shared API URL helper so file APIs can move to a separate server
+  origin later.
+
+`server/dev.mjs`
+
+- Wraps Vite middleware.
+- Bootstraps storage, API routes, optional auth guard, and Vite middleware.
+
+`server/api.mjs`
+
+- Dispatches `/api/*` requests to domain route modules.
+- Owns shared API error handling.
+
+`server/cinema.mjs`
+
+- Owns Cinema library scanning, metadata updates, visual identification, and
+  range-enabled media streaming.
+
+`server/files.mjs`
+
+- Owns local file browsing, creation, upload, resumable upload, rename, and
+  delete routes.
+
+`server/http.mjs`
+
+- Provides shared backend HTTP helpers for JSON responses and request body
+  parsing.
+
+`server/storage.mjs`
+
+- Owns content-root path safety, MIME typing, and shared media-file helpers.
+
+`server/auth.mjs`
+
+- Provides optional bearer-token protection for API routes.
+- Local development remains unauthenticated unless `NEBULA_REQUIRE_AUTH=true`.
+
+`capacitor.config.json`
+
+- Defines the future iOS/native client shell identity for Capacitor.
+- Keeps mobile packaging separate from the Docker-first server workflow.
 
 `src/styles.css`
 
@@ -114,7 +187,8 @@ This app uses explicit render functions instead of a framework:
 - `renderFocus()`
 - `renderPanel()`
 - `renderRailState()`
-- feature renderers under `src/settings/`, `src/search/`, and `src/library/`
+- feature renderers under `src/cinema/`, `src/settings/`, `src/search/`,
+  `src/library/`, and `src/files/`
 
 Keep render functions deterministic. If a render function inserts DOM, prefer
 setting/replacing the relevant content instead of appending to existing content.
@@ -147,3 +221,4 @@ splits are:
 - `src/renderers/grid.ts`
 - `src/appSurface.ts`
 - `src/input.ts`
+- `server/filesApi.mjs`

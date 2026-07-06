@@ -1,8 +1,19 @@
+import { renderAppIcon } from "../appIcons";
+import { getApiBaseUrl, getApiToken } from "../api/http";
+import { dashboardApps } from "../apps";
 import type { DiagnosticsSnapshot } from "../diagnostics/types";
 
 const formatNumber = (value: number, digits = 1) => (Number.isFinite(value) ? value.toFixed(digits) : "0.0");
 
 const statusText = (value: boolean) => (value ? "Available" : "Unavailable");
+
+const escapeHtml = (value: string) =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 
 const renderMetric = (label: string, value: string) => `
   <span class="diagnostic-metric">
@@ -21,6 +32,7 @@ const renderSection = (title: string, body: string) => `
 `;
 
 export function renderSettingsPanel(snapshot: DiagnosticsSnapshot): string {
+  const settingsApp = dashboardApps.find((app) => app.id === "settings");
   const rendererFeatures =
     snapshot.renderer.features.length > 0 ? snapshot.renderer.features.slice(0, 6).join(", ") : "No optional features reported";
 
@@ -43,7 +55,7 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot): string {
 
   return `
     <div class="panel-header">
-      <span class="panel-mark">S</span>
+      <span class="panel-mark">${settingsApp ? renderAppIcon(settingsApp, "panel-icon") : ""}</span>
       <div>
         <p class="eyebrow">System</p>
         <h2>Settings</h2>
@@ -58,6 +70,7 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot): string {
       <button type="button" data-diagnostic-tab="display">Display</button>
       <button type="button" data-diagnostic-tab="performance">Performance</button>
       <button type="button" data-diagnostic-tab="apps">Apps</button>
+      <button type="button" data-diagnostic-tab="client">Client</button>
       <button type="button" data-diagnostic-tab="runtime">Runtime</button>
     </div>
 
@@ -105,6 +118,35 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot): string {
           `<div class="app-diagnostic-list">${appRows}</div>`
         ].join("")
       )}
+
+      <section class="diagnostic-section client-settings-section" data-diagnostic-section="client">
+        <h3>Client</h3>
+        <div class="client-settings-form">
+          <label>
+            <small>Server URL</small>
+            <input
+              type="url"
+              data-api-base-input
+              placeholder="Same origin"
+              value="${escapeHtml(getApiBaseUrl())}"
+            />
+          </label>
+          <label>
+            <small>API Token</small>
+            <input
+              type="password"
+              data-api-token-input
+              placeholder="Optional bearer token"
+              value="${escapeHtml(getApiToken())}"
+            />
+          </label>
+          <div class="client-settings-actions">
+            <button type="button" data-api-base-save>Save</button>
+            <button type="button" data-api-base-clear>Use Same Origin</button>
+            <span data-api-base-status></span>
+          </div>
+        </div>
+      </section>
 
       ${renderSection("GPU Limits", rendererLimits)}
 

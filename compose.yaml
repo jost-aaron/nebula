@@ -7,7 +7,10 @@ services:
     volumes:
       - ./index.html:/app/index.html
       - ./package.json:/app/package.json
+      - ./server:/app/server
       - ./tsconfig.json:/app/tsconfig.json
       - ./src:/app/src
+      - ./content:/app/content
     environment:
       - CHOKIDAR_USEPOLLING=true
+      - GOOGLE_VISION_API_KEY=${GOOGLE_VISION_API_KEY:-}

@@ -1,0 +1,8 @@
+{
+  "appId": "com.nebula.dashboard",
+  "appName": "Nebula",
+  "webDir": "dist",
+  "server": {
+    "iosScheme": "nebula"
+  }
+}

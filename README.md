@@ -6,7 +6,9 @@ The goal is to grow this into a capable dashboard/runtime for multiple apps,
 eventually including a native-style video player surface. The current app is a
 browser-hosted prototype with a WebGPU background renderer, app registry, shell
 navigation, Search, Library, Settings/Diagnostics, detail panels, and animated
-full-screen app launch surfaces.
+full-screen app launch surfaces. It also has prototype Files and Cinema apps:
+Files manages local ignored content, and Cinema scans that content into a
+Plex-like Movies/TV Shows/Music library with lazy playback.
 
 ## Run
 
@@ -26,6 +28,15 @@ Dependencies are installed inside the Docker image. Compose mounts only the sour
 files needed for local development, so the host project should not need a local
 `node_modules` directory.
 
+## New Session Quick Start
+
+1. Read [AGENTS.md](AGENTS.md).
+2. Start the app with `docker compose up --build`.
+3. Open http://127.0.0.1:5173.
+4. Verify with `docker compose run --rm dashboard npm run check`.
+5. Keep all content/media in ignored `content/`; do not commit uploaded media.
+6. Do not install dependencies on the host.
+
 ## Project Map
 
 - `src/main.ts` - dashboard shell, app selection state, rail navigation, panels,
@@ -36,6 +47,10 @@ files needed for local development, so the host project should not need a local
 - `src/settings/` - shared Settings/Diagnostics panel renderer.
 - `src/search/` - shared Search UI for the sidebar and Search app.
 - `src/library/` - installed-app Library grid renderer.
+- `src/cinema/` - Plex-like local media library and lazy web player.
+- `src/files/` - local content file browser UI.
+- `server/dev.mjs` - Vite dev server plus Files and Cinema APIs.
+- `content/` - ignored local content root for Files and Cinema.
 - `src/webgpuRenderer.ts` - WebGPU full-screen shader renderer plus Canvas 2D
   fallback.
 - `src/styles.css` - responsive shell layout and visual system.
@@ -49,8 +64,11 @@ files needed for local development, so the host project should not need a local
 Start with:
 
 - [AGENTS.md](AGENTS.md)
+- [docs/session-handoff.md](docs/session-handoff.md)
 - [docs/architecture.md](docs/architecture.md)
+- [docs/cinema.md](docs/cinema.md)
 - [docs/webgpu-renderer.md](docs/webgpu-renderer.md)
+- [docs/files.md](docs/files.md)
 - [docs/library.md](docs/library.md)
 - [docs/search.md](docs/search.md)
 - [docs/settings-diagnostics.md](docs/settings-diagnostics.md)

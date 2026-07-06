@@ -1,8 +1,12 @@
 import { icons, createElement } from "lucide";
+import { renderAppIcon } from "./appIcons";
+import { setApiBaseUrl, setApiToken } from "./api/http";
 import { dashboardApps, type DashboardApp } from "./apps";
+import { bindCinemaView, renderCinemaView } from "./cinema/renderCinemaView";
 import { collectDiagnostics } from "./diagnostics/collectDiagnostics";
 import { createPerformanceMonitor } from "./diagnostics/performanceMonitor";
 import type { RendererRuntimeState } from "./diagnostics/types";
+import { bindFileBrowser, renderFileBrowserShell } from "./files/fileBrowser";
 import { renderLibraryView } from "./library/renderLibraryView";
 import { filterApps, renderSearchResults, renderSearchView } from "./search/renderSearchView";
 import { renderSettingsPanel } from "./settings/renderSettingsPanel";
@@ -112,7 +116,7 @@ const renderGrid = () => {
           style="--accent: ${app.accent}"
           aria-pressed="${isFocused}"
         >
-          <span class="tile-art">${app.name.slice(0, 1)}</span>
+          <span class="tile-art">${renderAppIcon(app, "tile-icon")}</span>
           <span class="tile-meta">
             <strong>${app.name}</strong>
             <small>${app.kind} · ${app.status}</small>
@@ -142,7 +146,7 @@ const renderPanel = () => {
   detailPanel.hidden = false;
   detailPanel.innerHTML = `
     <div class="panel-header">
-      <span class="panel-mark" style="--accent: ${launchedApp.accent}">${launchedApp.name.slice(0, 1)}</span>
+      <span class="panel-mark" style="--accent: ${launchedApp.accent}">${renderAppIcon(launchedApp, "panel-icon")}</span>
       <div>
         <p class="eyebrow">${launchedApp.kind}</p>
         <h2>${launchedApp.name}</h2>
@@ -207,6 +211,7 @@ const bindSettingsTabs = () => {
     display: ["display"],
     performance: ["performance"],
     renderer: ["renderer", "gpu-limits"],
+    client: ["client"],
     runtime: ["runtime"]
   };
 
@@ -224,6 +229,32 @@ const bindSettingsTabs = () => {
         section.hidden = visibleSections.length > 0 && !visibleSections.includes(sectionName);
       });
     });
+  });
+};
+
+const bindClientSettings = (container: ParentNode) => {
+  const input = container.querySelector<HTMLInputElement>("[data-api-base-input]");
+  const tokenInput = container.querySelector<HTMLInputElement>("[data-api-token-input]");
+  const save = container.querySelector<HTMLButtonElement>("[data-api-base-save]");
+  const clear = container.querySelector<HTMLButtonElement>("[data-api-base-clear]");
+  const status = container.querySelector<HTMLElement>("[data-api-base-status]");
+
+  if (!input || !tokenInput || !save || !clear || !status) {
+    return;
+  }
+
+  save.addEventListener("click", () => {
+    setApiBaseUrl(input.value);
+    setApiToken(tokenInput.value);
+    status.textContent = "Saved";
+  });
+
+  clear.addEventListener("click", () => {
+    input.value = "";
+    tokenInput.value = "";
+    setApiBaseUrl("");
+    setApiToken("");
+    status.textContent = "Using same origin";
   });
 };
 
@@ -254,6 +285,8 @@ const createSettingsContent = async () =>
 const launchApp = async (app: DashboardApp) => {
   const isSearchApp = app.id === "search";
   const isSettingsApp = app.id === "settings";
+  const isFilesApp = app.id === "files";
+  const isCinemaApp = app.id === "cinema";
 
   activeApp = app;
   launchedApp = null;
@@ -266,6 +299,10 @@ const launchApp = async (app: DashboardApp) => {
     ? renderSearchView(dashboardApps, "app")
     : isSettingsApp
       ? await createSettingsContent()
+      : isFilesApp
+        ? renderFileBrowserShell()
+        : isCinemaApp
+          ? renderCinemaView()
     : `
       <section class="app-window-body">
         <div>
@@ -283,16 +320,16 @@ const launchApp = async (app: DashboardApp) => {
     `;
 
   appSurface.hidden = false;
-  appSurface.className = `app-surface launching ${isSearchApp ? "search-app-surface" : ""} ${isSettingsApp ? "settings-app-surface" : ""}`;
+  appSurface.className = `app-surface launching ${isSearchApp ? "search-app-surface" : ""} ${isSettingsApp ? "settings-app-surface" : ""} ${isFilesApp ? "files-app-surface" : ""} ${isCinemaApp ? "cinema-app-surface" : ""}`;
   appSurface.style.setProperty("--accent", app.accent);
   appSurface.innerHTML = `
-    <article class="app-window ${isSearchApp ? "search-window" : ""} ${isSettingsApp ? "settings-window" : ""}">
+    <article class="app-window ${isSearchApp ? "search-window" : ""} ${isSettingsApp ? "settings-window" : ""} ${isFilesApp ? "files-window" : ""} ${isCinemaApp ? "cinema-window" : ""}">
       ${
-        isSettingsApp
+        isSettingsApp || isCinemaApp
           ? body
           : `
             <header class="app-window-header">
-              <span class="app-window-mark">${app.name.slice(0, 1)}</span>
+              <span class="app-window-mark">${renderAppIcon(app, "window-icon")}</span>
               <div>
                 <p class="eyebrow">${app.kind}</p>
                 <h2>${app.name}</h2>
@@ -314,6 +351,15 @@ const launchApp = async (app: DashboardApp) => {
   if (isSettingsApp) {
     document.querySelector<HTMLButtonElement>("#close-panel")?.addEventListener("click", closeActiveApp);
     bindSettingsTabs();
+    bindClientSettings(appSurface);
+  }
+
+  if (isFilesApp) {
+    bindFileBrowser(appSurface);
+  }
+
+  if (isCinemaApp) {
+    bindCinemaView(appSurface, closeActiveApp);
   }
 
   requestAnimationFrame(() => {
@@ -421,6 +467,7 @@ const renderSettingsDiagnostics = async () => {
   detailPanel.innerHTML = renderSettingsPanel(snapshot);
   bindClosePanel();
   bindSettingsTabs();
+  bindClientSettings(detailPanel);
 };
 
 const openShellPanel = async (nav: string) => {
@@ -453,13 +500,14 @@ const openShellPanel = async (nav: string) => {
   }
 
   if (nav === "search") {
+    const searchApp = dashboardApps.find((app) => app.id === "search");
     launchedApp = null;
     detailPanel.hidden = false;
     detailPanel.classList.add("system-panel", "search-panel");
     detailPanel.classList.remove("library-panel");
     detailPanel.innerHTML = `
       <div class="panel-header">
-        <span class="panel-mark">S</span>
+        <span class="panel-mark">${searchApp ? renderAppIcon(searchApp, "panel-icon") : ""}</span>
         <div>
           <p class="eyebrow">System</p>
           <h2>Search</h2>
@@ -474,13 +522,14 @@ const openShellPanel = async (nav: string) => {
   }
 
   if (nav === "library") {
+    const libraryApp = dashboardApps.find((app) => app.id === "files");
     launchedApp = null;
     detailPanel.hidden = false;
     detailPanel.classList.add("system-panel", "library-panel");
     detailPanel.classList.remove("search-panel");
     detailPanel.innerHTML = `
       <div class="panel-header">
-        <span class="panel-mark">L</span>
+        <span class="panel-mark">${libraryApp ? renderAppIcon(libraryApp, "panel-icon") : ""}</span>
         <div>
           <p class="eyebrow">Collection</p>
           <h2>Library</h2>
