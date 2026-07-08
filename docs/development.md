@@ -109,6 +109,26 @@ WebGPU requires a secure context, but localhost qualifies. Expect:
 
 Always feature-detect. Do not assume WebGPU is present.
 
+## Arcade And Moonlight Notes
+
+Arcade should start as a browser app surface for host/session setup, mock
+connection lifecycle, stream preferences, controller diagnostics, and clear
+sidecar-unavailable states. Do not present real Moonlight streaming as available
+until a native sidecar/plugin or equivalent bridge exists.
+
+Follow `docs/arcade-moonlight.md` for the intended split:
+
+- Browser frontend: host cards, pairing flow, settings, diagnostics, overlays,
+  and future WebGPU presentation.
+- Backend facade: future `/api/arcade/*` host, capability, pairing, session, and
+  event routes.
+- Native sidecar/plugin: future Moonlight Core integration, sockets, decode or
+  frame forwarding, audio, and input forwarding.
+
+Keep Moonlight Core experiments isolated from the normal Docker-first frontend
+workflow. Do not add host-installed native dependencies or generated build
+artifacts to this repository while spiking the sidecar.
+
 ## Mobile Client Notes
 
 The first recommended native target is a Capacitor iOS client. Keep it separate

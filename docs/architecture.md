@@ -14,12 +14,15 @@ flowchart TD
   Main["src/main.ts"]
   Registry["src/apps.ts"]
   Diagnostics["src/diagnostics"]
+  Arcade["src/arcade (planned)"]
   Cinema["src/cinema"]
   Studio["src/studio"]
   Settings["src/settings"]
   Search["src/search"]
   Library["src/library"]
   Files["src/files"]
+  ArcadeApi["server/arcade.mjs (planned)"]
+  Moonlight["Moonlight sidecar/plugin (future)"]
   Server["server/dev.mjs"]
   Content["content/"]
   Styles["src/styles.css"]
@@ -30,6 +33,7 @@ flowchart TD
   Main --> Shell
   Registry --> Main
   Diagnostics --> Main
+  Arcade --> Main
   Cinema --> Main
   Studio --> Main
   Settings --> Main
@@ -39,6 +43,9 @@ flowchart TD
   Registry --> Search
   Registry --> Library
   Server --> Content
+  Arcade --> ArcadeApi
+  ArcadeApi --> Moonlight
+  ArcadeApi --> Server
   Files --> Server
   Cinema --> Server
   Studio --> Server
@@ -74,6 +81,15 @@ flowchart TD
 
 - Collects renderer, display, runtime, performance, and app diagnostics.
 - Keeps browser capability reads separate from shell rendering.
+
+`src/arcade/` (planned)
+
+- Will render the Arcade host/session/control surface.
+- Should keep host cards, mock pairing/connection states, stream settings,
+  controller diagnostics, and sidecar-unavailable messaging out of
+  `src/main.ts`.
+- Should not claim real Moonlight streaming until a native sidecar/plugin or
+  equivalent bridge exists.
 
 `src/cinema/`
 
@@ -144,6 +160,14 @@ flowchart TD
 `server/mediaLibrary.mjs`
 
 - Provides shared local media scan and metadata helpers for Cinema and Studio.
+
+`server/arcade.mjs` (planned)
+
+- Will provide the Arcade API facade for hosts, pairing, capabilities,
+  sessions, and lifecycle events.
+- Should return mock/dev state while the Moonlight bridge is unavailable.
+- Later talks to a native Moonlight sidecar/plugin rather than embedding
+  Moonlight Core directly in the browser page.
 
 `server/files.mjs`
 
@@ -217,6 +241,13 @@ This prevents duplicate icons, stale controls, and repeated event binding.
 ## Extension Points
 
 Add new apps in `src/apps.ts`.
+
+Arcade should be treated as the next dedicated app layer. Follow
+`docs/arcade-moonlight.md`: build the browser app surface first as a
+controller-friendly host/session/settings UI, then connect it to a backend
+facade and future native Moonlight sidecar. WebGPU can become the stream
+presentation/compositor layer, but it is not the transport or decoder by
+itself.
 
 Prefer app-first navigation. If a feature needs a persistent global navigation
 surface later, document why it should sit outside the Applications strip and

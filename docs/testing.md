@@ -81,6 +81,49 @@ Check:
 - Settings shows Renderer, Display, Performance, Apps, GPU Limits, and Runtime
   diagnostics.
 
+## Arcade Planned Surface Smoke Test
+
+Arcade is currently planned work. Use this checklist after the first Arcade app
+surface lands; until then, the app tile may remain a placeholder and real
+Moonlight streaming should not be expected.
+
+Expected once implemented:
+
+- Arcade appears in the Applications strip and launches through the same
+  app-first full-screen surface as other apps.
+- Arcade has an obvious Dashboard or close command that returns to the main
+  dashboard without adding a new global navigation rail.
+- The surface shows host cards for mock/dev hosts, including at least one
+  unavailable or unknown host state.
+- Host cards expose product-shaped states such as unpaired, paired, online,
+  connecting, streaming, poor connection, disconnected, and offline without
+  claiming a real Moonlight stream is active.
+- Add Host, Pair, Test Connection, and Start/Stop Session controls are visible
+  or intentionally disabled based on the mock state.
+- Stream settings are visible for resolution, FPS, bitrate, codec, HDR, and
+  audio mode, and the UI makes clear these are preferences for a future
+  Moonlight session.
+- The sidecar unavailable state is friendly and explicit when no native
+  Moonlight sidecar/plugin is connected.
+- Controller diagnostics show browser Gamepad API availability, connected
+  controllers, button/axis activity, mapping, and timestamp when supported.
+- Keyboard/controller navigation can move through host cards, settings, and
+  diagnostics without trapping focus.
+- Escape closes the Arcade surface and returns to the dashboard.
+- WebGPU/WebCodecs capability messaging is informational only; Arcade remains
+  usable as a setup/control surface when those capabilities are missing.
+
+Future backend checks after `server/arcade.mjs` exists:
+
+- `GET /api/arcade/capabilities` reports whether the Moonlight sidecar is
+  unavailable, mock-only, or connected.
+- `GET /api/arcade/hosts` returns mock/dev hosts before real pairing support
+  exists.
+- Session APIs return clear unavailable/not-implemented responses when the
+  sidecar is absent.
+- No API response implies that live Moonlight streaming exists before the
+  bridge is implemented.
+
 ## Keyboard Test
 
 - ArrowRight/ArrowDown moves focus forward and stops on the last app.
@@ -122,6 +165,8 @@ At a phone-like viewport, for example `390 x 844`:
 - No bottom rail is visible.
 - Detail panel does not reserve bottom-rail space.
 - Full-screen app surface fits within the viewport.
+- Arcade host cards, stream settings, sidecar unavailable state, and controller
+  diagnostics stack without overlap once the Arcade surface exists.
 - Cinema stacks the library and playback panel without overlap.
 - Studio stacks the music library and player without overlap.
 - Files layout keeps the list and preview usable on phone-sized viewports.
@@ -181,6 +226,8 @@ Good next additions:
 
 - Playwright smoke test in Docker.
 - DOM tests for app-first navigation and panel state transitions.
+- Arcade DOM tests for host cards, mock lifecycle states, stream settings,
+  controller diagnostics, and sidecar-unavailable messaging.
 - Visual screenshot checks for desktop and mobile.
 - A repeatable iOS simulator UI test that taps through Cinema and Files safe
   areas.
