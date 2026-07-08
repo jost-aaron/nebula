@@ -342,7 +342,7 @@ const launchApp = async (app: DashboardApp) => {
   appSurface.innerHTML = `
     <article class="app-window ${isSearchApp ? "search-window" : ""} ${isSettingsApp ? "settings-window" : ""} ${isFilesApp ? "files-window" : ""} ${isCinemaApp ? "cinema-window" : ""}">
       ${
-        isSettingsApp || isCinemaApp
+        isSettingsApp || isFilesApp || isCinemaApp
           ? body
           : `
             <header class="app-window-header">
@@ -373,6 +373,7 @@ const launchApp = async (app: DashboardApp) => {
 
   if (isFilesApp) {
     bindFileBrowser(appSurface);
+    document.querySelector<HTMLButtonElement>("[data-file-close]")?.addEventListener("click", closeActiveApp);
   }
 
   if (isCinemaApp) {

@@ -39,10 +39,34 @@ interface StoredUploadSession {
   type: string;
 }
 
+type FileSectionId = "files" | "movies" | "tv" | "music" | "uploads" | "recent";
+
+interface FileSection {
+  detail: string;
+  id: FileSectionId;
+  label: string;
+  marker: string;
+  path: string;
+}
+
 const DIRECT_UPLOAD_LIMIT = 64 * 1024 * 1024;
 const RESUMABLE_CHUNK_SIZE = 64 * 1024 * 1024;
 const CHUNK_RETRIES = 2;
 const UPLOAD_SESSION_STORAGE_KEY = "nebula.files.uploadSessions.v1";
+
+const FILE_SECTIONS: FileSection[] = [
+  { detail: "Content root", id: "files", label: "Files", marker: "F", path: "" },
+  { detail: "Local video", id: "movies", label: "Movies", marker: "M", path: "Movies" },
+  { detail: "Series folders", id: "tv", label: "TV Shows", marker: "T", path: "TV Shows" },
+  { detail: "Audio library", id: "music", label: "Music", marker: "A", path: "Music" },
+  { detail: "Incoming files", id: "uploads", label: "Uploads", marker: "U", path: "Uploads" },
+  { detail: "Recently changed", id: "recent", label: "Recent", marker: "R", path: "" }
+];
+
+const VIDEO_PATTERN = /\.(m4v|mkv|mov|mp4|webm)$/i;
+const AUDIO_PATTERN = /\.(aac|flac|m4a|mp3|ogg|wav)$/i;
+const IMAGE_PATTERN = /\.(gif|jpe?g|png|svg|webp)$/i;
+const TEXT_PATTERN = /\.(css|html|js|json|md|txt)$/i;
 
 const api = async <T>(url: string, options?: RequestInit): Promise<T> => {
   const response = await fetch(apiUrl(url), {
@@ -98,6 +122,98 @@ const uploadSessionUrl = (sessionId: string) => `/api/files/uploads/${encodeURIC
 const uploadChunkUrl = (sessionId: string, chunkIndex: number) =>
   `${uploadSessionUrl(sessionId)}/chunks/${chunkIndex}`;
 
+const entryAccent = (entry: FileEntry) => {
+  if (entry.type === "folder") {
+    return "folder";
+  }
+
+  if (VIDEO_PATTERN.test(entry.name)) {
+    return "video";
+  }
+
+  if (AUDIO_PATTERN.test(entry.name)) {
+    return "audio";
+  }
+
+  if (IMAGE_PATTERN.test(entry.name)) {
+    return "image";
+  }
+
+  if (TEXT_PATTERN.test(entry.name)) {
+    return "text";
+  }
+
+  return "file";
+};
+
+const entryGlyph = (entry: FileEntry) => {
+  const accent = entryAccent(entry);
+
+  if (accent === "folder") {
+    return "DIR";
+  }
+
+  if (accent === "video") {
+    return "VID";
+  }
+
+  if (accent === "audio") {
+    return "AUD";
+  }
+
+  if (accent === "image") {
+    return "IMG";
+  }
+
+  if (accent === "text") {
+    return "TXT";
+  }
+
+  return "DOC";
+};
+
+const entryKind = (entry: FileEntry) => {
+  if (entry.type === "folder") {
+    return "Folder";
+  }
+
+  const extension = entry.name.split(".").pop();
+  return extension && extension !== entry.name ? extension.toUpperCase() : "File";
+};
+
+const storageBreakdown = (entries: FileEntry[]) => {
+  const totals = entries.reduce(
+    (total, entry) => {
+      if (entry.type === "folder") {
+        total.folders += 1;
+        return total;
+      }
+
+      total.used += entry.size;
+
+      if (VIDEO_PATTERN.test(entry.name)) {
+        total.video += entry.size;
+      } else if (AUDIO_PATTERN.test(entry.name)) {
+        total.audio += entry.size;
+      } else {
+        total.other += entry.size;
+      }
+
+      return total;
+    },
+    { audio: 0, folders: 0, other: 0, used: 0, video: 0 }
+  );
+
+  const largestCategory = Math.max(totals.video, totals.audio, totals.other, 1);
+
+  return {
+    ...totals,
+    audioShare: Math.max(6, (totals.audio / largestCategory) * 100),
+    otherShare: Math.max(6, (totals.other / largestCategory) * 100),
+    videoShare: Math.max(6, (totals.video / largestCategory) * 100)
+  };
+};
+
 const readStoredUploadSessions = (): StoredUploadSession[] => {
   try {
     return JSON.parse(window.localStorage.getItem(UPLOAD_SESSION_STORAGE_KEY) ?? "[]") as StoredUploadSession[];
@@ -131,7 +247,64 @@ const renderBreadcrumbs = (currentPath: string) => {
     .join("");
 };
 
-const renderEntryRows = (entries: FileEntry[], selectedPath: string | null) => {
+const renderSections = (activeSection: FileSectionId, entries: FileEntry[]) =>
+  FILE_SECTIONS.map((section) => {
+    const count =
+      section.id === "recent"
+        ? entries.slice().sort((a, b) => Date.parse(b.modifiedAt) - Date.parse(a.modifiedAt)).slice(0, 8).length
+        : section.id === "files"
+          ? entries.length
+          : entries.filter((entry) => entry.path === section.path || entry.path.startsWith(`${section.path}/`)).length;
+
+    return `
+      <button
+        class="file-section ${section.id === activeSection ? "active" : ""}"
+        type="button"
+        data-file-section="${section.id}"
+      >
+        <span class="file-section-icon">${section.marker}</span>
+        <span>
+          <strong>${escapeHtml(section.label)}</strong>
+          <small>${escapeHtml(section.detail)}</small>
+        </span>
+        <em>${count}</em>
+      </button>
+    `;
+  }).join("");
+
+const renderStorage = (entries: FileEntry[]) => {
+  const storage = storageBreakdown(entries);
+
+  return `
+    <section class="file-storage" data-file-storage>
+      <div>
+        <p class="eyebrow">Storage</p>
+        <strong>${formatSize(storage.used)}</strong>
+        <span>visible in this folder</span>
+      </div>
+      <div class="file-storage-ring" aria-hidden="true">
+        <span>${entries.length}</span>
+        <small>items</small>
+      </div>
+      <dl>
+        <div style="--storage-share: ${storage.videoShare}%">
+          <dt>Video</dt>
+          <dd>${formatSize(storage.video)}</dd>
+        </div>
+        <div style="--storage-share: ${storage.audioShare}%">
+          <dt>Audio</dt>
+          <dd>${formatSize(storage.audio)}</dd>
+        </div>
+        <div style="--storage-share: ${storage.otherShare}%">
+          <dt>Other</dt>
+          <dd>${formatSize(storage.other)}</dd>
+        </div>
+      </dl>
+    </section>
+  `;
+};
+
+const renderEntryCards = (entries: FileEntry[], selectedPath: string | null) => {
   if (entries.length === 0) {
     return `
       <div class="file-empty">
@@ -145,16 +318,19 @@ const renderEntryRows = (entries: FileEntry[], selectedPath: string | null) => {
     .map(
       (entry) => `
         <button
-          class="file-row ${entry.path === selectedPath ? "active" : ""}"
+          class="file-card ${entry.path === selectedPath ? "active" : ""}"
           type="button"
           data-entry-path="${escapeHtml(entry.path)}"
           data-entry-type="${entry.type}"
         >
-          <span class="file-icon">${entry.type === "folder" ? "F" : "D"}</span>
+          <span class="file-card-art ${entryAccent(entry)}">
+            <span>${entryGlyph(entry)}</span>
+          </span>
           <span class="file-name">${escapeHtml(entry.name)}</span>
-          <span class="file-kind">${entry.type}</span>
-          <span class="file-size">${entry.type === "folder" ? "--" : formatSize(entry.size)}</span>
-          <span class="file-modified">${new Date(entry.modifiedAt).toLocaleString()}</span>
+          <span class="file-card-meta">
+            ${entryKind(entry)} ${entry.type === "folder" ? "folder" : `· ${formatSize(entry.size)}`}
+          </span>
+          <span class="file-card-date">${new Date(entry.modifiedAt).toLocaleDateString()}</span>
         </button>
       `
     )
@@ -166,34 +342,47 @@ const renderPreview = (entry: FileEntry | null, preview: string | null) => {
     return `
       <div class="file-preview-empty">
         <strong>Select an item</strong>
-        <span>Folders open in the list. Files show preview and actions here.</span>
+        <span>Cards show preview, metadata, and actions here.</span>
       </div>
     `;
   }
+
+  const modified = new Date(entry.modifiedAt).toLocaleString();
+  const location = parentPath(entry.path);
 
   if (entry.type === "folder") {
     return `
       <div class="file-preview-card">
-        <span class="file-preview-icon">F</span>
+        <div class="file-preview-art folder">
+          <span>DIR</span>
+        </div>
         <h3>${escapeHtml(entry.name)}</h3>
-        <p>Folder</p>
+        <dl class="file-metadata">
+          <div><dt>Type</dt><dd>Folder</dd></div>
+          <div><dt>Location</dt><dd>/${escapeHtml(location)}</dd></div>
+          <div><dt>Modified</dt><dd>${modified}</dd></div>
+        </dl>
       </div>
     `;
   }
 
-  const isImage = /\.(gif|jpe?g|png|svg|webp)$/i.test(entry.name);
-  const isText = /\.(css|html|js|json|md|txt)$/i.test(entry.name);
+  const isImage = IMAGE_PATTERN.test(entry.name);
+  const isText = TEXT_PATTERN.test(entry.name);
 
   return `
     <div class="file-preview-card">
-      <span class="file-preview-icon">D</span>
-      <h3>${escapeHtml(entry.name)}</h3>
-      <p>${formatSize(entry.size)}</p>
       ${
         isImage
           ? `<img class="file-preview-image" src="${fileUrl("read", entry.path)}" alt="${escapeHtml(entry.name)}" />`
-          : ""
+          : `<div class="file-preview-art ${entryAccent(entry)}"><span>${entryGlyph(entry)}</span></div>`
       }
+      <h3>${escapeHtml(entry.name)}</h3>
+      <dl class="file-metadata">
+        <div><dt>Type</dt><dd>${entryKind(entry)}</dd></div>
+        <div><dt>Size</dt><dd>${formatSize(entry.size)}</dd></div>
+        <div><dt>Location</dt><dd>/${escapeHtml(location)}</dd></div>
+        <div><dt>Modified</dt><dd>${modified}</dd></div>
+      </dl>
       ${
         isText && preview !== null
           ? `<pre class="file-preview-text">${escapeHtml(preview)}</pre>`
@@ -206,26 +395,49 @@ const renderPreview = (entry: FileEntry | null, preview: string | null) => {
 
 export function renderFileBrowserShell() {
   return `
-    <section class="file-browser" data-file-browser>
-      <header class="file-toolbar">
+    <section class="file-browser" data-file-browser tabindex="0" aria-label="Files app">
+      <header class="file-app-bar">
         <div>
-          <p class="eyebrow">Local Content</p>
-          <h3>Files</h3>
+          <p class="eyebrow">Nebula Local Content</p>
+          <h2>Files</h2>
         </div>
-        <div class="file-actions">
-          <button type="button" data-file-action="new-folder">New Folder</button>
-          <button type="button" data-file-action="new-text">New Text</button>
-          <button type="button" data-file-action="upload">Upload</button>
-          <button type="button" data-file-action="rename" disabled>Rename</button>
-          <button type="button" data-file-action="download" disabled>Download</button>
-          <button type="button" data-file-action="delete" disabled>Delete</button>
-          <input class="file-upload-input" type="file" data-file-upload multiple hidden />
-        </div>
+        <button class="file-home-button" type="button" data-file-close>Back to Home</button>
       </header>
-      <nav class="file-breadcrumbs" data-file-breadcrumbs></nav>
       <div class="file-browser-layout">
-        <section class="file-list" data-file-list></section>
-        <aside class="file-preview" data-file-preview></aside>
+        <aside class="file-sidebar">
+          <header class="file-sidebar-header">
+            <p class="eyebrow">Local Content</p>
+            <h3>Files</h3>
+          </header>
+          <nav class="file-sections" data-file-sections></nav>
+          <div data-file-storage></div>
+        </aside>
+        <main class="file-stage">
+          <header class="file-toolbar">
+            <div>
+              <p class="eyebrow">Browse</p>
+              <h3 data-file-heading>All Files</h3>
+            </div>
+            <div class="file-toolbar-side">
+              <nav class="file-breadcrumbs" data-file-breadcrumbs></nav>
+              <span class="file-sort">Sort: Name</span>
+            </div>
+          </header>
+          <section class="file-list" data-file-list></section>
+        </main>
+        <aside class="file-preview">
+          <div data-file-preview></div>
+          <div class="file-actions">
+            <button type="button" data-file-action="open" disabled>Open</button>
+            <button type="button" data-file-action="new-folder">New Folder</button>
+            <button type="button" data-file-action="new-text">New Text</button>
+            <button type="button" data-file-action="upload">Upload</button>
+            <button type="button" data-file-action="rename" disabled>Rename</button>
+            <button type="button" data-file-action="download" disabled>Download</button>
+            <button type="button" data-file-action="delete" disabled>Delete</button>
+            <input class="file-upload-input" type="file" data-file-upload multiple hidden />
+          </div>
+        </aside>
       </div>
       <div class="file-upload-progress" data-file-upload-progress hidden>
         <div>
@@ -246,6 +458,9 @@ export function renderFileBrowserShell() {
 
 export function bindFileBrowser(container: ParentNode) {
   const browser = container.querySelector<HTMLElement>("[data-file-browser]");
+  const sections = container.querySelector<HTMLElement>("[data-file-sections]");
+  const storage = container.querySelector<HTMLElement>("[data-file-storage]");
+  const heading = container.querySelector<HTMLElement>("[data-file-heading]");
   const breadcrumbs = container.querySelector<HTMLElement>("[data-file-breadcrumbs]");
   const list = container.querySelector<HTMLElement>("[data-file-list]");
   const preview = container.querySelector<HTMLElement>("[data-file-preview]");
@@ -257,7 +472,7 @@ export function bindFileBrowser(container: ParentNode) {
   const uploadMeter = container.querySelector<HTMLProgressElement>("[data-file-upload-meter]");
   const uploadCancel = container.querySelector<HTMLButtonElement>("[data-file-upload-cancel]");
 
-  if (!browser || !breadcrumbs || !list || !preview || !status || !uploadInput || !uploadProgress || !uploadTitle || !uploadDetail || !uploadMeter || !uploadCancel) {
+  if (!browser || !sections || !storage || !heading || !breadcrumbs || !list || !preview || !status || !uploadInput || !uploadProgress || !uploadTitle || !uploadDetail || !uploadMeter || !uploadCancel) {
     return;
   }
 
@@ -266,12 +481,15 @@ export function bindFileBrowser(container: ParentNode) {
   let currentPath = "";
   let entries: FileEntry[] = [];
   let selectedPath: string | null = null;
+  let activeSection: FileSectionId = "files";
   let dragDepth = 0;
   let activeUpload: XMLHttpRequest | null = null;
   let activeUploadSessionId: string | null = null;
   let uploadCancelled = false;
 
   const selectedEntry = () => entries.find((entry) => entry.path === selectedPath) ?? null;
+  const selectedIndex = () => Math.max(0, entries.findIndex((entry) => entry.path === selectedPath));
+  const activeSectionConfig = () => FILE_SECTIONS.find((section) => section.id === activeSection) ?? FILE_SECTIONS[0];
 
   const setStatus = (message: string) => {
     status.textContent = message;
@@ -279,7 +497,7 @@ export function bindFileBrowser(container: ParentNode) {
 
   const updateActionState = () => {
     const entry = selectedEntry();
-    browser.querySelectorAll<HTMLButtonElement>("[data-file-action='rename'], [data-file-action='delete']").forEach((button) => {
+    browser.querySelectorAll<HTMLButtonElement>("[data-file-action='open'], [data-file-action='rename'], [data-file-action='delete']").forEach((button) => {
       button.disabled = !entry;
     });
     browser.querySelector<HTMLButtonElement>("[data-file-action='download']")!.disabled = !entry || entry.type !== "file";
@@ -289,7 +507,7 @@ export function bindFileBrowser(container: ParentNode) {
     const entry = selectedEntry();
     let content: string | null = null;
 
-    if (entry?.type === "file" && /\.(css|html|js|json|md|txt)$/i.test(entry.name)) {
+    if (entry?.type === "file" && TEXT_PATTERN.test(entry.name)) {
       content = await fetch(fileUrl("read", entry.path)).then((response) => response.text()).catch(() => null);
     }
 
@@ -298,8 +516,12 @@ export function bindFileBrowser(container: ParentNode) {
   };
 
   const render = async () => {
+    const section = activeSectionConfig();
+    heading.textContent = section.id === "files" ? "All Files" : section.label;
+    sections.innerHTML = renderSections(activeSection, entries);
+    storage.innerHTML = renderStorage(entries);
     breadcrumbs.innerHTML = renderBreadcrumbs(currentPath);
-    list.innerHTML = renderEntryRows(entries, selectedPath);
+    list.innerHTML = renderEntryCards(entries, selectedPath);
     await loadPreview();
   };
 
@@ -307,9 +529,41 @@ export function bindFileBrowser(container: ParentNode) {
     const listing = await api<FileListing>(`/api/files?path=${encodeURIComponent(path)}`);
     currentPath = listing.path;
     entries = listing.entries;
-    selectedPath = null;
+    selectedPath = entries[0]?.path ?? null;
     setStatus(`Viewing /${currentPath}`);
     await render();
+  };
+
+  const loadSection = async (section: FileSection) => {
+    try {
+      await load(section.path);
+    } catch (error) {
+      await load("");
+      setStatus(`${section.label} folder is not available yet. Showing /${currentPath}`);
+    }
+  };
+
+  const openEntry = async (entry = selectedEntry()) => {
+    if (!entry) {
+      return;
+    }
+
+    if (entry.type === "folder") {
+      await load(entry.path);
+      return;
+    }
+
+    window.open(fileUrl("download", entry.path), "_blank");
+  };
+
+  const moveSelection = (delta: number) => {
+    if (entries.length === 0) {
+      return;
+    }
+
+    const nextIndex = (selectedIndex() + delta + entries.length) % entries.length;
+    selectedPath = entries[nextIndex].path;
+    void render();
   };
 
   const setUploadProgress = (title: string, detail: string, percent: number) => {
@@ -584,19 +838,27 @@ export function bindFileBrowser(container: ParentNode) {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-file-path]");
 
     if (button) {
+      activeSection = "files";
       void load(button.dataset.filePath ?? "");
     }
+  });
+
+  sections.addEventListener("click", (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-file-section]");
+
+    if (!button) {
+      return;
+    }
+
+    activeSection = (button.dataset.fileSection as FileSectionId | undefined) ?? "files";
+    const section = activeSectionConfig();
+    void loadSection(section);
   });
 
   list.addEventListener("click", (event) => {
     const row = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-entry-path]");
 
     if (!row) {
-      return;
-    }
-
-    if (row.dataset.entryType === "folder") {
-      void load(row.dataset.entryPath ?? "");
       return;
     }
 
@@ -607,9 +869,41 @@ export function bindFileBrowser(container: ParentNode) {
   list.addEventListener("dblclick", (event) => {
     const row = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-entry-path]");
 
-    if (row?.dataset.entryType === "folder") {
-      void load(row.dataset.entryPath ?? "");
+    if (row) {
+      const entry = entries.find((candidate) => candidate.path === row.dataset.entryPath);
+      void openEntry(entry ?? null);
     }
+  });
+
+  browser.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      event.preventDefault();
+      event.stopPropagation();
+      moveSelection(1);
+    }
+
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      event.preventDefault();
+      event.stopPropagation();
+      moveSelection(-1);
+    }
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.stopPropagation();
+      void openEntry();
+    }
+
+    if (event.key === "Escape" && currentPath) {
+      event.preventDefault();
+      event.stopPropagation();
+      activeSection = "files";
+      void load(parentPath(currentPath));
+    }
+  });
+
+  browser.querySelector("[data-file-action='open']")?.addEventListener("click", () => {
+    void openEntry();
   });
 
   browser.querySelector("[data-file-action='new-folder']")?.addEventListener("click", async () => {
@@ -736,5 +1030,5 @@ export function bindFileBrowser(container: ParentNode) {
     await load();
   });
 
-  void load();
+  void load().then(() => browser.focus({ preventScroll: true }));
 }
