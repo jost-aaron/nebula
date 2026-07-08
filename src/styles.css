@@ -3836,6 +3836,78 @@ h1 {
   background: rgba(0, 0, 0, 0.26);
 }
 
+.arcade-input-diagnostics {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 14px;
+}
+
+.arcade-input-diagnostics__header,
+.arcade-input-diagnostics__device-main,
+.arcade-input-diagnostics__metrics,
+.arcade-input-diagnostics__state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.arcade-input-diagnostics__header {
+  justify-content: space-between;
+}
+
+.arcade-input-diagnostics__header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.arcade-input-diagnostics__header span,
+.arcade-input-diagnostics__empty span,
+.arcade-input-diagnostics__device-main span,
+.arcade-input-diagnostics__metrics span,
+.arcade-input-diagnostics__state span {
+  color: #aeb8c4;
+  font-size: 0.78rem;
+}
+
+.arcade-input-diagnostics__list {
+  display: grid;
+  gap: 10px;
+}
+
+.arcade-input-diagnostics__empty,
+.arcade-input-diagnostics__device {
+  display: grid;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.26);
+}
+
+.arcade-input-diagnostics__device-main,
+.arcade-input-diagnostics__state {
+  min-width: 0;
+  justify-content: space-between;
+}
+
+.arcade-input-diagnostics__device-main strong,
+.arcade-input-diagnostics__state span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.arcade-input-diagnostics__metrics,
+.arcade-input-diagnostics__state {
+  flex-wrap: wrap;
+}
+
+.arcade-input-diagnostics__metrics span {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
 .app-surface {
   position: fixed;
   z-index: 5;

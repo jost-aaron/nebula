@@ -14,14 +14,14 @@ flowchart TD
   Main["src/main.ts"]
   Registry["src/apps.ts"]
   Diagnostics["src/diagnostics"]
-  Arcade["src/arcade (planned)"]
+  Arcade["src/arcade"]
   Cinema["src/cinema"]
   Studio["src/studio"]
   Settings["src/settings"]
   Search["src/search"]
   Library["src/library"]
   Files["src/files"]
-  ArcadeApi["server/arcade.mjs (planned)"]
+  ArcadeApi["server/arcade.mjs"]
   Moonlight["Moonlight sidecar/plugin (future)"]
   Server["server/dev.mjs"]
   Content["content/"]
@@ -82,10 +82,10 @@ flowchart TD
 - Collects renderer, display, runtime, performance, and app diagnostics.
 - Keeps browser capability reads separate from shell rendering.
 
-`src/arcade/` (planned)
+`src/arcade/`
 
-- Will render the Arcade host/session/control surface.
-- Should keep host cards, mock pairing/connection states, stream settings,
+- Renders the Arcade host/session/control prototype surface.
+- Keeps host cards, mock pairing/connection states, stream settings,
   controller diagnostics, and sidecar-unavailable messaging out of
   `src/main.ts`.
 - Should not claim real Moonlight streaming until a native sidecar/plugin or
@@ -161,9 +161,9 @@ flowchart TD
 
 - Provides shared local media scan and metadata helpers for Cinema and Studio.
 
-`server/arcade.mjs` (planned)
+`server/arcade.mjs`
 
-- Will provide the Arcade API facade for hosts, pairing, capabilities,
+- Provides the mock Arcade API facade for hosts, capabilities,
   sessions, and lifecycle events.
 - Should return mock/dev state while the Moonlight bridge is unavailable.
 - Later talks to a native Moonlight sidecar/plugin rather than embedding

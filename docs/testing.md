@@ -81,13 +81,13 @@ Check:
 - Settings shows Renderer, Display, Performance, Apps, GPU Limits, and Runtime
   diagnostics.
 
-## Arcade Planned Surface Smoke Test
+## Arcade Mock Surface Smoke Test
 
-Arcade is currently planned work. Use this checklist after the first Arcade app
-surface lands; until then, the app tile may remain a placeholder and real
-Moonlight streaming should not be expected.
+Arcade currently has a mock host/session surface and API facade. Real Moonlight
+streaming should not be expected until a native sidecar/plugin or equivalent
+bridge exists.
 
-Expected once implemented:
+Expected:
 
 - Arcade appears in the Applications strip and launches through the same
   app-first full-screen surface as other apps.

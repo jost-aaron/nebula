@@ -1,4 +1,9 @@
 import { createElement, icons } from "lucide";
+import {
+  readArcadeInputDiagnostics,
+  renderArcadeInputDiagnosticsPanel,
+  type ArcadeInputDiagnosticsSnapshot
+} from "./inputDiagnostics";
 
 type ArcadeHostStatus = "add-host" | "pairing" | "paired" | "connecting" | "streaming" | "disconnected";
 
@@ -19,6 +24,7 @@ interface ArcadeHost {
 interface ArcadeState {
   activeHostId: string;
   hosts: ArcadeHost[];
+  inputDiagnostics: ArcadeInputDiagnosticsSnapshot;
 }
 
 const statusCopy: Record<ArcadeHostStatus, { label: string; tone: string }> = {
@@ -133,7 +139,7 @@ const renderSessionPreview = (host: ArcadeHost) => {
   `;
 };
 
-const renderSettingsPanel = (host: ArcadeHost) => `
+const renderSettingsPanel = (host: ArcadeHost, inputDiagnostics: ArcadeInputDiagnosticsSnapshot) => `
   <aside class="arcade-settings-panel" aria-label="Stream settings">
     <header>
       <p class="eyebrow">Stream Settings</p>
@@ -165,6 +171,7 @@ const renderSettingsPanel = (host: ArcadeHost) => `
         <strong>Native bridge later</strong>
       </span>
     </div>
+    ${renderArcadeInputDiagnosticsPanel(inputDiagnostics)}
   </aside>
 `;
 
@@ -223,7 +230,7 @@ const renderArcadeBody = (state: ArcadeState) => {
         ${renderTimeline(activeHost.status)}
         ${renderActions(activeHost)}
       </section>
-      ${renderSettingsPanel(activeHost)}
+      ${renderSettingsPanel(activeHost, state.inputDiagnostics)}
     </main>
   `;
 };
@@ -261,10 +268,12 @@ export const bindArcadeView = (container: ParentNode, onClose: () => void) => {
 
   const state: ArcadeState = {
     activeHostId: initialHosts[0].id,
-    hosts: initialHosts.map((host) => ({ ...host }))
+    hosts: initialHosts.map((host) => ({ ...host })),
+    inputDiagnostics: readArcadeInputDiagnostics()
   };
 
   const render = () => {
+    state.inputDiagnostics = readArcadeInputDiagnostics();
     content.innerHTML = renderArcadeBody(state);
   };
 
