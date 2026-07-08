@@ -32,11 +32,11 @@ export const dashboardApps: DashboardApp[] = [
   {
     id: "studio",
     name: "Studio",
-    kind: "developer",
+    kind: "media",
     status: "ready",
-    accent: "#72f29d",
-    icon: "Cpu",
-    description: "Developer tools, diagnostics, and WebGPU capability probes."
+    accent: "#f2b872",
+    icon: "AudioLines",
+    description: "Dedicated music library for local MP3, FLAC, M4A, WAV, AAC, and OGG tracks."
   },
   {
     id: "files",

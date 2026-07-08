@@ -21,8 +21,10 @@ The current app includes:
 - Shared Settings/Diagnostics app.
 - Files app for ignored local content under `content/`, with a Variant 2
   console-style layout and iOS-compatible API targeting.
-- Cinema app with a dedicated full-screen surface, browsing-first library,
+- Cinema app with a dedicated full-screen video surface, browsing-first library,
   title details, watchlist, chapters, next-up rails, and lazy playback.
+- Studio app with a dedicated full-screen music surface, searchable audio
+  library, queue, selected-track summary, and native audio playback.
 
 The latest user direction is to keep building toward a modern console/Plex-like
 media dashboard.
@@ -75,17 +77,24 @@ Files:
 
 Cinema:
 
-- Uses `/api/cinema/library` to scan `content/`.
+- Uses `/api/cinema/library` to scan `content/` for video files.
 - Uses `/api/cinema/media?path=<path>` for range-enabled playback.
 - Uses `PATCH /api/cinema/watchlist` for persistent watchlist state.
 - Categories are heuristic:
-  - Audio files go to Music.
   - `TV`, `Shows`, `Series`, `S01E01`, or `1x01` video files go to TV Shows.
   - Other videos go to Movies.
 - Library and Watchlist open as browsing-first grids. Play/title detail UI stays
   hidden until the user selects a title.
 - Title detail includes preview, Play, watchlist toggle, metadata, server rows,
   chapters, next-up, and modal sheets for More, chapters, and queue.
+
+Studio:
+
+- Uses `/api/music/library` to scan `content/` for audio files.
+- Uses `/api/music/media?path=<path>` for range-enabled native audio playback.
+- Supports MP3, FLAC, M4A, WAV, AAC, and OGG files through the local content
+  policy.
+- Shows local audio in Studio, not Cinema.
 
 iOS:
 
@@ -108,10 +117,11 @@ Read these in order:
 2. `README.md`
 3. `docs/architecture.md`
 4. `docs/cinema.md`
-5. `docs/files.md`
-6. `docs/mobile-clients.md`
-7. `docs/testing.md`
-8. `docs/development.md`
+5. `docs/studio.md`
+6. `docs/files.md`
+7. `docs/mobile-clients.md`
+8. `docs/testing.md`
+9. `docs/development.md`
 
 ## Recent Verification
 

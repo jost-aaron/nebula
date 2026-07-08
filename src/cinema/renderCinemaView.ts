@@ -22,8 +22,7 @@ interface CinemaServerInfo {
 
 const categories: Array<{ id: CinemaCategory; label: string; empty: string }> = [
   { empty: "Upload movie files with Files.", id: "movies", label: "Movies" },
-  { empty: "Put episode files in a TV, Shows, or Series folder.", id: "tv", label: "TV Shows" },
-  { empty: "Upload MP3, M4A, FLAC, WAV, AAC, or OGG files.", id: "music", label: "Music" }
+  { empty: "Put episode files in a TV, Shows, or Series folder.", id: "tv", label: "TV Shows" }
 ];
 
 const chapterMarkers = [
@@ -64,7 +63,7 @@ const parseTimeLabel = (time: string) =>
     .map((part) => Number(part))
     .reduce((total, part) => total * 60 + (Number.isFinite(part) ? part : 0), 0);
 
-const estimateRuntime = (entry: CinemaEntry) => (entry.mediaKind === "audio" ? "Audio file" : "Runtime pending");
+const estimateRuntime = (_entry: CinemaEntry) => "Runtime pending";
 
 const categoryLabel = (category: CinemaCategory) =>
   categories.find((candidate) => candidate.id === category)?.label ?? "Movies";
@@ -73,11 +72,6 @@ const searchUrl = (query: string) => `https://www.google.com/search?q=${encodeUR
 
 const metadataLine = (entry: CinemaEntry) =>
   [entry.releaseYear, entry.rating, entry.genres.slice(0, 3).join(", "), estimateRuntime(entry)].filter(Boolean).join(" / ");
-
-const formatAudioFormat = (entry: CinemaEntry) => {
-  const extension = entry.name.split(".").pop()?.toUpperCase();
-  return extension ? `${extension} audio` : "Audio file";
-};
 
 const currentServerInfo = (): CinemaServerInfo => ({
   address: getEffectiveApiBaseUrl() || "No server URL",
@@ -88,8 +82,8 @@ const currentServerInfo = (): CinemaServerInfo => ({
 });
 
 const renderPosterFallback = (entry: CinemaEntry) => `
-  <div class="cinema-poster-fallback ${entry.mediaKind === "audio" ? "audio" : ""}">
-    <span>${escapeHtml(entry.mediaKind === "audio" ? "M" : entry.title.slice(0, 1).toUpperCase())}</span>
+  <div class="cinema-poster-fallback">
+    <span>${escapeHtml(entry.title.slice(0, 1).toUpperCase())}</span>
   </div>
 `;
 
@@ -157,8 +151,8 @@ const renderServerCard = (server: CinemaServerInfo, compact = false) => `
 const renderPlaybackSettings = (entry: CinemaEntry) => `
   <section class="cinema-playback-settings" aria-label="Playback settings">
     <button type="button"><span>${renderCinemaIcon("BadgeCheck")} Quality</span><strong>Original Quality</strong>${renderCinemaIcon("ChevronRight", "cinema-chevron-icon")}</button>
-    <button type="button"><span>${renderCinemaIcon("Languages")} Audio</span><strong>${entry.mediaKind === "audio" ? "Default Track" : "English (Source)"}</strong>${renderCinemaIcon("ChevronRight", "cinema-chevron-icon")}</button>
-    <button type="button"><span>${renderCinemaIcon("Captions")} Subtitles</span><strong>${entry.mediaKind === "audio" ? "Unavailable" : "Off"}</strong>${renderCinemaIcon("ChevronRight", "cinema-chevron-icon")}</button>
+    <button type="button"><span>${renderCinemaIcon("Languages")} Audio</span><strong>English (Source)</strong>${renderCinemaIcon("ChevronRight", "cinema-chevron-icon")}</button>
+    <button type="button"><span>${renderCinemaIcon("Captions")} Subtitles</span><strong>Off</strong>${renderCinemaIcon("ChevronRight", "cinema-chevron-icon")}</button>
   </section>
 `;
 
@@ -167,12 +161,6 @@ const renderWatchlistButton = (entry: CinemaEntry) => `
     ${renderCinemaIcon(entry.watchlisted ? "Check" : "Plus")}
     ${entry.watchlisted ? "In Watchlist" : "Add to Watchlist"}
   </button>
-`;
-
-const renderAlbumArt = (entry: CinemaEntry) => `
-  <div class="cinema-album-art"${posterStyle(entry)}>
-    ${entry.posterUrl ? "" : renderPosterFallback(entry)}
-  </div>
 `;
 
 const renderPlaybackControls = (entry: CinemaEntry, server: CinemaServerInfo) => `
@@ -200,7 +188,7 @@ const renderCinemaCards = (entries: CinemaEntry[], category: CinemaCategory) => 
     .map(
       (entry) => `
         <button class="cinema-card" type="button" data-cinema-path="${escapeHtml(entry.path)}">
-          <span class="cinema-poster ${entry.mediaKind === "audio" ? "audio" : ""}" data-cinema-poster="${escapeHtml(entry.path)}"${posterStyle(entry)}>
+          <span class="cinema-poster" data-cinema-poster="${escapeHtml(entry.path)}"${posterStyle(entry)}>
             ${entry.posterUrl ? "" : renderPosterFallback(entry)}
           </span>
           <span class="cinema-card-copy">
@@ -263,7 +251,7 @@ const renderNextUpQueue = (entries: CinemaEntry[], selected: CinemaEntry | null)
                       <span>
                         <small>${escapeHtml(entry.category === "tv" ? "S1 / E2" : categoryLabel(entry.category))}</small>
                         <strong>${escapeHtml(entry.title)}</strong>
-                        <small>${entry.mediaKind === "audio" ? "Track ready" : "22:06"}</small>
+                        <small>22:06</small>
                       </span>
                     </button>
                   `
@@ -285,7 +273,7 @@ const renderQueueCards = (entries: CinemaEntry[]) =>
           <span>
             <small>${escapeHtml(categoryLabel(entry.category))}</small>
             <strong>${escapeHtml(entry.title)}</strong>
-            <small>${entry.mediaKind === "audio" ? "Track ready" : metadataLine(entry) || "Ready to play"}</small>
+            <small>${metadataLine(entry) || "Ready to play"}</small>
           </span>
         </button>
       `
@@ -353,7 +341,7 @@ const renderWatchlistView = (entries: CinemaEntry[], query: string) => {
               : `
                 <div class="cinema-empty">
                   <strong>Your watchlist is empty</strong>
-                  <span>Add movies, shows, or music from Library.</span>
+                  <span>Add movies or shows from Library.</span>
                 </div>
               `
           }
@@ -364,10 +352,6 @@ const renderWatchlistView = (entries: CinemaEntry[], query: string) => {
 };
 
 const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[]) => `
-  ${entry.mediaKind === "audio" ? renderAudioTitleHero(entry, entries) : renderVideoTitleHero(entry, entries)}
-`;
-
-const renderVideoTitleHero = (entry: CinemaEntry, entries: CinemaEntry[]) => `
   <main class="cinema-title-detail" data-cinema-view="title-detail">
     <section class="cinema-player-layout">
       <div class="cinema-player-frame" data-cinema-backdrop="${escapeHtml(entry.path)}"${posterStyle(entry)}>
@@ -389,7 +373,7 @@ const renderVideoTitleHero = (entry: CinemaEntry, entries: CinemaEntry[]) => `
         ${renderServerCard(currentServerInfo(), true)}
         ${renderPlaybackSettings(entry)}
         <div class="cinema-meta-list">
-          <span>Type <strong>${entry.mediaKind === "audio" ? "Music" : "Video"}</strong></span>
+          <span>Type <strong>Video</strong></span>
           <span>Year <strong>${escapeHtml(entry.releaseYear || "Not set")}</strong></span>
           <span>Rating <strong>${escapeHtml(entry.rating || "Not set")}</strong></span>
           <span>Genres <strong>${escapeHtml(entry.genres.join(", ") || "Not set")}</strong></span>
@@ -400,51 +384,6 @@ const renderVideoTitleHero = (entry: CinemaEntry, entries: CinemaEntry[]) => `
     </section>
     <section class="cinema-detail-lower">
       ${renderChapterStrip(entry)}
-      ${renderNextUpQueue(entries, entry)}
-    </section>
-  </main>
-`;
-
-const renderAudioTitleHero = (entry: CinemaEntry, entries: CinemaEntry[]) => `
-  <main class="cinema-title-detail cinema-music-detail" data-cinema-view="title-detail">
-    <section class="cinema-player-layout cinema-music-layout">
-      <div class="cinema-music-surface">
-        ${renderAlbumArt(entry)}
-        <div class="cinema-music-copy">
-          <p class="eyebrow">${escapeHtml(categoryLabel(entry.category))}</p>
-          <h2>${escapeHtml(entry.title)}</h2>
-          <p>${escapeHtml(entry.tagline || entry.summary || "Ready from your local Music library.")}</p>
-          <div class="cinema-music-controls">
-            <button type="button" data-cinema-action="play">${renderCinemaIcon("Play")} Play</button>
-            ${renderWatchlistButton(entry)}
-            <button type="button" data-cinema-action="more">${renderCinemaIcon("MoreHorizontal")} More</button>
-          </div>
-        </div>
-      </div>
-      <aside class="cinema-title-panel">
-        <button class="cinema-back-command" type="button" data-cinema-action="library">${renderCinemaIcon("ArrowLeft")} Back to Library</button>
-        <p class="eyebrow">Track Details</p>
-        <h2>${escapeHtml(entry.title)}</h2>
-        <p class="cinema-title-meta">${escapeHtml(metadataLine(entry) || `${formatAudioFormat(entry)} / ${formatSize(entry.size)}`)}</p>
-        <p>${escapeHtml(entry.summary || "No notes have been added for this track yet.")}</p>
-        <div class="cinema-actions">
-          <button type="button" data-cinema-action="play">${renderCinemaIcon("Play")} Play</button>
-          ${renderWatchlistButton(entry)}
-          <button type="button" data-cinema-action="more">${renderCinemaIcon("MoreHorizontal")} More</button>
-        </div>
-        <button class="cinema-edit-command" type="button" data-cinema-action="edit">${renderCinemaIcon("Pencil")} Edit Details</button>
-        ${renderServerCard(currentServerInfo(), true)}
-        <div class="cinema-meta-list">
-          <span>Type <strong>Music</strong></span>
-          <span>Format <strong>${escapeHtml(formatAudioFormat(entry))}</strong></span>
-          <span>Year <strong>${escapeHtml(entry.releaseYear || "Not set")}</strong></span>
-          <span>Genres <strong>${escapeHtml(entry.genres.join(", ") || "Not set")}</strong></span>
-          <span>Artist/Studio <strong>${escapeHtml(entry.studio || "Not set")}</strong></span>
-          <span>File <strong>${escapeHtml(entry.name)}</strong></span>
-        </div>
-      </aside>
-    </section>
-    <section class="cinema-detail-lower cinema-music-lower">
       ${renderNextUpQueue(entries, entry)}
     </section>
   </main>
@@ -467,51 +406,7 @@ const renderVideoPlayerView = (entry: CinemaEntry) => `
   </main>
 `;
 
-const renderAudioPlayerView = (entry: CinemaEntry, entries: CinemaEntry[]) => {
-  const server = currentServerInfo();
-
-  return `
-    <main class="cinema-watch-surface cinema-music-player-view" data-cinema-view="player">
-      <header>
-        <button type="button" data-cinema-action="back-title">Details</button>
-        <div>
-          <p class="eyebrow">Now Playing / Music</p>
-          <h2>${escapeHtml(entry.title)}</h2>
-        </div>
-        <button type="button" data-cinema-action="library">Library</button>
-      </header>
-      <section class="cinema-music-surface">
-        ${renderAlbumArt(entry)}
-        <div class="cinema-music-now">
-          <p class="eyebrow">${escapeHtml(formatAudioFormat(entry))}</p>
-          <h2>${escapeHtml(entry.title)}</h2>
-          <p>${escapeHtml(metadataLine(entry) || `${entry.folder || "Content"} / ${formatSize(entry.size)}`)}</p>
-          <audio class="cinema-audio-player" data-cinema-player controls autoplay preload="metadata" src="${entry.streamUrl}">
-            Your browser cannot play this audio file.
-          </audio>
-          <p class="cinema-player-status" data-cinema-player-status>Starting playback from ${escapeHtml(server.name)}.</p>
-          <div class="cinema-music-controls">
-            <button type="button" data-cinema-action="play">${renderCinemaIcon("Play")} Play</button>
-            ${renderWatchlistButton(entry)}
-            <button type="button" data-cinema-action="more">${renderCinemaIcon("MoreHorizontal")} More</button>
-          </div>
-          <div class="cinema-meta-list">
-            <span>Server <strong>${escapeHtml(server.name)}</strong></span>
-            <span>Status <strong>${server.online ? "Online" : "Offline"}</strong></span>
-            <span>Format <strong>${escapeHtml(formatAudioFormat(entry))}</strong></span>
-            <span>Source <strong>${escapeHtml(entry.folder || "Content root")}</strong></span>
-          </div>
-        </div>
-      </section>
-      <section class="cinema-music-queue">
-        ${renderNextUpQueue(entries, entry)}
-      </section>
-    </main>
-  `;
-};
-
-const renderPlayerView = (entry: CinemaEntry, entries: CinemaEntry[]) =>
-  entry.mediaKind === "audio" ? renderAudioPlayerView(entry, entries) : renderVideoPlayerView(entry);
+const renderPlayerView = (entry: CinemaEntry, _entries: CinemaEntry[]) => renderVideoPlayerView(entry);
 
 const renderServersView = () => {
   const server = currentServerInfo();
@@ -614,9 +509,9 @@ const renderMoreSheet = (entry: CinemaEntry) =>
     `
       <div class="cinema-more-actions">
         <button type="button" data-cinema-action="edit">${renderCinemaIcon("Pencil")} Edit Details</button>
-        <button type="button" data-cinema-action="view-chapters" ${entry.mediaKind !== "video" ? "disabled" : ""}>${renderCinemaIcon("ListVideo")} View Chapters</button>
+        <button type="button" data-cinema-action="view-chapters">${renderCinemaIcon("ListVideo")} View Chapters</button>
         <button type="button" data-cinema-action="view-queue">${renderCinemaIcon("ListOrdered")} View Queue</button>
-        <button type="button" data-cinema-action="identify-nav" ${entry.mediaKind !== "video" ? "disabled" : ""}>${renderCinemaIcon("ScanSearch")} Identify Title</button>
+        <button type="button" data-cinema-action="identify-nav">${renderCinemaIcon("ScanSearch")} Identify Title</button>
       </div>
       <div class="cinema-expanded-meta">
         <span>File <strong>${escapeHtml(entry.name)}</strong></span>
@@ -924,12 +819,11 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
       return;
     }
 
-    const activeEntry = selected;
     view = "player";
     render();
 
     const player = content.querySelector<HTMLMediaElement>("[data-cinema-player]");
-    const stage = content.querySelector<HTMLElement>(".cinema-video-stage, .cinema-music-surface");
+    const stage = content.querySelector<HTMLElement>(".cinema-video-stage");
     const status = content.querySelector<HTMLElement>("[data-cinema-player-status]");
 
     if (player && stage) {
@@ -959,20 +853,8 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
         setStatus("Finished.");
       });
       player.addEventListener("stalled", () => setStatus("Playback is waiting for more data from the server."));
-      player.addEventListener("error", () =>
-        setStatus(
-          activeEntry.mediaKind === "audio"
-            ? "This audio file could not be played here. The browser may not support this format, especially some FLAC files."
-            : "This video could not be played here."
-        )
-      );
+      player.addEventListener("error", () => setStatus("This video could not be played here."));
       renderPlaybackState();
-
-      if (activeEntry.mediaKind === "audio") {
-        void player.play().catch(() => {
-          setStatus("Ready to play. Use the audio controls if autoplay was blocked.");
-        });
-      }
     }
 
     if (fullscreen && player instanceof HTMLVideoElement) {

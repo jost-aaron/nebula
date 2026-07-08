@@ -1,10 +1,10 @@
 # Cinema
 
-Cinema is the local media browser and web player prototype.
+Cinema is the local video browser and web player prototype.
 
 ## Content Source
 
-Cinema scans the ignored `content/` folder for media files. Current supported
+Cinema scans the ignored `content/` folder for video files. Current supported
 video extensions:
 
 - `.mp4`
@@ -12,14 +12,8 @@ video extensions:
 - `.mov`
 - `.webm`
 
-Current supported audio extensions:
-
-- `.mp3`
-- `.m4a`
-- `.flac`
-- `.wav`
-- `.aac`
-- `.ogg`
+Audio files do not appear in Cinema. MP3, FLAC, M4A, WAV, AAC, OGG, and future
+audio library behavior belong to Studio.
 
 Files can be added with the Files app. Large files should use the resumable
 upload path already built into Files.
@@ -35,14 +29,12 @@ src/cinema/renderCinemaView.ts
 It renders:
 
 - An explicit Dashboard/close command in the Cinema header.
-- Plex-like category tabs for Movies, TV Shows, and Music.
-- A searchable local media grid.
-- A persistent watchlist for saved titles.
+- Plex-like category tabs for Movies and TV Shows.
+- A searchable local video grid.
+- A persistent watchlist for saved video titles.
 - A dedicated title details submenu after selecting a title.
-- Separate playback surfaces for video and music.
-- A dedicated music player for audio files with album art/fallback art, native
-  audio controls, server/status information, metadata, and next-up queue.
-- A metadata editor for every imported media item.
+- Lazy video playback with the normal browser video player.
+- A metadata editor for imported video items.
 - Browser-generated preview thumbnails.
 - A prototype visual identification workflow for selected videos.
 
@@ -53,13 +45,6 @@ Thumbnails are generated client-side by loading video metadata, seeking near the
 start of the file, drawing the frame to a canvas, and using that canvas image as
 the poster background. If a browser cannot decode or seek a file, the card keeps
 its fallback poster.
-
-Audio files, including MP3 and FLAC, use the Music path instead of the video
-preview/player frame. Selecting an audio title shows a track-focused detail
-layout without the large black video area. Pressing Play opens a music player
-surface built around a real `<audio data-cinema-player controls autoplay>`
-element. Browser autoplay blocks or unsupported formats, such as FLAC in some
-browsers, are reported in the player status line.
 
 ## Visual Identification Prototype
 
@@ -75,14 +60,8 @@ search-ready queries based on the file title and sampled timestamps. If
 endpoint also calls Google Vision Web Detection and returns candidate web
 entities, visually similar images, and matching pages.
 
-This keeps the first version aligned with the product idea: use a model/search
-provider to gather online evidence from sampled screenshots, then rank candidate
-movie or TV titles by corroborated web results instead of trusting internal
-model knowledge.
+Category assignment is local and heuristic:
 
-Category assignment is currently local and heuristic:
-
-- Audio files go to Music.
 - Video files under `TV`, `Shows`, or `Series` folders, or files named like
   `S01E01` or `1x01`, go to TV Shows.
 - Other video files go to Movies.
@@ -95,9 +74,10 @@ Editable media properties are stored in:
 content/.cinema-metadata.json
 ```
 
-The file is keyed by content-relative media path. Cinema scans real files from
-disk first, then overlays editable fields from the metadata file. The source file
-path, stream URL, size, modified time, and media kind remain derived from disk.
+The file is keyed by content-relative media path. Cinema scans real video files
+from disk first, then overlays editable fields from the metadata file. The
+source file path, stream URL, size, modified time, and media kind remain derived
+from disk.
 
 Current editable fields:
 
@@ -121,12 +101,12 @@ The frontend updates these through:
 
 ## Server Endpoints
 
-- `GET /api/cinema/library` - recursively scan `content/` for supported media.
-- `GET /api/cinema/media?path=<path>` - stream a media file.
-- `HEAD /api/cinema/media?path=<path>` - return media metadata headers.
+- `GET /api/cinema/library` - recursively scan `content/` for supported videos.
+- `GET /api/cinema/media?path=<path>` - stream a video file.
+- `HEAD /api/cinema/media?path=<path>` - return video metadata headers.
 - `POST /api/cinema/identify` - search sampled video frames for candidate titles.
-- `PATCH /api/cinema/metadata` - save editable metadata for a media file.
-- `PATCH /api/cinema/watchlist` - add or remove a media file from the watchlist.
+- `PATCH /api/cinema/metadata` - save editable metadata for a video file.
+- `PATCH /api/cinema/watchlist` - add or remove a video file from the watchlist.
 
 The media endpoint supports HTTP byte ranges and returns `206 Partial Content`
 for range requests. This is required for normal browser video playback behavior,
@@ -134,6 +114,6 @@ especially seeking.
 
 ## Boundaries
 
-Cinema is still a local-library prototype. It does not scrape metadata, persist
-watch progress, transcode files, detect seasons deeply, or create server-side
-thumbnails yet.
+Cinema is still a local video-library prototype. It does not scrape metadata,
+persist watch progress, transcode files, detect seasons deeply, or create
+server-side thumbnails yet. Music is intentionally handled by Studio.

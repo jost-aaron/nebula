@@ -8,6 +8,7 @@ import type { RendererRuntimeState } from "./diagnostics/types";
 import { bindFileBrowser, renderFileBrowserShell } from "./files/fileBrowser";
 import { filterApps, renderSearchResults, renderSearchView } from "./search/renderSearchView";
 import { renderSettingsPanel } from "./settings/renderSettingsPanel";
+import { bindStudioView, renderStudioView } from "./studio/renderStudioView";
 import { startRenderer } from "./webgpuRenderer";
 import "./styles.css";
 
@@ -289,6 +290,7 @@ const launchApp = async (app: DashboardApp) => {
   const isSettingsApp = app.id === "settings";
   const isFilesApp = app.id === "files";
   const isCinemaApp = app.id === "cinema";
+  const isStudioApp = app.id === "studio";
 
   activeApp = app;
   launchedApp = null;
@@ -303,6 +305,8 @@ const launchApp = async (app: DashboardApp) => {
         ? renderFileBrowserShell()
         : isCinemaApp
           ? renderCinemaView()
+          : isStudioApp
+            ? renderStudioView()
     : `
       <section class="app-window-body">
         <div>
@@ -320,9 +324,9 @@ const launchApp = async (app: DashboardApp) => {
     `;
 
   appSurface.hidden = false;
-  appSurface.className = `app-surface launching ${isSearchApp ? "search-app-surface" : ""} ${isSettingsApp ? "settings-app-surface" : ""} ${isFilesApp ? "files-app-surface" : ""} ${isCinemaApp ? "cinema-app-surface" : ""}`;
+  appSurface.className = `app-surface launching ${isSearchApp ? "search-app-surface" : ""} ${isSettingsApp ? "settings-app-surface" : ""} ${isFilesApp ? "files-app-surface" : ""} ${isCinemaApp ? "cinema-app-surface" : ""} ${isStudioApp ? "studio-app-surface" : ""}`;
   appSurface.style.setProperty("--accent", app.accent);
-  appSurface.innerHTML = isCinemaApp
+  appSurface.innerHTML = isCinemaApp || isStudioApp
     ? body
     : `
       <article class="app-window ${isSearchApp ? "search-window" : ""} ${isSettingsApp ? "settings-window" : ""} ${isFilesApp ? "files-window" : ""}">
@@ -371,6 +375,10 @@ const launchApp = async (app: DashboardApp) => {
 
   if (isCinemaApp) {
     bindCinemaView(appSurface, closeActiveApp);
+  }
+
+  if (isStudioApp) {
+    bindStudioView(appSurface, closeActiveApp);
   }
 
   requestAnimationFrame(() => {

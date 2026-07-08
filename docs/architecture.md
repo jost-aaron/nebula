@@ -15,6 +15,7 @@ flowchart TD
   Registry["src/apps.ts"]
   Diagnostics["src/diagnostics"]
   Cinema["src/cinema"]
+  Studio["src/studio"]
   Settings["src/settings"]
   Search["src/search"]
   Library["src/library"]
@@ -30,6 +31,7 @@ flowchart TD
   Registry --> Main
   Diagnostics --> Main
   Cinema --> Main
+  Studio --> Main
   Settings --> Main
   Search --> Main
   Library --> Main
@@ -39,6 +41,7 @@ flowchart TD
   Server --> Content
   Files --> Server
   Cinema --> Server
+  Studio --> Server
   Styles --> Shell
   Styles --> Canvas
 ```
@@ -74,9 +77,15 @@ flowchart TD
 
 `src/cinema/`
 
-- Renders and binds the Cinema media browser and web player.
+- Renders and binds the Cinema video browser and web player.
 - Talks to the backend through `src/api/cinemaApi.ts`.
 - Generates browser-side preview thumbnails from local video files.
+
+`src/studio/`
+
+- Renders and binds the Studio music browser and native audio player.
+- Talks to the backend through `src/api/musicApi.ts`.
+- Keeps audio browsing and playback out of the Cinema surface.
 
 `src/api/`
 
@@ -90,6 +99,7 @@ flowchart TD
 
 - Owns shared TypeScript API contracts used by frontend clients and app views.
 - Cinema request/response shapes currently live in `src/shared/cinemaTypes.ts`.
+- Music request/response shapes currently live in `src/shared/musicTypes.ts`.
 
 `src/settings/`
 
@@ -124,8 +134,16 @@ flowchart TD
 
 `server/cinema.mjs`
 
-- Owns Cinema library scanning, metadata updates, visual identification, and
-  range-enabled media streaming.
+- Owns Cinema video library scanning, metadata updates, visual identification,
+  and range-enabled video streaming.
+
+`server/music.mjs`
+
+- Owns Studio music library scanning and range-enabled audio streaming.
+
+`server/mediaLibrary.mjs`
+
+- Provides shared local media scan and metadata helpers for Cinema and Studio.
 
 `server/files.mjs`
 
@@ -189,8 +207,8 @@ This app uses explicit render functions instead of a framework:
 - `renderGrid()`
 - `renderFocus()`
 - `renderPanel()`
-- feature renderers under `src/cinema/`, `src/settings/`, `src/search/`,
-  `src/library/`, and `src/files/`
+- feature renderers under `src/cinema/`, `src/studio/`, `src/settings/`,
+  `src/search/`, `src/library/`, and `src/files/`
 
 Keep render functions deterministic. If a render function inserts DOM, prefer
 setting/replacing the relevant content instead of appending to existing content.

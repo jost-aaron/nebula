@@ -1,6 +1,6 @@
-export type CinemaCategory = "movies" | "tv" | "music";
+export type CinemaCategory = "movies" | "tv";
 
-export type CinemaMediaKind = "audio" | "video";
+export type CinemaMediaKind = "video";
 
 export interface CinemaEntry {
   cast: string;

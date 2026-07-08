@@ -1,8 +1,9 @@
 import { createReadStream } from "node:fs";
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import { json, readBody } from "./http.mjs";
-import { isAudioFile, isMediaFile, mimeType } from "./storage.mjs";
+import { defaultTitle, metadataForEntry, readMetadata, scanMediaLibrary, writeMetadata } from "./mediaLibrary.mjs";
+import { isVideoFile, mimeType } from "./storage.mjs";
 
 const candidateWords = (value = "") =>
   value
@@ -71,114 +72,10 @@ const googleVisionWebDetection = async (frames) => {
   };
 };
 
-const mediaCategory = (contentPath) => {
-  const lowerPath = contentPath.toLowerCase();
-  const fileName = path.basename(contentPath);
-
-  if (isAudioFile(fileName)) {
-    return "music";
-  }
-
-  if (
-    lowerPath.includes("/tv/") ||
-    lowerPath.includes("/shows/") ||
-    lowerPath.includes("/series/") ||
-    /\bs\d{1,2}e\d{1,2}\b/i.test(fileName) ||
-    /\b\d{1,2}x\d{1,2}\b/i.test(fileName)
-  ) {
-    return "tv";
-  }
-
-  return "movies";
-};
-
-const defaultTitle = (fileName) => path.basename(fileName, path.extname(fileName)).replace(/[._-]+/g, " ").trim();
-
-const metadataForEntry = (metadata, contentPath, fallbackTitle) => ({
-  cast: "",
-  collection: "",
-  genres: [],
-  posterUrl: "",
-  rating: "",
-  releaseYear: "",
-  sortTitle: fallbackTitle,
-  studio: "",
-  summary: "",
-  tagline: "",
-  title: fallbackTitle,
-  watchlisted: false,
-  ...metadata[contentPath]
-});
-
 export const createCinemaRoutes = (storage) => {
-  const readCinemaMetadata = async () => {
-    const raw = await readFile(storage.cinemaMetadataPath, "utf8").catch((error) => {
-      if (error.code === "ENOENT") {
-        return "{}";
-      }
-
-      throw error;
-    });
-
-    return JSON.parse(raw);
-  };
-
-  const writeCinemaMetadata = async (metadata) => {
-    await writeFile(storage.cinemaMetadataPath, JSON.stringify(metadata, null, 2));
-  };
-
-  const scanCinemaLibrary = async (folder, metadata, entries = []) => {
-    for (const dirent of await readdir(folder, { withFileTypes: true })) {
-      if (dirent.name === ".uploads") {
-        continue;
-      }
-
-      const entryPath = path.join(folder, dirent.name);
-
-      if (dirent.isDirectory()) {
-        await scanCinemaLibrary(entryPath, metadata, entries);
-        continue;
-      }
-
-      if (!dirent.isFile() || !isMediaFile(dirent.name)) {
-        continue;
-      }
-
-      const entryStats = await stat(entryPath);
-      const contentPath = storage.toContentPath(entryPath);
-      const fallbackTitle = defaultTitle(dirent.name);
-      const mediaMetadata = metadataForEntry(metadata, contentPath, fallbackTitle);
-
-      entries.push({
-        category: mediaCategory(contentPath),
-        cast: mediaMetadata.cast,
-        collection: mediaMetadata.collection,
-        folder: path.dirname(contentPath) === "." ? "" : path.dirname(contentPath).split(path.sep).join("/"),
-        genres: Array.isArray(mediaMetadata.genres) ? mediaMetadata.genres : [],
-        mediaKind: isAudioFile(dirent.name) ? "audio" : "video",
-        modifiedAt: entryStats.mtime.toISOString(),
-        name: dirent.name,
-        path: contentPath,
-        posterUrl: mediaMetadata.posterUrl,
-        rating: mediaMetadata.rating,
-        releaseYear: mediaMetadata.releaseYear,
-        size: entryStats.size,
-        sortTitle: mediaMetadata.sortTitle || mediaMetadata.title || fallbackTitle,
-        streamUrl: `/api/cinema/media?path=${encodeURIComponent(contentPath)}`,
-        studio: mediaMetadata.studio,
-        summary: mediaMetadata.summary,
-        tagline: mediaMetadata.tagline,
-        title: mediaMetadata.title || fallbackTitle,
-        watchlisted: Boolean(mediaMetadata.watchlisted)
-      });
-    }
-
-    return entries;
-  };
-
   const listCinemaLibrary = async (request, response) => {
-    const metadata = await readCinemaMetadata();
-    const entries = await scanCinemaLibrary(storage.contentRoot, metadata);
+    const metadata = await readMetadata(storage.cinemaMetadataPath);
+    const entries = await scanMediaLibrary(storage, metadata, { mediaKind: "video" });
     entries.sort((a, b) => (a.sortTitle || a.title).localeCompare(b.sortTitle || b.title));
     json(response, 200, { entries });
   };
@@ -189,13 +86,13 @@ export const createCinemaRoutes = (storage) => {
     const absolutePath = storage.resolveContentPath(contentPath);
     const stats = await stat(absolutePath).catch(() => null);
 
-    if (!stats || !stats.isFile() || !isMediaFile(absolutePath)) {
+    if (!stats || !stats.isFile() || !isVideoFile(absolutePath)) {
       json(response, 404, { error: "Media file not found." });
       return;
     }
 
     const fallbackTitle = defaultTitle(path.basename(contentPath));
-    const metadata = await readCinemaMetadata();
+    const metadata = await readMetadata(storage.cinemaMetadataPath);
     const current = metadataForEntry(metadata, contentPath, fallbackTitle);
     const genres = Array.isArray(body.genres)
       ? body.genres
@@ -220,7 +117,7 @@ export const createCinemaRoutes = (storage) => {
       updatedAt: new Date().toISOString()
     };
 
-    await writeCinemaMetadata(metadata);
+    await writeMetadata(storage.cinemaMetadataPath, metadata);
     json(response, 200, { metadata: metadata[contentPath], ok: true, path: contentPath });
   };
 
@@ -230,13 +127,13 @@ export const createCinemaRoutes = (storage) => {
     const absolutePath = storage.resolveContentPath(contentPath);
     const stats = await stat(absolutePath).catch(() => null);
 
-    if (!stats || !stats.isFile() || !isMediaFile(absolutePath)) {
+    if (!stats || !stats.isFile() || !isVideoFile(absolutePath)) {
       json(response, 404, { error: "Media file not found." });
       return;
     }
 
     const fallbackTitle = defaultTitle(path.basename(contentPath));
-    const metadata = await readCinemaMetadata();
+    const metadata = await readMetadata(storage.cinemaMetadataPath);
     const current = metadataForEntry(metadata, contentPath, fallbackTitle);
     const watchlisted = Boolean(body.watchlisted);
 
@@ -246,7 +143,7 @@ export const createCinemaRoutes = (storage) => {
       updatedAt: new Date().toISOString()
     };
 
-    await writeCinemaMetadata(metadata);
+    await writeMetadata(storage.cinemaMetadataPath, metadata);
     json(response, 200, { metadata: metadata[contentPath], ok: true, path: contentPath, watchlisted });
   };
 
@@ -290,7 +187,7 @@ export const createCinemaRoutes = (storage) => {
     const absolutePath = storage.resolveContentPath(requestedPath);
     const stats = await stat(absolutePath).catch(() => null);
 
-    if (!stats || !stats.isFile() || !isMediaFile(absolutePath)) {
+    if (!stats || !stats.isFile() || !isVideoFile(absolutePath)) {
       json(response, 404, { error: "Media file not found." });
       return;
     }

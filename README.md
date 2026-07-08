@@ -6,10 +6,10 @@ The goal is to grow this into a capable dashboard/runtime for multiple apps,
 eventually including a native-style video player surface. The current app is a
 browser-hosted prototype with a WebGPU background renderer, app registry, shell
 navigation, Search, Library, Settings/Diagnostics, detail panels, and animated
-full-screen app launch surfaces. It also has product-shaped Files and Cinema
-apps: Files manages local ignored content with resumable uploads and iOS client
-support, and Cinema scans that content into a Plex-like Movies/TV Shows/Music
-library with watchlist, title detail, chapters, next-up, and lazy playback.
+full-screen app launch surfaces. It also has product-shaped Files, Cinema, and
+Studio apps: Files manages local ignored content with resumable uploads and iOS
+client support, Cinema scans video into a Plex-like Movies/TV Shows library, and
+Studio scans local audio into a dedicated music player.
 
 ## Run
 
@@ -48,10 +48,11 @@ files needed for local development, so the host project should not need a local
 - `src/settings/` - shared Settings/Diagnostics panel renderer.
 - `src/search/` - shared Search UI for the Search app.
 - `src/library/` - installed-app Library grid renderer.
-- `src/cinema/` - Plex-like local media library and lazy web player.
+- `src/cinema/` - Plex-like local video library and lazy web player.
+- `src/studio/` - local music library and native audio player.
 - `src/files/` - local content file browser UI.
 - `src/api/` - shared API base URL, token, fetch, and XHR helpers.
-- `server/dev.mjs` - Vite dev server plus Files and Cinema APIs.
+- `server/dev.mjs` - Vite dev server plus Files, Cinema, and Music APIs.
 - `server/cors.mjs` - API-only CORS handling for Capacitor/mobile clients.
 - `content/` - ignored local content root for Files and Cinema.
 - `ios/` - Capacitor iOS shell.
@@ -72,6 +73,7 @@ Start with:
 - [docs/session-handoff.md](docs/session-handoff.md)
 - [docs/architecture.md](docs/architecture.md)
 - [docs/cinema.md](docs/cinema.md)
+- [docs/studio.md](docs/studio.md)
 - [docs/webgpu-renderer.md](docs/webgpu-renderer.md)
 - [docs/files.md](docs/files.md)
 - [docs/library.md](docs/library.md)

@@ -14,6 +14,7 @@ docker compose run --rm dashboard npm run check
 ```sh
 curl -s http://127.0.0.1:5173/api/files
 curl -s http://127.0.0.1:5173/api/cinema/library
+curl -s http://127.0.0.1:5173/api/music/library
 curl -s -I -H "Range: bytes=0-1023" "http://127.0.0.1:5173/api/cinema/media?path=South%20Park%20The%20Streaming%20Wars.mp4"
 ```
 
@@ -48,24 +49,28 @@ Check:
 - Close button hides the panel.
 - The Search app filters apps by name and Enter launches the active result.
 - Settings opens from the Applications strip and shows diagnostics.
-- Cinema opens the local media browser and shows supported videos from
+- Cinema opens the local video browser and shows supported videos from
   `content/`.
 - Cinema has a visible Dashboard command that returns to the main dashboard.
-- Cinema shows Movies, TV Shows, and Music category tabs.
+- Cinema shows Movies and TV Shows category tabs.
 - Cinema keeps the player hidden until a title is selected.
 - Cinema can load selected media into the web player and the media endpoint
   supports byte-range requests.
-- Cinema Music opens MP3 and FLAC entries in a dedicated music detail view
-  without a large black video frame.
-- Cinema Music Play opens the dedicated music player with native audio controls,
-  title metadata, artwork/fallback art, server/status information, and next-up
-  queue.
-- Cinema Music does not show the fullscreen video command.
-- Cinema Music shows a friendly player status if browser playback fails or a
-  format is unsupported.
+- Cinema does not show MP3, FLAC, M4A, WAV, AAC, or OGG files as Cinema titles.
+- Studio opens the local music browser and shows supported audio from
+  `content/`.
+- Studio groups tracks by artist first, then album; untagged tracks remain
+  individual tiles.
+- Studio search filters tracks by title, artist, album, folder, and genre.
+- Studio track selection shows a music-specific detail/player UI with album
+  art/fallback art, title metadata, server/status information, and next-up queue.
+- Studio playback uses native `<audio data-studio-player controls>` and no
+  large black video frame.
+- Studio shows a friendly player status if browser playback fails or a format
+  is unsupported.
 - Cinema video titles still use the normal video player and fullscreen command.
 - Cinema Watchlist, More, Edit Details, Back to Library, Details, and Dashboard
-  close paths still work for audio titles.
+  close paths still work for video titles.
 - Files opens the local content browser and is scoped to the ignored `content/`
   folder.
 - Files supports upload by button and drag/drop into the current folder.
@@ -118,6 +123,7 @@ At a phone-like viewport, for example `390 x 844`:
 - Detail panel does not reserve bottom-rail space.
 - Full-screen app surface fits within the viewport.
 - Cinema stacks the library and playback panel without overlap.
+- Studio stacks the music library and player without overlap.
 - Files layout keeps the list and preview usable on phone-sized viewports.
 - App strip scrolls horizontally.
 - Status pills wrap without text overlap.
