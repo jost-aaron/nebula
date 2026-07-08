@@ -202,6 +202,7 @@ Browser checks:
 - `docs/session-handoff.md`
 - `docs/cinema.md`
 - `docs/studio.md`
+- `docs/arcade-moonlight.md`
 - `docs/webgpu-renderer.md`
 - `docs/files.md`
 - `docs/library.md`
