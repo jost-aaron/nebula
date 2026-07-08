@@ -106,6 +106,14 @@ const renderGrid = () => {
     .join("");
 };
 
+const renderGridFocus = () => {
+  grid.querySelectorAll<HTMLButtonElement>(".app-tile").forEach((button) => {
+    const isFocused = Number(button.dataset.index) === focusedIndex;
+    button.classList.toggle("focused", isFocused);
+    button.setAttribute("aria-pressed", String(isFocused));
+  });
+};
+
 const scrollFocusedTileIntoView = () => {
   grid
     .querySelector<HTMLButtonElement>(`.app-tile[data-index="${focusedIndex}"]`)
@@ -118,7 +126,7 @@ const renderFocus = () => {
   featuredTitle.textContent = app.name;
   featuredDescription.textContent = app.description;
   launchButton.textContent = app.status === "planned" ? "Preview" : "Open";
-  renderGrid();
+  renderGridFocus();
   scrollFocusedTileIntoView();
 };
 
@@ -457,6 +465,25 @@ grid.addEventListener("click", (event) => {
   renderFocus();
 });
 
+grid.addEventListener(
+  "wheel",
+  (event) => {
+    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+      return;
+    }
+
+    const canScrollLeft = grid.scrollLeft > 0;
+    const canScrollRight = grid.scrollLeft + grid.clientWidth < grid.scrollWidth;
+    const wantsScrollLeft = event.deltaY < 0;
+
+    if ((wantsScrollLeft && canScrollLeft) || (!wantsScrollLeft && canScrollRight)) {
+      event.preventDefault();
+      grid.scrollBy({ left: event.deltaY, behavior: "auto" });
+    }
+  },
+  { passive: false }
+);
+
 grid.addEventListener("dblclick", launchFocusedApp);
 launchButton.addEventListener("click", launchFocusedApp);
 detailsButton.addEventListener("click", openFocusedApp);
@@ -497,6 +524,7 @@ const updateClock = () => {
 updateClock();
 setInterval(updateClock, 1000);
 performanceMonitor.start();
+renderGrid();
 renderFocus();
 
 startRenderer(canvas)
