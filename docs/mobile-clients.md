@@ -17,6 +17,7 @@ The repository now includes:
 capacitor.config.json
 ios/
 scripts/ios-sync.sh
+scripts/ios-sync-dev-server.sh
 scripts/ios-build-simulator.sh
 src/api/http.ts
 src/shared/cinemaTypes.ts
@@ -176,7 +177,10 @@ same token in Settings -> Client -> API Token.
 
 ## Next Steps
 
-1. Add Capacitor dependencies through the containerized dependency workflow.
-2. Generate and commit the `ios/` native project when ready.
-3. Add device pairing/auth before exposing personal media APIs beyond localhost.
-4. Split the Docker server into API, static client, and storage/database services.
+1. Add device pairing/auth before exposing personal media APIs beyond localhost.
+2. Add an automated iOS smoke path that launches the simulator and verifies
+   Settings -> Client plus Files listing against a local server.
+3. Split the Docker server into API, static client, and storage/database
+   services when the product needs a more durable deployment shape.
+4. Prefer HTTPS for non-local production deployments, even when the server is
+   only reachable over a private network.

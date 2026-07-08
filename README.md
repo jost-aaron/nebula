@@ -6,9 +6,10 @@ The goal is to grow this into a capable dashboard/runtime for multiple apps,
 eventually including a native-style video player surface. The current app is a
 browser-hosted prototype with a WebGPU background renderer, app registry, shell
 navigation, Search, Library, Settings/Diagnostics, detail panels, and animated
-full-screen app launch surfaces. It also has prototype Files and Cinema apps:
-Files manages local ignored content, and Cinema scans that content into a
-Plex-like Movies/TV Shows/Music library with lazy playback.
+full-screen app launch surfaces. It also has product-shaped Files and Cinema
+apps: Files manages local ignored content with resumable uploads and iOS client
+support, and Cinema scans that content into a Plex-like Movies/TV Shows/Music
+library with watchlist, title detail, chapters, next-up, and lazy playback.
 
 ## Run
 
@@ -49,8 +50,12 @@ files needed for local development, so the host project should not need a local
 - `src/library/` - installed-app Library grid renderer.
 - `src/cinema/` - Plex-like local media library and lazy web player.
 - `src/files/` - local content file browser UI.
+- `src/api/` - shared API base URL, token, fetch, and XHR helpers.
 - `server/dev.mjs` - Vite dev server plus Files and Cinema APIs.
+- `server/cors.mjs` - API-only CORS handling for Capacitor/mobile clients.
 - `content/` - ignored local content root for Files and Cinema.
+- `ios/` - Capacitor iOS shell.
+- `scripts/ios-sync*.sh` - Docker-first Capacitor web asset sync helpers.
 - `src/webgpuRenderer.ts` - WebGPU full-screen shader renderer plus Canvas 2D
   fallback.
 - `src/styles.css` - responsive shell layout and visual system.

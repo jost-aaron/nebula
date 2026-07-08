@@ -128,10 +128,12 @@ Mouse behavior:
 
 ## Current App Surface
 
-- `Cinema` is a prototype local media browser and player. It uses
-  `/api/cinema/library` and `/api/cinema/media`.
+- `Cinema` is a dedicated local media browser and player surface. It uses
+  `/api/cinema/library`, `/api/cinema/media`, metadata editing, and persistent
+  watchlist state.
 - `Files` is a ready local content browser. It supports drag/drop uploads,
-  progress, cancel, and resumable 64 MB chunks for files larger than 64 MB.
+  progress, cancel, resumable 64 MB chunks for files larger than 64 MB, and
+  iOS-compatible Server URL/API token routing.
 - `Settings`, `Search`, and `Library` are ready shell/system apps.
 - `Arcade` and `Party` are still planned placeholders.
 

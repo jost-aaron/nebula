@@ -19,8 +19,10 @@ The current app includes:
 - Search app and sidebar search.
 - Library app grid.
 - Shared Settings/Diagnostics app and sidebar panel.
-- Files app for ignored local content under `content/`.
-- Cinema app with Movies, TV Shows, and Music tabs plus lazy playback.
+- Files app for ignored local content under `content/`, with a Variant 2
+  console-style layout and iOS-compatible API targeting.
+- Cinema app with a dedicated full-screen surface, browsing-first library,
+  title details, watchlist, chapters, next-up rails, and lazy playback.
 
 The latest user direction is to keep building toward a modern console/Plex-like
 media dashboard.
@@ -62,20 +64,38 @@ Cinema categorizes it as a Movie. It is intentionally not tracked by Git.
 Files:
 
 - Uses `/api/files/*`.
+- Uses the shared API base URL and bearer token helpers so desktop and iOS
+  clients can point at the same Nebula server.
 - Supports drag/drop upload.
 - Uses streamed upload for small files.
 - Uses resumable 64 MB chunks for files larger than 64 MB.
 - Stores partial upload sessions under hidden `content/.uploads/`.
+- Shows a native-client empty state when Files is opened without a configured
+  Server URL in a bundled iOS client.
 
 Cinema:
 
 - Uses `/api/cinema/library` to scan `content/`.
 - Uses `/api/cinema/media?path=<path>` for range-enabled playback.
+- Uses `PATCH /api/cinema/watchlist` for persistent watchlist state.
 - Categories are heuristic:
   - Audio files go to Music.
   - `TV`, `Shows`, `Series`, `S01E01`, or `1x01` video files go to TV Shows.
   - Other videos go to Movies.
-- The player is hidden until the user selects a title.
+- Library and Watchlist open as browsing-first grids. Play/title detail UI stays
+  hidden until the user selects a title.
+- Title detail includes preview, Play, watchlist toggle, metadata, server rows,
+  chapters, next-up, and modal sheets for More, chapters, and queue.
+
+iOS:
+
+- Capacitor iOS scaffold is present under `ios/`.
+- Use `./scripts/ios-sync.sh` for normal syncs.
+- Use `./scripts/ios-sync-dev-server.sh` to bake a default development Server
+  URL into the iOS web bundle.
+- Use `./scripts/ios-build-simulator.sh` for command-line simulator builds.
+- `server/cors.mjs` adds API-only CORS for `capacitor://localhost` and other
+  API clients that send an `Origin` header.
 
 ## Good First Reads
 
@@ -86,15 +106,21 @@ Read these in order:
 3. `docs/architecture.md`
 4. `docs/cinema.md`
 5. `docs/files.md`
-6. `docs/testing.md`
-7. `docs/development.md`
+6. `docs/mobile-clients.md`
+7. `docs/testing.md`
+8. `docs/development.md`
 
 ## Recent Verification
 
 At handoff time:
 
 - `docker compose run --rm dashboard npm run check` passed.
+- `./scripts/ios-sync-dev-server.sh` passed.
+- `./scripts/ios-build-simulator.sh` passed.
+- API CORS preflight from `Origin: capacitor://localhost` returned
+  `access-control-allow-origin: capacitor://localhost`.
 - `content/` is ignored by Git.
+- `ios/App/App/public/` is generated and ignored by Git.
 - Host tree had no `node_modules` or `dist`.
 - Cinema API returned the uploaded MP4 as a Movie.
 - Cinema media endpoint returned `206 Partial Content` for range requests.
