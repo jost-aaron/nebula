@@ -1,5 +1,6 @@
 import { renderAppIcon } from "./appIcons";
 import { apiJson, getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken, setApiBaseUrl, setApiToken } from "./api/http";
+import { bindArcadeView, renderArcadeView } from "./arcade/renderArcadeView";
 import { dashboardApps, type DashboardApp } from "./apps";
 import { bindCinemaView, renderCinemaView } from "./cinema/renderCinemaView";
 import { collectDiagnostics } from "./diagnostics/collectDiagnostics";
@@ -291,6 +292,7 @@ const launchApp = async (app: DashboardApp) => {
   const isFilesApp = app.id === "files";
   const isCinemaApp = app.id === "cinema";
   const isStudioApp = app.id === "studio";
+  const isArcadeApp = app.id === "arcade";
 
   activeApp = app;
   launchedApp = null;
@@ -307,6 +309,8 @@ const launchApp = async (app: DashboardApp) => {
           ? renderCinemaView()
           : isStudioApp
             ? renderStudioView()
+            : isArcadeApp
+              ? renderArcadeView()
     : `
       <section class="app-window-body">
         <div>
@@ -324,9 +328,9 @@ const launchApp = async (app: DashboardApp) => {
     `;
 
   appSurface.hidden = false;
-  appSurface.className = `app-surface launching ${isSearchApp ? "search-app-surface" : ""} ${isSettingsApp ? "settings-app-surface" : ""} ${isFilesApp ? "files-app-surface" : ""} ${isCinemaApp ? "cinema-app-surface" : ""} ${isStudioApp ? "studio-app-surface" : ""}`;
+  appSurface.className = `app-surface launching ${isSearchApp ? "search-app-surface" : ""} ${isSettingsApp ? "settings-app-surface" : ""} ${isFilesApp ? "files-app-surface" : ""} ${isCinemaApp ? "cinema-app-surface" : ""} ${isStudioApp ? "studio-app-surface" : ""} ${isArcadeApp ? "arcade-app-surface" : ""}`;
   appSurface.style.setProperty("--accent", app.accent);
-  appSurface.innerHTML = isCinemaApp || isStudioApp
+  appSurface.innerHTML = isCinemaApp || isStudioApp || isArcadeApp
     ? body
     : `
       <article class="app-window ${isSearchApp ? "search-window" : ""} ${isSettingsApp ? "settings-window" : ""} ${isFilesApp ? "files-window" : ""}">
@@ -379,6 +383,10 @@ const launchApp = async (app: DashboardApp) => {
 
   if (isStudioApp) {
     bindStudioView(appSurface, closeActiveApp);
+  }
+
+  if (isArcadeApp) {
+    bindArcadeView(appSurface, closeActiveApp);
   }
 
   requestAnimationFrame(() => {
