@@ -1,10 +1,12 @@
 import { json } from "./http.mjs";
+import { createArcadeRoutes } from "./arcade.mjs";
 import { createCinemaRoutes } from "./cinema.mjs";
 import { createFilesRoutes } from "./files.mjs";
 import { createMusicRoutes } from "./music.mjs";
 
 export const createApiHandler = (storage) => {
   const routeHandlers = [
+    createArcadeRoutes(storage),
     createCinemaRoutes(storage),
     createMusicRoutes(storage),
     createFilesRoutes(storage)
@@ -19,7 +21,7 @@ export const createApiHandler = (storage) => {
           name: "Nebula Server",
           status: "online",
           serverTime: new Date().toISOString(),
-          capabilities: ["cinema-library", "cinema-identify", "files", "metadata-editing", "music-library"]
+          capabilities: ["arcade-facade", "cinema-library", "cinema-identify", "files", "metadata-editing", "music-library"]
         });
         return true;
       }
