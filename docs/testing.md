@@ -66,8 +66,8 @@ Check:
 
 ## Keyboard Test
 
-- ArrowRight/ArrowDown moves focus forward.
-- ArrowLeft/ArrowUp moves focus backward.
+- ArrowRight/ArrowDown moves focus forward and stops on the last app.
+- ArrowLeft/ArrowUp moves focus backward and stops on the first app.
 - Enter launches the focused app surface.
 - Escape closes the active app surface first, otherwise closes detail panels.
 
@@ -81,7 +81,13 @@ Expected:
 - `.rail-button` count is `0`.
 - Search and Settings appear as application tiles.
 - Opening Search or Settings uses the full-screen app surface.
-- The Applications strip scrolls horizontally by touch/trackpad.
+- Hovering or clicking a tile selects that app.
+- The selected app tile is slightly larger than the rest.
+- Scrolling over the Applications strip uses a gated threshold: a small scroll
+  does not change selection, and a deliberate scroll advances one app at a time.
+- Scroll selection does not wrap past the first or last app.
+- The Applications strip scrolls horizontally by touch/trackpad and supports
+  click-drag panning.
 - Keyboard/controller focus scrolls off-screen app tiles into view.
 
 Browser console snippet:

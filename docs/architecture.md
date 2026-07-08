@@ -169,6 +169,14 @@ let activeApp: DashboardApp | null = null;
 
 `focusedIndex` controls the featured app and focused tile.
 
+Selection follows the app-first interaction model:
+
+- Hovering or clicking an app tile selects it.
+- Arrow keys move selection without wrapping past the first or last app.
+- Wheel/trackpad scrolling over the Applications strip advances selection one
+  app at a time after a gated threshold.
+- Click-dragging the Applications strip pans the row without launching apps.
+
 `launchedApp` controls app detail panel visibility and content.
 
 `activeApp` controls the full-screen app surface opened by the primary Open

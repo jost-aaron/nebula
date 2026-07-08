@@ -117,17 +117,32 @@ const renderGridFocus = () => {
 const scrollFocusedTileIntoView = () => {
   grid
     .querySelector<HTMLButtonElement>(`.app-tile[data-index="${focusedIndex}"]`)
-    ?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    ?.scrollIntoView({ behavior: "auto", block: "nearest", inline: "nearest" });
 };
 
-const renderFocus = () => {
+const renderFocus = ({ scroll = true }: { scroll?: boolean } = {}) => {
   const app = dashboardApps[focusedIndex];
   document.documentElement.dataset.focusIndex = String(focusedIndex);
   featuredTitle.textContent = app.name;
   featuredDescription.textContent = app.description;
   launchButton.textContent = app.status === "planned" ? "Preview" : "Open";
   renderGridFocus();
-  scrollFocusedTileIntoView();
+
+  if (scroll) {
+    scrollFocusedTileIntoView();
+  }
+};
+
+const selectAppIndex = (index: number, options?: { scroll?: boolean }) => {
+  const nextIndex = Math.max(0, Math.min(index, dashboardApps.length - 1));
+
+  if (nextIndex === focusedIndex) {
+    return false;
+  }
+
+  focusedIndex = nextIndex;
+  renderFocus(options);
+  return true;
 };
 
 const renderPanel = () => {
@@ -458,6 +473,24 @@ let isDraggingGrid = false;
 let gridDragStartX = 0;
 let gridDragStartScrollLeft = 0;
 let didDragGrid = false;
+let wheelSelectionAccumulator = 0;
+let wheelSelectionDirection = 0;
+let lastWheelSelectionAt = 0;
+let wheelSelectionReset = 0;
+let wheelSelectionLocked = false;
+let wheelSelectionLockedUntil = 0;
+let pointerSelectionSuppressedUntil = 0;
+
+const wheelSelectionThreshold = 140;
+const wheelSelectionCooldownMs = 720;
+const pointerSelectionSuppressMs = 1500;
+
+const resetWheelSelectionGate = () => {
+  wheelSelectionAccumulator = 0;
+  wheelSelectionDirection = 0;
+  wheelSelectionLocked = false;
+  window.clearTimeout(wheelSelectionReset);
+};
 
 grid.addEventListener("pointerdown", (event) => {
   if (event.button !== 0 || grid.scrollWidth <= grid.clientWidth) {
@@ -506,6 +539,23 @@ grid.addEventListener("lostpointercapture", () => {
   grid.classList.remove("dragging");
 });
 
+const selectGridTileFromPointer = (event: PointerEvent) => {
+  if (isDraggingGrid || didDragGrid || window.performance.now() < pointerSelectionSuppressedUntil) {
+    return;
+  }
+
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>(".app-tile");
+
+  if (!button || !grid.contains(button)) {
+    return;
+  }
+
+  selectAppIndex(Number(button.dataset.index), { scroll: false });
+};
+
+grid.addEventListener("pointerover", selectGridTileFromPointer);
+grid.addEventListener("pointermove", selectGridTileFromPointer);
+
 grid.addEventListener("click", (event) => {
   if (didDragGrid) {
     didDragGrid = false;
@@ -520,25 +570,49 @@ grid.addEventListener("click", (event) => {
     return;
   }
 
-  focusedIndex = Number(button.dataset.index);
-  renderFocus();
+  selectAppIndex(Number(button.dataset.index), { scroll: false });
 });
 
 grid.addEventListener(
   "wheel",
   (event) => {
-    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+    const dominantDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    const direction = Math.sign(dominantDelta);
+
+    if (direction === 0) {
       return;
     }
 
-    const canScrollLeft = grid.scrollLeft > 0;
-    const canScrollRight = grid.scrollLeft + grid.clientWidth < grid.scrollWidth;
-    const wantsScrollLeft = event.deltaY < 0;
+    event.preventDefault();
+    window.clearTimeout(wheelSelectionReset);
+    wheelSelectionReset = window.setTimeout(resetWheelSelectionGate, wheelSelectionCooldownMs);
 
-    if ((wantsScrollLeft && canScrollLeft) || (!wantsScrollLeft && canScrollRight)) {
-      event.preventDefault();
-      grid.scrollBy({ left: event.deltaY, behavior: "auto" });
+    const now = window.performance.now();
+
+    if (wheelSelectionLocked || now < wheelSelectionLockedUntil) {
+      return;
     }
+
+    if (direction !== wheelSelectionDirection) {
+      wheelSelectionAccumulator = 0;
+      wheelSelectionDirection = direction;
+    }
+
+    wheelSelectionAccumulator += Math.abs(dominantDelta);
+
+    if (
+      wheelSelectionAccumulator < wheelSelectionThreshold ||
+      now - lastWheelSelectionAt < wheelSelectionCooldownMs
+    ) {
+      return;
+    }
+
+    lastWheelSelectionAt = now;
+    wheelSelectionAccumulator = 0;
+    wheelSelectionLocked = true;
+    wheelSelectionLockedUntil = now + wheelSelectionCooldownMs;
+    pointerSelectionSuppressedUntil = now + pointerSelectionSuppressMs;
+    selectAppIndex(focusedIndex + direction, { scroll: true });
   },
   { passive: false }
 );
@@ -549,13 +623,15 @@ detailsButton.addEventListener("click", openFocusedApp);
 
 window.addEventListener("keydown", (event) => {
   if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-    focusedIndex = (focusedIndex + 1) % dashboardApps.length;
-    renderFocus();
+    event.preventDefault();
+    pointerSelectionSuppressedUntil = window.performance.now() + pointerSelectionSuppressMs;
+    selectAppIndex(focusedIndex + 1, { scroll: true });
   }
 
   if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-    focusedIndex = (focusedIndex - 1 + dashboardApps.length) % dashboardApps.length;
-    renderFocus();
+    event.preventDefault();
+    pointerSelectionSuppressedUntil = window.performance.now() + pointerSelectionSuppressMs;
+    selectAppIndex(focusedIndex - 1, { scroll: true });
   }
 
   if (event.key === "Enter") {

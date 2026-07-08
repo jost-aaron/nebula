@@ -104,13 +104,16 @@ keep the migration focused.
 
 Keyboard behavior:
 
-- Arrow keys cycle `focusedIndex`.
+- Arrow keys move `focusedIndex` without wrapping past the first or last app.
 - Enter launches the focused app surface.
 - Escape closes the active app surface first, otherwise closes detail panels.
 
 Mouse behavior:
 
-- Clicking a tile changes focus.
+- Hovering or clicking a tile changes focus.
+- Scrolling over the Applications strip advances selection one app at a time
+  after a short gated threshold, without wrapping.
+- Click-dragging the Applications strip pans the row without launching apps.
 - Double-clicking a tile launches the app surface.
 - The primary Open command launches the focused app into the full-screen app
   surface; the details button opens the compact app panel.
@@ -179,6 +182,9 @@ Browser checks:
 - Search, Settings, Files, and Cinema are available from the Applications strip.
 - The Applications strip scrolls horizontally, including when focus moves to an
   off-screen app tile.
+- App selection follows hover, clamps at both ends for arrow/scroll navigation,
+  and uses a gated scroll threshold so the selected app does not race through
+  the row.
 - Arrow keys, Enter, and Escape work.
 - Mobile viewport does not reserve space for a bottom rail.
 - iOS safe-area checks should confirm `viewport-fit=cover` and
