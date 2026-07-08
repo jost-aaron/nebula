@@ -154,6 +154,13 @@ export const createFilesRoutes = (storage) => {
     }
 
     const absolutePath = storage.resolveContentPath(path.join(requestedPath, name));
+    const existing = await stat(absolutePath).catch(() => null);
+
+    if (existing) {
+      json(response, 409, { error: "A file with that name already exists." });
+      return;
+    }
+
     const stream = createWriteStream(absolutePath, { flags: "wx" });
 
     try {
@@ -290,10 +297,16 @@ export const createFilesRoutes = (storage) => {
     const chunksPath = path.join(sessionPath, "chunks");
     const targetPath = storage.resolveContentPath(metadata.target);
     const partCount = Math.ceil(metadata.size / metadata.chunkSize);
-    const tempTarget = `${targetPath}.uploading-${id}`;
-    const output = createWriteStream(tempTarget, { flags: "wx" });
+    const tempTarget = `${targetPath}.uploading-${id}-${randomUUID()}`;
+    let output;
 
     try {
+      output = createWriteStream(tempTarget, { flags: "wx" });
+      await new Promise((resolve, reject) => {
+        output.on("error", reject);
+        output.on("open", resolve);
+      });
+
       for (let index = 0; index < partCount; index += 1) {
         const partPath = path.join(chunksPath, `part-${String(index).padStart(8, "0")}`);
         const partStats = await stat(partPath).catch(() => null);
@@ -320,7 +333,7 @@ export const createFilesRoutes = (storage) => {
       await rm(sessionPath, { force: true, recursive: true });
       json(response, 201, { ok: true, path: storage.toContentPath(targetPath) });
     } catch (error) {
-      output.destroy();
+      output?.destroy();
       await rm(tempTarget, { force: true }).catch(() => {});
       throw error;
     }

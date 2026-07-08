@@ -29,6 +29,11 @@ interface UploadSession {
   uploadedParts: UploadPart[];
 }
 
+interface UploadResult {
+  ok: true;
+  path: string;
+}
+
 interface StoredUploadSession {
   chunkSize: number;
   lastModified: number;
@@ -213,6 +218,8 @@ const readStoredUploadSessions = (): StoredUploadSession[] => {
 const writeStoredUploadSessions = (sessions: StoredUploadSession[]) => {
   window.localStorage.setItem(UPLOAD_SESSION_STORAGE_KEY, JSON.stringify(sessions));
 };
+
+const wait = (milliseconds: number) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 
 const renderBreadcrumbs = (currentPath: string) => {
   const parts = currentPath.split("/").filter(Boolean);
@@ -442,7 +449,10 @@ export function renderFileBrowserShell() {
           <strong data-file-upload-title>Uploading</strong>
           <span data-file-upload-detail>Preparing...</span>
         </div>
-        <progress data-file-upload-meter value="0" max="100"></progress>
+        <div class="file-upload-meter">
+          <progress data-file-upload-meter value="0" max="100"></progress>
+          <span aria-hidden="true"><i data-file-upload-fill></i></span>
+        </div>
         <button type="button" data-file-upload-cancel>Cancel</button>
       </div>
       <div class="file-drop-indicator" aria-hidden="true">
@@ -472,9 +482,10 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
   const uploadTitle = container.querySelector<HTMLElement>("[data-file-upload-title]");
   const uploadDetail = container.querySelector<HTMLElement>("[data-file-upload-detail]");
   const uploadMeter = container.querySelector<HTMLProgressElement>("[data-file-upload-meter]");
+  const uploadFill = container.querySelector<HTMLElement>("[data-file-upload-fill]");
   const uploadCancel = container.querySelector<HTMLButtonElement>("[data-file-upload-cancel]");
 
-  if (!browser || !sections || !storage || !heading || !breadcrumbs || !list || !preview || !status || !uploadInput || !uploadProgress || !uploadTitle || !uploadDetail || !uploadMeter || !uploadCancel) {
+  if (!browser || !sections || !storage || !heading || !breadcrumbs || !list || !preview || !status || !uploadInput || !uploadProgress || !uploadTitle || !uploadDetail || !uploadMeter || !uploadFill || !uploadCancel) {
     return;
   }
 
@@ -625,7 +636,10 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
     uploadProgress.hidden = false;
     uploadTitle.textContent = title;
     uploadDetail.textContent = detail;
-    uploadMeter.value = Math.max(0, Math.min(100, percent));
+    const safePercent = Math.max(0, Math.min(100, percent));
+    uploadMeter.value = safePercent;
+    uploadMeter.setAttribute("aria-valuetext", `${Math.round(safePercent)}%`);
+    uploadFill.style.setProperty("--file-upload-progress", `${safePercent}%`);
   };
 
   const clearUploadProgress = () => {
@@ -633,6 +647,17 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
     activeUploadSessionId = null;
     uploadProgress.hidden = true;
     uploadMeter.value = 0;
+    uploadMeter.setAttribute("aria-valuetext", "0%");
+    uploadFill.style.setProperty("--file-upload-progress", "0%");
+  };
+
+  const parseUploadError = (responseText: string) => {
+    try {
+      const body = JSON.parse(responseText) as { error?: string };
+      return body.error ?? "Upload failed.";
+    } catch {
+      return responseText || "Upload failed.";
+    }
   };
 
   const sendUploadRequest = async (
@@ -641,7 +666,7 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
     contentType: string,
     onProgress: (loaded: number, total: number) => void
   ) => {
-    await new Promise<void>((resolve, reject) => {
+    return new Promise<UploadResult>((resolve, reject) => {
       const request = new XMLHttpRequest();
       activeUpload = request;
 
@@ -657,11 +682,15 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
         activeUpload = null;
 
         if (request.status >= 200 && request.status < 300) {
-          resolve();
+          try {
+            resolve(JSON.parse(request.responseText || "{}") as UploadResult);
+          } catch {
+            resolve({ ok: true, path: "" });
+          }
           return;
         }
 
-        reject(new Error(request.responseText || "Upload failed."));
+        reject(new Error(parseUploadError(request.responseText)));
       });
 
       request.addEventListener("abort", () => {
@@ -687,13 +716,14 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
       total > 1 ? (index / total) * 100 : 0
     );
 
-    await sendUploadRequest(uploadUrl(currentPath, file.name), file, file.type || "application/octet-stream", (loaded, uploadTotal) => {
+    const result = await sendUploadRequest(uploadUrl(currentPath, file.name), file, file.type || "application/octet-stream", (loaded, uploadTotal) => {
       const filePercent = (loaded / uploadTotal) * 100;
       const totalPercent = total > 1 ? ((index + filePercent / 100) / total) * 100 : filePercent;
       setUploadProgress(`Uploading ${index + 1} of ${total}`, `${file.name} · ${Math.round(filePercent)}%`, totalPercent);
     });
 
     setUploadProgress(`Uploaded ${index + 1} of ${total}`, `${file.name} · complete`, ((index + 1) / total) * 100);
+    return result.path || [currentPath, file.name].filter(Boolean).join("/");
   };
 
   const createUploadSession = async (file: File) =>
@@ -753,7 +783,7 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
   };
 
   const completeUploadSession = async (sessionId: string) =>
-    api<{ ok: true; path: string }>(`${uploadSessionUrl(sessionId)}/complete`, {
+    api<UploadResult>(`${uploadSessionUrl(sessionId)}/complete`, {
       body: JSON.stringify({}),
       method: "POST"
     });
@@ -829,10 +859,11 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
       }
 
       setUploadProgress(`Assembling ${index + 1} of ${total}`, `${file.name} · finalizing`, total > 1 ? ((index + 0.98) / total) * 100 : 98);
-      await completeUploadSession(session.id);
+      const result = await completeUploadSession(session.id);
       removeStoredUploadSession(session.id);
       activeUploadSessionId = null;
       setUploadProgress(`Uploaded ${index + 1} of ${total}`, `${file.name} · complete`, ((index + 1) / total) * 100);
+      return result.path;
     } catch (error) {
       if (uploadCancelled || (error instanceof DOMException && error.name === "AbortError")) {
         await cancelUploadSession(session.id);
@@ -844,11 +875,10 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
 
   const uploadBrowserFile = async (file: File, index: number, total: number) => {
     if (file.size > DIRECT_UPLOAD_LIMIT) {
-      await uploadResumableFile(file, index, total);
-      return;
+      return uploadResumableFile(file, index, total);
     }
 
-    await uploadDirectFile(file, index, total);
+    return uploadDirectFile(file, index, total);
   };
 
   const uploadFiles = async (files: File[]) => {
@@ -857,6 +887,7 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
     }
 
     uploadCancelled = false;
+    const uploadedPaths: string[] = [];
 
     try {
       for (const [index, file] of files.entries()) {
@@ -864,22 +895,34 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
           break;
         }
 
-        await uploadBrowserFile(file, index, files.length);
+        uploadedPaths.push(await uploadBrowserFile(file, index, files.length));
       }
 
       if (uploadCancelled) {
         setStatus("Upload cancelled.");
       } else {
         await load();
+        const uploadedPath = uploadedPaths.find((path) => entries.some((entry) => entry.path === path));
+
+        if (uploadedPath) {
+          selectedPath = uploadedPath;
+          await render();
+        }
+
         setStatus(`Uploaded ${files.length} file${files.length === 1 ? "" : "s"} to /${currentPath}`);
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         setStatus("Upload cancelled.");
       } else {
-        setStatus(error instanceof Error ? error.message : "Upload failed.");
+        const message = error instanceof Error ? error.message : "Upload failed.";
+        setUploadProgress("Upload failed", message, 100);
+        setStatus(message);
       }
     } finally {
+      if (!uploadCancelled && !uploadProgress.hidden) {
+        await wait(uploadTitle.textContent === "Upload failed" ? 3200 : 500);
+      }
       uploadCancelled = false;
       clearUploadProgress();
     }
