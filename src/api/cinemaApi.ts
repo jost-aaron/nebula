@@ -4,7 +4,9 @@ import type {
   CinemaIdentifyResponse,
   CinemaLibraryResponse,
   CinemaMetadataUpdateRequest,
-  CinemaMetadataUpdateResponse
+  CinemaMetadataUpdateResponse,
+  CinemaWatchlistUpdateRequest,
+  CinemaWatchlistUpdateResponse
 } from "../shared/cinemaTypes";
 
 export const listCinemaLibrary = () => apiJson<CinemaLibraryResponse>("/api/cinema/library");
@@ -18,6 +20,13 @@ export const identifyCinemaFrames = (body: CinemaIdentifyRequest) =>
 
 export const updateCinemaMetadata = (body: CinemaMetadataUpdateRequest) =>
   apiJson<CinemaMetadataUpdateResponse>("/api/cinema/metadata", {
+    body: JSON.stringify(body),
+    headers: { "content-type": "application/json" },
+    method: "PATCH"
+  });
+
+export const updateCinemaWatchlist = (body: CinemaWatchlistUpdateRequest) =>
+  apiJson<CinemaWatchlistUpdateResponse>("/api/cinema/watchlist", {
     body: JSON.stringify(body),
     headers: { "content-type": "application/json" },
     method: "PATCH"

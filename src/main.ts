@@ -339,12 +339,14 @@ const launchApp = async (app: DashboardApp) => {
   appSurface.hidden = false;
   appSurface.className = `app-surface launching ${isSearchApp ? "search-app-surface" : ""} ${isSettingsApp ? "settings-app-surface" : ""} ${isFilesApp ? "files-app-surface" : ""} ${isCinemaApp ? "cinema-app-surface" : ""}`;
   appSurface.style.setProperty("--accent", app.accent);
-  appSurface.innerHTML = `
-    <article class="app-window ${isSearchApp ? "search-window" : ""} ${isSettingsApp ? "settings-window" : ""} ${isFilesApp ? "files-window" : ""} ${isCinemaApp ? "cinema-window" : ""}">
-      ${
-        isSettingsApp || isCinemaApp
-          ? body
-          : `
+  appSurface.innerHTML = isCinemaApp
+    ? body
+    : `
+      <article class="app-window ${isSearchApp ? "search-window" : ""} ${isSettingsApp ? "settings-window" : ""} ${isFilesApp ? "files-window" : ""}">
+        ${
+          isSettingsApp
+            ? body
+            : `
             <header class="app-window-header">
               <span class="app-window-mark">${renderAppIcon(app, "window-icon")}</span>
               <div>
@@ -355,9 +357,9 @@ const launchApp = async (app: DashboardApp) => {
             </header>
             ${body}
           `
-      }
-    </article>
-  `;
+        }
+      </article>
+    `;
 
   document.querySelector<HTMLButtonElement>("#close-active-app")?.addEventListener("click", closeActiveApp);
 

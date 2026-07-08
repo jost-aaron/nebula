@@ -36,6 +36,7 @@ It renders:
 
 - Plex-like category tabs for Movies, TV Shows, and Music.
 - A searchable local media grid.
+- A persistent watchlist for saved titles.
 - A dedicated title details submenu after selecting a title.
 - A separate playback surface with a fullscreen command.
 - A metadata editor for every imported media item.
@@ -98,10 +99,12 @@ Current editable fields:
 - Tagline
 - Cast
 - Summary
+- Watchlist state
 
 The frontend updates these through:
 
 - `PATCH /api/cinema/metadata`
+- `PATCH /api/cinema/watchlist`
 
 ## Server Endpoints
 
@@ -110,6 +113,7 @@ The frontend updates these through:
 - `HEAD /api/cinema/media?path=<path>` - return media metadata headers.
 - `POST /api/cinema/identify` - search sampled video frames for candidate titles.
 - `PATCH /api/cinema/metadata` - save editable metadata for a media file.
+- `PATCH /api/cinema/watchlist` - add or remove a media file from the watchlist.
 
 The media endpoint supports HTTP byte ranges and returns `206 Partial Content`
 for range requests. This is required for normal browser video playback behavior,
