@@ -1,5 +1,5 @@
 import { renderAppIcon } from "../appIcons";
-import { getApiBaseUrl, getApiToken } from "../api/http";
+import { getApiBaseUrl, getApiConnectionMode, getAppOrigin, getEffectiveApiBaseUrl, getApiToken } from "../api/http";
 import { dashboardApps } from "../apps";
 import type { DiagnosticsSnapshot } from "../diagnostics/types";
 
@@ -33,6 +33,11 @@ const renderSection = (title: string, body: string) => `
 
 export function renderSettingsPanel(snapshot: DiagnosticsSnapshot): string {
   const settingsApp = dashboardApps.find((app) => app.id === "settings");
+  const configuredApiBaseUrl = getApiBaseUrl();
+  const effectiveApiBaseUrl = getEffectiveApiBaseUrl();
+  const apiToken = getApiToken();
+  const serverTarget = effectiveApiBaseUrl || "Not configured";
+  const serverMode = getApiConnectionMode();
   const rendererFeatures =
     snapshot.renderer.features.length > 0 ? snapshot.renderer.features.slice(0, 6).join(", ") : "No optional features reported";
 
@@ -120,15 +125,24 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot): string {
       )}
 
       <section class="diagnostic-section client-settings-section" data-diagnostic-section="client">
-        <h3>Client</h3>
+        <h3>Client & Server</h3>
         <div class="client-settings-form">
+          <div class="server-info-grid">
+            ${renderMetric("App origin", getAppOrigin())}
+            ${renderMetric("API target", serverTarget)}
+            ${renderMetric("Connection", serverMode)}
+            ${renderMetric("Auth token", apiToken ? "Configured" : "Not set")}
+          </div>
+          <p class="server-info-note">
+            iOS clients need a reachable Nebula server URL, such as a LAN or WireGuard address.
+          </p>
           <label>
             <small>Server URL</small>
             <input
               type="url"
               data-api-base-input
               placeholder="Same origin"
-              value="${escapeHtml(getApiBaseUrl())}"
+              value="${escapeHtml(configuredApiBaseUrl)}"
             />
           </label>
           <label>
@@ -137,12 +151,13 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot): string {
               type="password"
               data-api-token-input
               placeholder="Optional bearer token"
-              value="${escapeHtml(getApiToken())}"
+              value="${escapeHtml(apiToken)}"
             />
           </label>
           <div class="client-settings-actions">
             <button type="button" data-api-base-save>Save</button>
             <button type="button" data-api-base-clear>Use Same Origin</button>
+            <button type="button" data-server-test>Test Server</button>
             <span data-api-base-status></span>
           </div>
         </div>

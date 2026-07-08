@@ -118,6 +118,9 @@ from normal Docker development:
 - Do not leave ad-hoc host `dist/` output behind.
 - Use the Settings app Client tab to configure the API Server URL for mobile or
   private-network clients.
+- Use `./scripts/ios-sync.sh` to rebuild and sync the Capacitor iOS wrapper.
+- Use `./scripts/ios-build-simulator.sh` to compile the iOS simulator app after
+  Xcode and an iOS simulator runtime are installed.
 
 See:
 

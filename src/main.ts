@@ -1,6 +1,6 @@
 import { icons, createElement } from "lucide";
 import { renderAppIcon } from "./appIcons";
-import { setApiBaseUrl, setApiToken } from "./api/http";
+import { apiJson, getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken, setApiBaseUrl, setApiToken } from "./api/http";
 import { dashboardApps, type DashboardApp } from "./apps";
 import { bindCinemaView, renderCinemaView } from "./cinema/renderCinemaView";
 import { collectDiagnostics } from "./diagnostics/collectDiagnostics";
@@ -237,16 +237,17 @@ const bindClientSettings = (container: ParentNode) => {
   const tokenInput = container.querySelector<HTMLInputElement>("[data-api-token-input]");
   const save = container.querySelector<HTMLButtonElement>("[data-api-base-save]");
   const clear = container.querySelector<HTMLButtonElement>("[data-api-base-clear]");
+  const test = container.querySelector<HTMLButtonElement>("[data-server-test]");
   const status = container.querySelector<HTMLElement>("[data-api-base-status]");
 
-  if (!input || !tokenInput || !save || !clear || !status) {
+  if (!input || !tokenInput || !save || !clear || !test || !status) {
     return;
   }
 
   save.addEventListener("click", () => {
     setApiBaseUrl(input.value);
     setApiToken(tokenInput.value);
-    status.textContent = "Saved";
+    status.textContent = `Saved · ${getApiConnectionMode()}`;
   });
 
   clear.addEventListener("click", () => {
@@ -254,7 +255,23 @@ const bindClientSettings = (container: ParentNode) => {
     tokenInput.value = "";
     setApiBaseUrl("");
     setApiToken("");
-    status.textContent = "Using same origin";
+    status.textContent = `Using ${getApiConnectionMode().toLowerCase()}`;
+  });
+
+  test.addEventListener("click", async () => {
+    if (!getEffectiveApiBaseUrl()) {
+      status.textContent = "Add a server URL first";
+      return;
+    }
+
+    status.textContent = "Testing server...";
+
+    try {
+      const info = await apiJson<{ name: string; serverTime: string }>("/api/server/info");
+      status.textContent = `${info.name} online · ${new Date(info.serverTime).toLocaleTimeString()}`;
+    } catch {
+      status.textContent = getApiToken() ? "Server test failed" : "Server test failed · token may be required";
+    }
   });
 };
 

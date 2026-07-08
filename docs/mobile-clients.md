@@ -15,6 +15,9 @@ The repository now includes:
 
 ```text
 capacitor.config.json
+ios/
+scripts/ios-sync.sh
+scripts/ios-build-simulator.sh
 src/api/http.ts
 src/shared/cinemaTypes.ts
 ```
@@ -73,17 +76,53 @@ docker run --rm \
   npm install @capacitor/core @capacitor/cli @capacitor/ios
 ```
 
-Then create/sync the native project from a Mac with Xcode installed:
+Then create/sync the native project from a Mac with Xcode installed. For the
+normal update path, use the helper script so the web build and Capacitor sync
+still run through containerized Node:
 
 ```sh
-npx cap add ios
-npx cap sync ios
-npx cap open ios
+./scripts/ios-sync.sh
 ```
 
-Capacitor expects built web assets in `dist`. Generating release assets is a
-separate packaging step from normal Docker development. Do not leave ad-hoc
-host `dist/` output behind after local experiments.
+The script creates `dist/` only long enough for Capacitor to copy the web bundle
+into `ios/App/App/public/`, then removes the root `dist/` directory.
+
+To compile the simulator app from the command line:
+
+```sh
+./scripts/ios-build-simulator.sh
+```
+
+If Xcode is installed but the command-line tools still point at
+`/Library/Developer/CommandLineTools`, either set `DEVELOPER_DIR` for the
+command:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/ios-build-simulator.sh
+```
+
+or select Xcode globally:
+
+```sh
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+```
+
+If no iOS simulator runtime is installed, download it from Xcode Settings ->
+Components or use:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -downloadPlatform iOS
+```
+
+To open the project in Xcode:
+
+```sh
+open ios/App/App.xcodeproj
+```
+
+Capacitor expects built web assets in `dist` during sync. Generating release
+assets is a separate packaging step from normal Docker development. Do not leave
+ad-hoc host `dist/` output behind after local experiments.
 
 ## Networking Model
 

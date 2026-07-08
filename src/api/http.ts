@@ -8,6 +8,34 @@ const configuredApiBase = () => {
 
 export const getApiBaseUrl = () => configuredApiBase();
 
+export const getAppOrigin = () => window.location.origin;
+
+export const getEffectiveApiBaseUrl = () => {
+  const configured = configuredApiBase();
+
+  if (configured) {
+    return configured;
+  }
+
+  if (window.location.protocol === "http:" || window.location.protocol === "https:") {
+    return window.location.origin;
+  }
+
+  return "";
+};
+
+export const getApiConnectionMode = () => {
+  if (configuredApiBase()) {
+    return "Configured server";
+  }
+
+  if (window.location.protocol === "http:" || window.location.protocol === "https:") {
+    return "Same origin";
+  }
+
+  return "Needs server URL";
+};
+
 export const setApiBaseUrl = (url: string) => {
   const normalized = url.trim().replace(/\/+$/, "");
 

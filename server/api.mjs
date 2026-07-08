@@ -12,6 +12,16 @@ export const createApiHandler = (storage) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host}`);
 
     try {
+      if (request.method === "GET" && url.pathname === "/api/server/info") {
+        json(response, 200, {
+          name: "Nebula Server",
+          status: "online",
+          serverTime: new Date().toISOString(),
+          capabilities: ["cinema-library", "cinema-identify", "files", "metadata-editing"]
+        });
+        return true;
+      }
+
       for (const routeHandler of routeHandlers) {
         if (await routeHandler(request, response, url)) {
           return true;
