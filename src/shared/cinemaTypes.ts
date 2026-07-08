@@ -22,6 +22,7 @@ export interface CinemaEntry {
   summary: string;
   tagline: string;
   title: string;
+  watchlisted: boolean;
 }
 
 export interface CinemaLibraryResponse {
@@ -75,4 +76,16 @@ export interface CinemaMetadataUpdateResponse {
   metadata: Record<string, unknown>;
   ok: boolean;
   path: string;
+}
+
+export interface CinemaWatchlistUpdateRequest {
+  path: string;
+  watchlisted: boolean;
+}
+
+export interface CinemaWatchlistUpdateResponse {
+  metadata: Record<string, unknown>;
+  ok: boolean;
+  path: string;
+  watchlisted: boolean;
 }

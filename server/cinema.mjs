@@ -106,6 +106,7 @@ const metadataForEntry = (metadata, contentPath, fallbackTitle) => ({
   summary: "",
   tagline: "",
   title: fallbackTitle,
+  watchlisted: false,
   ...metadata[contentPath]
 });
 
@@ -167,7 +168,8 @@ export const createCinemaRoutes = (storage) => {
         studio: mediaMetadata.studio,
         summary: mediaMetadata.summary,
         tagline: mediaMetadata.tagline,
-        title: mediaMetadata.title || fallbackTitle
+        title: mediaMetadata.title || fallbackTitle,
+        watchlisted: Boolean(mediaMetadata.watchlisted)
       });
     }
 
@@ -220,6 +222,32 @@ export const createCinemaRoutes = (storage) => {
 
     await writeCinemaMetadata(metadata);
     json(response, 200, { metadata: metadata[contentPath], ok: true, path: contentPath });
+  };
+
+  const updateCinemaWatchlist = async (request, response) => {
+    const body = await readBody(request);
+    const contentPath = storage.relativePath(body.path ?? "");
+    const absolutePath = storage.resolveContentPath(contentPath);
+    const stats = await stat(absolutePath).catch(() => null);
+
+    if (!stats || !stats.isFile() || !isMediaFile(absolutePath)) {
+      json(response, 404, { error: "Media file not found." });
+      return;
+    }
+
+    const fallbackTitle = defaultTitle(path.basename(contentPath));
+    const metadata = await readCinemaMetadata();
+    const current = metadataForEntry(metadata, contentPath, fallbackTitle);
+    const watchlisted = Boolean(body.watchlisted);
+
+    metadata[contentPath] = {
+      ...current,
+      watchlisted,
+      updatedAt: new Date().toISOString()
+    };
+
+    await writeCinemaMetadata(metadata);
+    json(response, 200, { metadata: metadata[contentPath], ok: true, path: contentPath, watchlisted });
   };
 
   const identifyCinemaFrames = async (request, response) => {
@@ -342,6 +370,11 @@ export const createCinemaRoutes = (storage) => {
 
     if (request.method === "PATCH" && url.pathname === "/api/cinema/metadata") {
       await updateCinemaMetadata(request, response);
+      return true;
+    }
+
+    if (request.method === "PATCH" && url.pathname === "/api/cinema/watchlist") {
+      await updateCinemaWatchlist(request, response);
       return true;
     }
 

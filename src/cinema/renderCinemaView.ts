@@ -1,19 +1,39 @@
-import { identifyCinemaFrames, listCinemaLibrary, updateCinemaMetadata } from "../api/cinemaApi";
+import { createElement, icons } from "lucide";
+import { getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken } from "../api/http";
+import { identifyCinemaFrames, listCinemaLibrary, updateCinemaMetadata, updateCinemaWatchlist } from "../api/cinemaApi";
 import type {
   CinemaCategory,
   CinemaEntry,
   CinemaIdentificationFrame,
   CinemaIdentifyResponse,
-  CinemaMetadataUpdateRequest
+  CinemaMetadataUpdateRequest,
+  CinemaWatchlistUpdateRequest
 } from "../shared/cinemaTypes";
 
-type CinemaView = "library" | "title" | "player";
+type CinemaView = "library" | "watchlist" | "title-detail" | "player" | "metadata-editor" | "servers" | "identify";
+
+interface CinemaServerInfo {
+  address: string;
+  authState: string;
+  mode: string;
+  name: string;
+  online: boolean;
+}
 
 const categories: Array<{ id: CinemaCategory; label: string; empty: string }> = [
   { empty: "Upload movie files with Files.", id: "movies", label: "Movies" },
   { empty: "Put episode files in a TV, Shows, or Series folder.", id: "tv", label: "TV Shows" },
   { empty: "Upload MP3, M4A, FLAC, WAV, AAC, or OGG files.", id: "music", label: "Music" }
 ];
+
+const chapterMarkers = [
+  ["The Beginning", "0:00"],
+  ["The Plan", "6:23"],
+  ["The Attack", "13:08"],
+  ["The Resistance", "21:53"],
+  ["The Truth", "30:38"],
+  ["The End", "43:45"]
+] as const;
 
 const escapeHtml = (value: string) =>
   value
@@ -38,13 +58,29 @@ const formatTime = (seconds: number) => {
   return `${minutes}:${String(remainder).padStart(2, "0")}`;
 };
 
+const parseTimeLabel = (time: string) =>
+  time
+    .split(":")
+    .map((part) => Number(part))
+    .reduce((total, part) => total * 60 + (Number.isFinite(part) ? part : 0), 0);
+
+const estimateRuntime = (entry: CinemaEntry) => (entry.mediaKind === "audio" ? "Audio file" : "Runtime pending");
+
 const categoryLabel = (category: CinemaCategory) =>
   categories.find((candidate) => candidate.id === category)?.label ?? "Movies";
 
 const searchUrl = (query: string) => `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 
 const metadataLine = (entry: CinemaEntry) =>
-  [entry.releaseYear, entry.rating, entry.genres.slice(0, 3).join(", "), formatSize(entry.size)].filter(Boolean).join(" · ");
+  [entry.releaseYear, entry.rating, entry.genres.slice(0, 3).join(", "), estimateRuntime(entry)].filter(Boolean).join(" / ");
+
+const currentServerInfo = (): CinemaServerInfo => ({
+  address: getEffectiveApiBaseUrl() || "No server URL",
+  authState: getApiToken() ? "Token saved" : "Local unauthenticated",
+  mode: getApiConnectionMode(),
+  name: getApiConnectionMode() === "Same origin" ? "Nebula Local" : "Nebula Server",
+  online: getApiConnectionMode() !== "Needs server URL"
+});
 
 const renderPosterFallback = (entry: CinemaEntry) => `
   <div class="cinema-poster-fallback ${entry.mediaKind === "audio" ? "audio" : ""}">
@@ -54,6 +90,85 @@ const renderPosterFallback = (entry: CinemaEntry) => `
 
 const posterStyle = (entry: CinemaEntry) =>
   entry.posterUrl ? ` style="background-image: url('${escapeHtml(entry.posterUrl)}')"` : "";
+
+const renderCinemaIcon = (iconName: keyof typeof icons, className = "cinema-ui-icon") => {
+  const node = createElement(icons[iconName] ?? icons.Circle);
+  node.setAttribute("class", className);
+  node.setAttribute("aria-hidden", "true");
+  node.setAttribute("focusable", "false");
+  return node.outerHTML;
+};
+
+const renderTopNav = (view: CinemaView) => `
+  <header class="cinema-top-nav">
+    <button class="cinema-brand" type="button" data-cinema-action="library" aria-label="Cinema library">
+      <span class="cinema-brand-mark">
+        <svg viewBox="0 0 44 44" aria-hidden="true" focusable="false">
+          <path class="cinema-brand-orbit" d="M7 26 C10 11 28 5 37 15 C46 25 31 42 16 36 C5 32 6 18 18 9" />
+          <path class="cinema-brand-glyph" d="M13 31 V13 L31 31 V13" />
+          <circle cx="35" cy="10" r="2.4" />
+        </svg>
+      </span>
+      <span>
+        <strong>Nebula Cinema</strong>
+      </span>
+    </button>
+    <nav class="cinema-nav-tabs" aria-label="Cinema sections">
+      <button class="${view === "library" || view === "title-detail" || view === "player" ? "active" : ""}" type="button" data-cinema-action="library">Library</button>
+      <button class="${view === "watchlist" ? "active" : ""}" type="button" data-cinema-action="watchlist">Watchlist</button>
+      <button class="${view === "identify" ? "active" : ""}" type="button" data-cinema-action="identify-nav">Identify</button>
+      <button class="${view === "servers" ? "active" : ""}" type="button" data-cinema-action="servers">Servers</button>
+    </nav>
+    <label class="cinema-global-search">
+      <span>${renderCinemaIcon("Search")} Search</span>
+      <input type="search" data-cinema-search placeholder="Search library" />
+    </label>
+    <button class="cinema-icon-command" type="button" data-cinema-action="home" aria-label="Close Cinema" title="Close">${renderCinemaIcon("X")}</button>
+  </header>
+`;
+
+const renderServerCard = (server: CinemaServerInfo, compact = false) => `
+  <button class="cinema-server-card ${compact ? "compact" : ""}" type="button" data-cinema-action="servers">
+    <span class="cinema-server-icon">${renderCinemaIcon("Server")}</span>
+    <span class="cinema-status-dot ${server.online ? "online" : "offline"}"></span>
+    <span>
+      <small>${server.online ? "Server Online" : "Server Offline"}</small>
+      <strong>${escapeHtml(server.name)}</strong>
+    </span>
+    <span>
+      <small>${escapeHtml(server.mode)}</small>
+      <strong>${escapeHtml(server.address)}</strong>
+    </span>
+    <span class="cinema-signal-icon">${renderCinemaIcon("SignalHigh")}</span>
+    ${renderCinemaIcon("ChevronRight", "cinema-chevron-icon")}
+  </button>
+`;
+
+const renderPlaybackSettings = (entry: CinemaEntry) => `
+  <section class="cinema-playback-settings" aria-label="Playback settings">
+    <button type="button"><span>${renderCinemaIcon("BadgeCheck")} Quality</span><strong>Original Quality</strong>${renderCinemaIcon("ChevronRight", "cinema-chevron-icon")}</button>
+    <button type="button"><span>${renderCinemaIcon("Languages")} Audio</span><strong>${entry.mediaKind === "audio" ? "Default Track" : "English (Source)"}</strong>${renderCinemaIcon("ChevronRight", "cinema-chevron-icon")}</button>
+    <button type="button"><span>${renderCinemaIcon("Captions")} Subtitles</span><strong>${entry.mediaKind === "audio" ? "Unavailable" : "Off"}</strong>${renderCinemaIcon("ChevronRight", "cinema-chevron-icon")}</button>
+  </section>
+`;
+
+const renderWatchlistButton = (entry: CinemaEntry) => `
+  <button class="${entry.watchlisted ? "active" : ""}" type="button" data-cinema-action="queue" data-cinema-watchlist-path="${escapeHtml(entry.path)}">
+    ${renderCinemaIcon(entry.watchlisted ? "Check" : "Plus")}
+    ${entry.watchlisted ? "In Watchlist" : "Add to Watchlist"}
+  </button>
+`;
+
+const renderPlaybackControls = (entry: CinemaEntry, server: CinemaServerInfo) => `
+  <div class="cinema-player-overlay">
+    <button class="cinema-play-orb" type="button" data-cinema-action="play" aria-label="Play">${renderCinemaIcon("Play", "cinema-play-icon")}</button>
+    <div class="cinema-overlay-meta">
+      <span>${escapeHtml(entry.title)}</span>
+      <span>${renderCinemaIcon("Server")} ${server.online ? "Server online" : "Server offline"}</span>
+      <span>Original quality</span>
+    </div>
+  </div>
+`;
 
 const renderCinemaCards = (entries: CinemaEntry[], category: CinemaCategory) => {
   if (entries.length === 0) {
@@ -82,95 +197,290 @@ const renderCinemaCards = (entries: CinemaEntry[], category: CinemaCategory) => 
     .join("");
 };
 
-const renderHeroPoster = (entry: CinemaEntry) => `
-  <div class="cinema-title-poster ${entry.mediaKind === "audio" ? "audio" : ""}" data-cinema-detail-poster="${escapeHtml(entry.path)}"${posterStyle(entry)}>
-    ${entry.posterUrl ? "" : renderPosterFallback(entry)}
-  </div>
-`;
-
-const renderTitleDetails = (entry: CinemaEntry) => `
-  <section class="cinema-title-view" data-cinema-view="title">
-    <div class="cinema-title-backdrop" data-cinema-backdrop="${escapeHtml(entry.path)}"${posterStyle(entry)}></div>
-    <div class="cinema-title-shell">
-      <header class="cinema-title-nav">
-        <button type="button" data-cinema-action="back-library">Library</button>
-        <button type="button" data-cinema-action="home">Home</button>
-      </header>
-      <div class="cinema-title-layout">
-        ${renderHeroPoster(entry)}
-        <section class="cinema-title-copy">
-          <p class="eyebrow">${escapeHtml(categoryLabel(entry.category))}</p>
-          <h3>${escapeHtml(entry.title)}</h3>
-          ${entry.tagline ? `<p class="cinema-tagline">${escapeHtml(entry.tagline)}</p>` : ""}
-          <p class="cinema-title-meta">${escapeHtml(metadataLine(entry) || `${entry.folder || "Content"} · ${formatSize(entry.size)}`)}</p>
-          <p class="cinema-summary">${escapeHtml(entry.summary || "No synopsis has been added for this title yet.")}</p>
-          <div class="cinema-actions">
-            <button type="button" data-cinema-action="play">Play</button>
-            <button type="button" data-cinema-action="fullscreen">Fullscreen</button>
-            <button type="button" data-cinema-action="edit">Edit Details</button>
-            <button type="button" data-cinema-action="identify" ${entry.mediaKind !== "video" ? "disabled" : ""}>Identify</button>
-          </div>
-          <div class="cinema-fact-grid">
-            <span>Studio <strong>${escapeHtml(entry.studio || "Not set")}</strong></span>
-            <span>Collection <strong>${escapeHtml(entry.collection || "None")}</strong></span>
-            <span>Cast <strong>${escapeHtml(entry.cast || "Not set")}</strong></span>
-            <span>File <strong>${escapeHtml(entry.name)}</strong></span>
-          </div>
-          <section class="cinema-identify" data-cinema-identify hidden></section>
-        </section>
-      </div>
+const renderChapterStrip = (entry: CinemaEntry) => `
+  <section class="cinema-chapter-strip" aria-label="Chapters">
+    <header>
+      <strong>Chapters</strong>
+      <button type="button" data-cinema-action="view-chapters">View All Chapters</button>
+    </header>
+    <div class="cinema-chapter-cards">
+      ${renderChapterCards(entry, "rail")}
     </div>
   </section>
 `;
 
-const renderPlayerView = (entry: CinemaEntry) => {
-  const player =
-    entry.mediaKind === "audio"
-      ? `<audio class="cinema-player audio" data-cinema-player controls autoplay src="${entry.streamUrl}"></audio>`
-      : `<video class="cinema-player" data-cinema-player controls autoplay playsinline preload="metadata" src="${entry.streamUrl}"></video>`;
+const renderChapterCards = (entry: CinemaEntry, mode: "rail" | "expanded") =>
+  chapterMarkers
+    .map(
+      ([chapter, time], index) => `
+        <button class="${index === 0 ? "active" : ""}" type="button">
+          <span class="cinema-chapter-thumb" data-cinema-backdrop="${escapeHtml(entry.path)}" data-cinema-frame-time="${parseTimeLabel(time)}"${posterStyle(entry)}>${entry.posterUrl ? "" : renderPosterFallback(entry)}</span>
+          <strong>${index + 1}. ${chapter}</strong>
+          <small>${time}${mode === "expanded" ? " / Scene preview" : ""}</small>
+        </button>
+      `
+    )
+    .join("");
+
+const queueEntries = (entries: CinemaEntry[], selected: CinemaEntry | null) => {
+  const watchlistedQueue = entries.filter((entry) => entry.watchlisted && entry.path !== selected?.path);
+  return (watchlistedQueue.length > 0 ? watchlistedQueue : entries.filter((entry) => entry.path !== selected?.path)).slice(0, 8);
+};
+
+const renderNextUpQueue = (entries: CinemaEntry[], selected: CinemaEntry | null) => {
+  const queue = queueEntries(entries, selected);
 
   return `
-    <section class="cinema-player-view" data-cinema-view="player">
-      <header class="cinema-player-bar">
-        <button type="button" data-cinema-action="back-title">Details</button>
-        <div>
-          <p class="eyebrow">Now Playing</p>
-          <h3>${escapeHtml(entry.title)}</h3>
-        </div>
-        <button type="button" data-cinema-action="player-fullscreen">Fullscreen</button>
+    <section class="cinema-next-up">
+      <header>
+        <strong>Next Up</strong>
+        <button type="button" data-cinema-action="view-queue">View Queue</button>
       </header>
-      <div class="cinema-player-region">
-        ${player}
+      <div>
+        ${
+          queue.length > 0
+            ? queue
+                .map(
+                  (entry) => `
+                    <button type="button" data-cinema-path="${escapeHtml(entry.path)}">
+                      <span class="cinema-next-thumb" data-cinema-backdrop="${escapeHtml(entry.path)}"${posterStyle(entry)}>${entry.posterUrl ? "" : renderPosterFallback(entry)}</span>
+                      <span>
+                        <small>${escapeHtml(entry.category === "tv" ? "S1 / E2" : categoryLabel(entry.category))}</small>
+                        <strong>${escapeHtml(entry.title)}</strong>
+                        <small>${entry.mediaKind === "audio" ? "Track ready" : "22:06"}</small>
+                      </span>
+                    </button>
+                  `
+                )
+                .join("")
+            : `<p>No queued titles yet.</p>`
+        }
       </div>
     </section>
   `;
 };
 
+const renderQueueCards = (entries: CinemaEntry[]) =>
+  entries
+    .map(
+      (entry) => `
+        <button type="button" data-cinema-path="${escapeHtml(entry.path)}">
+          <span class="cinema-next-thumb" data-cinema-backdrop="${escapeHtml(entry.path)}"${posterStyle(entry)}>${entry.posterUrl ? "" : renderPosterFallback(entry)}</span>
+          <span>
+            <small>${escapeHtml(categoryLabel(entry.category))}</small>
+            <strong>${escapeHtml(entry.title)}</strong>
+            <small>${entry.mediaKind === "audio" ? "Track ready" : metadataLine(entry) || "Ready to play"}</small>
+          </span>
+        </button>
+      `
+    )
+    .join("");
+
+const renderLibrary = (entries: CinemaEntry[], activeCategory: CinemaCategory, query: string, selected: CinemaEntry | null) => {
+  const categoryEntries = entries.filter((entry) => entry.category === activeCategory);
+  const visibleEntries = query
+    ? categoryEntries.filter((entry) =>
+        `${entry.title} ${entry.name} ${entry.folder} ${entry.genres.join(" ")} ${entry.cast}`.toLowerCase().includes(query.toLowerCase())
+      )
+    : categoryEntries;
+
+  return `
+    <main class="cinema-library browsing" data-cinema-view="library">
+      <section class="cinema-library-row">
+        <header>
+          <div>
+            <p class="eyebrow">Library</p>
+            <h3>${escapeHtml(categoryLabel(activeCategory))}</h3>
+          </div>
+          <nav class="cinema-category-segments" aria-label="Media categories">
+            ${categories
+              .map(
+                (category) => `
+                  <button class="${category.id === activeCategory ? "active" : ""}" type="button" data-cinema-category="${category.id}">
+                    ${category.label}
+                    <span>${entries.filter((entry) => entry.category === category.id).length}</span>
+                  </button>
+                `
+              )
+              .join("")}
+          </nav>
+          <span>${visibleEntries.length} titles</span>
+        </header>
+        <div class="cinema-grid" data-cinema-grid>${renderCinemaCards(visibleEntries, activeCategory)}</div>
+      </section>
+    </main>
+  `;
+};
+
+const renderWatchlistView = (entries: CinemaEntry[], query: string) => {
+  const watchlistedEntries = entries.filter((entry) => entry.watchlisted);
+  const visibleEntries = query
+    ? watchlistedEntries.filter((entry) =>
+        `${entry.title} ${entry.name} ${entry.folder} ${entry.genres.join(" ")} ${entry.cast}`.toLowerCase().includes(query.toLowerCase())
+      )
+    : watchlistedEntries;
+
+  return `
+    <main class="cinema-watchlist-view browsing" data-cinema-view="watchlist">
+      <section class="cinema-library-row">
+        <header>
+          <div>
+            <p class="eyebrow">Saved</p>
+            <h3>Watchlist</h3>
+          </div>
+          <span>${visibleEntries.length} titles</span>
+        </header>
+        <div class="cinema-grid" data-cinema-grid>
+          ${
+            visibleEntries.length > 0
+              ? renderCinemaCards(visibleEntries, "movies")
+              : `
+                <div class="cinema-empty">
+                  <strong>Your watchlist is empty</strong>
+                  <span>Add movies, shows, or music from Library.</span>
+                </div>
+              `
+          }
+        </div>
+      </section>
+    </main>
+  `;
+};
+
+const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[]) => `
+  <main class="cinema-title-detail" data-cinema-view="title-detail">
+    <section class="cinema-player-layout">
+      <div class="cinema-player-frame" data-cinema-backdrop="${escapeHtml(entry.path)}"${posterStyle(entry)}>
+        ${renderPlaybackControls(entry, currentServerInfo())}
+      </div>
+      <aside class="cinema-title-panel">
+        <button class="cinema-back-command" type="button" data-cinema-action="library">${renderCinemaIcon("ArrowLeft")} Back to Library</button>
+        <p class="eyebrow">${escapeHtml(categoryLabel(entry.category))}</p>
+        <h2>${escapeHtml(entry.title)}</h2>
+        ${entry.tagline ? `<p class="cinema-tagline">${escapeHtml(entry.tagline)}</p>` : ""}
+        <p class="cinema-title-meta">${escapeHtml(metadataLine(entry) || `${entry.folder || "Content"} / ${formatSize(entry.size)}`)}</p>
+        <p>${escapeHtml(entry.summary || "No synopsis has been added for this title yet.")}</p>
+        <div class="cinema-actions">
+          <button type="button" data-cinema-action="play">${renderCinemaIcon("Play")} Play</button>
+          ${renderWatchlistButton(entry)}
+          <button type="button" data-cinema-action="more">${renderCinemaIcon("MoreHorizontal")} More</button>
+        </div>
+        <button class="cinema-edit-command" type="button" data-cinema-action="edit">${renderCinemaIcon("Pencil")} Edit Details</button>
+        ${renderServerCard(currentServerInfo(), true)}
+        ${renderPlaybackSettings(entry)}
+        <div class="cinema-meta-list">
+          <span>Type <strong>${entry.mediaKind === "audio" ? "Music" : "Video"}</strong></span>
+          <span>Year <strong>${escapeHtml(entry.releaseYear || "Not set")}</strong></span>
+          <span>Rating <strong>${escapeHtml(entry.rating || "Not set")}</strong></span>
+          <span>Genres <strong>${escapeHtml(entry.genres.join(", ") || "Not set")}</strong></span>
+          <span>Studio <strong>${escapeHtml(entry.studio || "Not set")}</strong></span>
+          <span>File <strong>${escapeHtml(entry.name)}</strong></span>
+        </div>
+      </aside>
+    </section>
+    <section class="cinema-detail-lower">
+      ${renderChapterStrip(entry)}
+      ${renderNextUpQueue(entries, entry)}
+    </section>
+  </main>
+`;
+
+const renderPlayerView = (entry: CinemaEntry) => {
+  const player =
+    entry.mediaKind === "audio"
+      ? `<audio class="cinema-player" data-cinema-player controls autoplay src="${entry.streamUrl}"></audio>`
+      : `<video class="cinema-player" data-cinema-player controls autoplay playsinline preload="metadata" src="${entry.streamUrl}"></video>`;
+
+  return `
+    <main class="cinema-watch-surface" data-cinema-view="player">
+      <header>
+        <button type="button" data-cinema-action="back-title">Details</button>
+        <div>
+          <p class="eyebrow">Now Playing</p>
+          <h2>${escapeHtml(entry.title)}</h2>
+        </div>
+        <button type="button" data-cinema-action="player-fullscreen">Fullscreen</button>
+      </header>
+      <section class="cinema-video-stage">
+        ${player}
+        ${renderPlaybackControls(entry, currentServerInfo())}
+      </section>
+    </main>
+  `;
+};
+
+const renderServersView = () => {
+  const server = currentServerInfo();
+
+  return `
+    <main class="cinema-servers" data-cinema-view="servers">
+      <section>
+        <p class="eyebrow">Server</p>
+        <h2>${server.online ? "Connected" : "Needs Connection"}</h2>
+        <p>${escapeHtml(server.address)}</p>
+        ${renderServerCard(server)}
+      </section>
+      <div class="cinema-server-grid">
+        <span>Mode <strong>${escapeHtml(server.mode)}</strong></span>
+        <span>Authentication <strong>${escapeHtml(server.authState)}</strong></span>
+        <span>Playback <strong>Original quality</strong></span>
+        <span>Throughput <strong>Local network</strong></span>
+      </div>
+    </main>
+  `;
+};
+
+const renderIdentifyView = (selected: CinemaEntry | null) => `
+  <main class="cinema-identify-workspace" data-cinema-view="identify">
+    <section>
+      <p class="eyebrow">Identify</p>
+      <h2>${escapeHtml(selected?.title ?? "Visual Identification")}</h2>
+      <p>${selected?.mediaKind === "video" ? "Sample frames and search for title evidence." : "Open a video title to run visual identification."}</p>
+      <div class="cinema-actions">
+        <button type="button" data-cinema-action="run-identify" ${selected?.mediaKind === "video" ? "" : "disabled"}>Identify Title</button>
+        <button type="button" data-cinema-action="library">Library</button>
+      </div>
+    </section>
+    <section class="cinema-identify" data-cinema-identify>
+      <div class="cinema-empty">
+        <strong>Waiting for frames</strong>
+        <span>Select a video and start identification.</span>
+      </div>
+    </section>
+  </main>
+`;
+
 const renderEditForm = (entry: CinemaEntry) => `
-  <section class="cinema-editor" data-cinema-editor>
+  <section class="cinema-editor-sheet" data-cinema-editor>
     <form class="cinema-editor-dialog" data-cinema-editor-form>
       <header>
         <div>
-          <p class="eyebrow">Edit Metadata</p>
+          <p class="eyebrow">Edit Details</p>
           <h3>${escapeHtml(entry.title)}</h3>
         </div>
         <button type="button" data-cinema-action="close-editor" aria-label="Close editor">×</button>
       </header>
-      <div class="cinema-editor-grid">
-        <label>Title <input name="title" value="${escapeHtml(entry.title)}" /></label>
-        <label>Sort Title <input name="sortTitle" value="${escapeHtml(entry.sortTitle || entry.title)}" /></label>
-        <label>Year <input name="releaseYear" value="${escapeHtml(entry.releaseYear)}" /></label>
-        <label>Rating <input name="rating" value="${escapeHtml(entry.rating)}" /></label>
-        <label>Genres <input name="genres" value="${escapeHtml(entry.genres.join(", "))}" /></label>
-        <label>Studio <input name="studio" value="${escapeHtml(entry.studio)}" /></label>
-        <label>Collection <input name="collection" value="${escapeHtml(entry.collection)}" /></label>
-        <label>Poster URL <input name="posterUrl" value="${escapeHtml(entry.posterUrl)}" /></label>
-        <label class="wide">Tagline <input name="tagline" value="${escapeHtml(entry.tagline)}" /></label>
-        <label class="wide">Cast <input name="cast" value="${escapeHtml(entry.cast)}" /></label>
-        <label class="wide">Summary <textarea name="summary">${escapeHtml(entry.summary)}</textarea></label>
+      <div class="cinema-editor-groups">
+        <fieldset>
+          <legend>Overview</legend>
+          <label>Title <input name="title" value="${escapeHtml(entry.title)}" /></label>
+          <label>Sort Title <input name="sortTitle" value="${escapeHtml(entry.sortTitle || entry.title)}" /></label>
+          <label>Year <input name="releaseYear" value="${escapeHtml(entry.releaseYear)}" /></label>
+          <label>Rating <input name="rating" value="${escapeHtml(entry.rating)}" /></label>
+          <label class="wide">Summary <textarea name="summary">${escapeHtml(entry.summary)}</textarea></label>
+        </fieldset>
+        <fieldset>
+          <legend>Artwork And Credits</legend>
+          <label>Genres <input name="genres" value="${escapeHtml(entry.genres.join(", "))}" /></label>
+          <label>Studio <input name="studio" value="${escapeHtml(entry.studio)}" /></label>
+          <label>Collection <input name="collection" value="${escapeHtml(entry.collection)}" /></label>
+          <label>Poster URL <input name="posterUrl" value="${escapeHtml(entry.posterUrl)}" /></label>
+          <label class="wide">Tagline <input name="tagline" value="${escapeHtml(entry.tagline)}" /></label>
+          <label class="wide">Cast <input name="cast" value="${escapeHtml(entry.cast)}" /></label>
+        </fieldset>
       </div>
       <footer>
-        <span data-cinema-editor-status></span>
+        <span data-cinema-editor-status>Source: ${escapeHtml(entry.path)}</span>
         <button type="button" data-cinema-action="close-editor">Cancel</button>
         <button type="submit">Save Details</button>
       </footer>
@@ -178,68 +488,146 @@ const renderEditForm = (entry: CinemaEntry) => `
   </section>
 `;
 
-export const renderCinemaView = () => `
-  <section class="cinema-app" data-cinema-app>
-    <header class="cinema-shell-bar">
-      <div>
-        <p class="eyebrow">Nebula Cinema</p>
-        <h3>Library</h3>
-      </div>
-      <div class="cinema-shell-actions">
-        <button class="cinema-home-command" type="button" data-cinema-action="home">Home</button>
-      </div>
-    </header>
-    <section class="cinema-home" data-cinema-view="library">
-      <header class="cinema-home-header">
+const renderCinemaSheet = (title: string, eyebrow: string, body: string) => `
+  <section class="cinema-editor-sheet cinema-expanded-sheet" data-cinema-expanded-sheet>
+    <div class="cinema-expanded-dialog" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+      <header>
         <div>
-          <p class="eyebrow">Local Library</p>
-          <h3 data-cinema-heading>Movies</h3>
+          <p class="eyebrow">${escapeHtml(eyebrow)}</p>
+          <h3>${escapeHtml(title)}</h3>
         </div>
-        <div class="cinema-home-tools">
-          <nav class="cinema-tabs" aria-label="Media categories">
-            ${categories
-              .map(
-                (category) => `
-                  <button class="${category.id === "movies" ? "active" : ""}" type="button" data-cinema-category="${category.id}">
-                    ${category.label}
-                    <span data-cinema-count="${category.id}">0</span>
-                  </button>
-                `
-              )
-              .join("")}
-          </nav>
-          <label class="cinema-search">
-            <span>Search</span>
-            <input type="search" data-cinema-search placeholder="Find media" />
-          </label>
-          <button class="cinema-refresh" type="button" data-cinema-action="refresh">Refresh</button>
-        </div>
+        <button type="button" data-cinema-action="close-sheet" aria-label="Close">${renderCinemaIcon("X")}</button>
       </header>
-      <div class="cinema-grid" data-cinema-grid>
+      ${body}
+    </div>
+  </section>
+`;
+
+const renderMoreSheet = (entry: CinemaEntry) =>
+  renderCinemaSheet(
+    "Title Options",
+    entry.title,
+    `
+      <div class="cinema-more-actions">
+        <button type="button" data-cinema-action="edit">${renderCinemaIcon("Pencil")} Edit Details</button>
+        <button type="button" data-cinema-action="view-chapters">${renderCinemaIcon("ListVideo")} View Chapters</button>
+        <button type="button" data-cinema-action="view-queue">${renderCinemaIcon("ListOrdered")} View Queue</button>
+        <button type="button" data-cinema-action="identify-nav" ${entry.mediaKind !== "video" ? "disabled" : ""}>${renderCinemaIcon("ScanSearch")} Identify Title</button>
+      </div>
+      <div class="cinema-expanded-meta">
+        <span>File <strong>${escapeHtml(entry.name)}</strong></span>
+        <span>Source <strong>${escapeHtml(entry.folder || "Content root")}</strong></span>
+        <span>Size <strong>${formatSize(entry.size)}</strong></span>
+        <span>Modified <strong>${new Date(entry.modifiedAt).toLocaleDateString()}</strong></span>
+      </div>
+    `
+  );
+
+const renderChaptersSheet = (entry: CinemaEntry) =>
+  renderCinemaSheet(
+    "All Chapters",
+    entry.title,
+    `<div class="cinema-expanded-chapters">${renderChapterCards(entry, "expanded")}</div>`
+  );
+
+const renderQueueSheet = (entries: CinemaEntry[], selected: CinemaEntry | null) => {
+  const queue = queueEntries(entries, selected);
+
+  return renderCinemaSheet(
+    "View Queue",
+    selected?.title ?? "Up Next",
+    queue.length > 0
+      ? `<div class="cinema-expanded-queue">${renderQueueCards(queue)}</div>`
+      : `
         <div class="cinema-empty">
-          <strong>Loading library</strong>
-          <span>Scanning content for playable media.</span>
+          <strong>No queued titles</strong>
+          <span>Add titles to the watchlist or import more media.</span>
         </div>
+      `
+  );
+};
+
+const renderIdentificationResult = (frames: CinemaIdentificationFrame[], result: CinemaIdentifyResponse) => {
+  const provider = result.providers[0];
+  const configured = provider?.configured ?? false;
+  const pages = provider?.results.flatMap((entry) => entry.pages ?? []).filter((page) => page.url) ?? [];
+  const entities = provider?.results.flatMap((entry) => entry.webEntities ?? []) ?? [];
+
+  return `
+    <div class="cinema-identify-header">
+      <div>
+        <p class="eyebrow">Visual Search</p>
+        <h4>${configured ? "Online evidence" : "Search kit ready"}</h4>
+      </div>
+      <span>${frames.length} frames</span>
+    </div>
+    <div class="cinema-frame-strip">
+      ${frames
+        .map(
+          (frame) => `
+            <figure>
+              <img src="${frame.image}" alt="Sample frame at ${formatTime(frame.time)}" />
+              <figcaption>${formatTime(frame.time)}</figcaption>
+            </figure>
+          `
+        )
+        .join("")}
+    </div>
+    ${
+      result.candidates.length > 0
+        ? `<div class="cinema-evidence-list"><strong>Candidate entities</strong>${result.candidates
+            .map((candidate) => `<span>${escapeHtml(candidate.name)} / ${candidate.score.toFixed(2)}</span>`)
+            .join("")}</div>`
+        : ""
+    }
+    ${
+      entities.length > 0
+        ? `<div class="cinema-evidence-list"><strong>Frame evidence</strong>${entities
+            .slice(0, 8)
+            .map((entity) => `<span>${escapeHtml(entity.description)} / ${entity.score.toFixed(2)}</span>`)
+            .join("")}</div>`
+        : ""
+    }
+    <div class="cinema-evidence-list">
+      <strong>${pages.length > 0 ? "Matching pages" : configured ? "No matching pages found" : "Manual searches"}</strong>
+      ${
+        pages.length > 0
+          ? pages.slice(0, 6).map((page) => `<a href="${escapeHtml(page.url)}" target="_blank" rel="noreferrer">${escapeHtml(page.title)}</a>`).join("")
+          : result.frameQueries.slice(0, 6).map((query) => `<a href="${searchUrl(query)}" target="_blank" rel="noreferrer">${escapeHtml(query)}</a>`).join("")
+      }
+    </div>
+  `;
+};
+
+export const renderCinemaView = () => `
+  <section class="cinema-shell" data-cinema-app>
+    <div data-cinema-top-nav></div>
+    <section class="cinema-content" data-cinema-content>
+      <div class="cinema-empty">
+        <strong>Loading library</strong>
+        <span>Scanning content for playable media.</span>
       </div>
     </section>
-    <section data-cinema-title-host hidden></section>
-    <section data-cinema-player-host hidden></section>
     <section data-cinema-editor-host hidden></section>
+    <div class="cinema-wave" aria-hidden="true">
+      <svg viewBox="0 0 1600 160" preserveAspectRatio="none">
+        <path class="cinema-wave-line primary" d="M -640 88 C -560 50 -480 50 -400 88 C -320 126 -240 126 -160 88 C -80 50 0 50 80 88 C 160 126 240 126 320 88 C 400 50 480 50 560 88 C 640 126 720 126 800 88 C 880 50 960 50 1040 88 C 1120 126 1200 126 1280 88 C 1360 50 1440 50 1520 88 C 1600 126 1680 126 1760 88 C 1840 50 1920 50 2000 88 C 2080 126 2160 126 2240 88" />
+        <path class="cinema-wave-line secondary" d="M -640 88 C -560 50 -480 50 -400 88 C -320 126 -240 126 -160 88 C -80 50 0 50 80 88 C 160 126 240 126 320 88 C 400 50 480 50 560 88 C 640 126 720 126 800 88 C 880 50 960 50 1040 88 C 1120 126 1200 126 1280 88 C 1360 50 1440 50 1520 88 C 1600 126 1680 126 1760 88 C 1840 50 1920 50 2000 88 C 2080 126 2160 126 2240 88" />
+        <path class="cinema-wave-line tertiary" d="M -640 88 C -560 50 -480 50 -400 88 C -320 126 -240 126 -160 88 C -80 50 0 50 80 88 C 160 126 240 126 320 88 C 400 50 480 50 560 88 C 640 126 720 126 800 88 C 880 50 960 50 1040 88 C 1120 126 1200 126 1280 88 C 1360 50 1440 50 1520 88 C 1600 126 1680 126 1760 88 C 1840 50 1920 50 2000 88 C 2080 126 2160 126 2240 88" />
+      </svg>
+    </div>
+    <footer class="cinema-footer-status" data-cinema-footer></footer>
   </section>
 `;
 
 export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
   const app = container.querySelector<HTMLElement>("[data-cinema-app]");
-  const heading = container.querySelector<HTMLElement>("[data-cinema-heading]");
-  const grid = container.querySelector<HTMLElement>("[data-cinema-grid]");
-  const libraryView = container.querySelector<HTMLElement>("[data-cinema-view='library']");
-  const titleHost = container.querySelector<HTMLElement>("[data-cinema-title-host]");
-  const playerHost = container.querySelector<HTMLElement>("[data-cinema-player-host]");
+  const topNav = container.querySelector<HTMLElement>("[data-cinema-top-nav]");
+  const content = container.querySelector<HTMLElement>("[data-cinema-content]");
   const editorHost = container.querySelector<HTMLElement>("[data-cinema-editor-host]");
-  const search = container.querySelector<HTMLInputElement>("[data-cinema-search]");
-  const refresh = container.querySelector<HTMLButtonElement>("[data-cinema-action='refresh']");
+  const footer = container.querySelector<HTMLElement>("[data-cinema-footer]");
 
-  if (!app || !heading || !grid || !libraryView || !titleHost || !playerHost || !editorHost || !search || !refresh) {
+  if (!app || !topNav || !content || !editorHost || !footer) {
     return;
   }
 
@@ -247,89 +635,119 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
   let activeCategory: CinemaCategory = "movies";
   let selected: CinemaEntry | null = null;
   let view: CinemaView = "library";
+  let query = "";
+  let isScanning = false;
 
-  const categoryEntries = (category: CinemaCategory) => entries.filter((entry) => entry.category === category);
+  const currentVisibleEntries = () =>
+    entries
+      .filter((entry) => entry.category === activeCategory)
+      .filter((entry) =>
+        query
+          ? `${entry.title} ${entry.name} ${entry.folder} ${entry.genres.join(" ")} ${entry.cast}`.toLowerCase().includes(query.toLowerCase())
+          : true
+      );
 
-  const filteredEntries = () => {
-    const query = search.value.trim().toLowerCase();
-    const currentEntries = categoryEntries(activeCategory);
+  const currentWatchlistEntries = () =>
+    entries
+      .filter((entry) => entry.watchlisted)
+      .filter((entry) =>
+        query
+          ? `${entry.title} ${entry.name} ${entry.folder} ${entry.genres.join(" ")} ${entry.cast}`.toLowerCase().includes(query.toLowerCase())
+          : true
+      );
 
-    if (!query) {
-      return currentEntries;
+  const thumbnailCache = new Map<string, Promise<string | null>>();
+
+  const captureVideoThumbnail = (entry: CinemaEntry, time: number, width: number, height: number) => {
+    const cacheKey = `${entry.path}:${Math.round(time * 10) / 10}:${width}x${height}`;
+    const cached = thumbnailCache.get(cacheKey);
+
+    if (cached) {
+      return cached;
     }
 
-    return currentEntries.filter((entry) =>
-      `${entry.title} ${entry.name} ${entry.folder} ${entry.genres.join(" ")} ${entry.cast}`.toLowerCase().includes(query)
-    );
-  };
+    const thumbnail = (async () => {
+      const video = document.createElement("video");
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = "metadata";
+      video.src = entry.streamUrl;
 
-  const setView = (nextView: CinemaView) => {
-    view = nextView;
-    libraryView.hidden = view !== "library";
-    titleHost.hidden = view !== "title";
-    playerHost.hidden = view !== "player";
-  };
+      try {
+        await new Promise<void>((resolve, reject) => {
+          video.addEventListener("loadedmetadata", () => resolve(), { once: true });
+          video.addEventListener("error", () => reject(new Error("Poster metadata failed.")), { once: true });
+        });
 
-  const updateCounts = () => {
-    categories.forEach((category) => {
-      const count = container.querySelector<HTMLElement>(`[data-cinema-count='${category.id}']`);
+        const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 6;
+        const seekTime = time >= 0 ? time : Math.min(12, Math.max(0.5, duration * 0.08));
+        video.currentTime = Math.min(Math.max(0.4, duration - 0.2), Math.max(0.4, seekTime));
 
-      if (count) {
-        count.textContent = String(categoryEntries(category.id).length);
+        await new Promise<void>((resolve, reject) => {
+          video.addEventListener("seeked", () => resolve(), { once: true });
+          video.addEventListener("error", () => reject(new Error("Poster seek failed.")), { once: true });
+        });
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d");
+
+        if (!context) {
+          return null;
+        }
+
+        const sourceWidth = video.videoWidth;
+        const sourceHeight = video.videoHeight;
+        const sourceRatio = sourceWidth / sourceHeight;
+        const targetRatio = canvas.width / canvas.height;
+        const cropWidth = sourceRatio > targetRatio ? sourceHeight * targetRatio : sourceWidth;
+        const cropHeight = sourceRatio > targetRatio ? sourceHeight : sourceWidth / targetRatio;
+        const cropX = (sourceWidth - cropWidth) / 2;
+        const cropY = (sourceHeight - cropHeight) / 2;
+
+        context.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL("image/jpeg", 0.72);
+      } finally {
+        video.removeAttribute("src");
+        video.load();
       }
-    });
+    })();
+
+    thumbnailCache.set(cacheKey, thumbnail);
+    return thumbnail;
   };
 
   const hydratePoster = async (entry: CinemaEntry, poster: HTMLElement) => {
-    if (entry.posterUrl || entry.mediaKind !== "video") {
+    const explicitTime = Number(poster.dataset.cinemaFrameTime);
+
+    if ((entry.posterUrl && !Number.isFinite(explicitTime)) || entry.mediaKind !== "video") {
       return;
     }
 
-    const video = document.createElement("video");
-    video.muted = true;
-    video.playsInline = true;
-    video.preload = "metadata";
-    video.src = entry.streamUrl;
+    const isWideThumbnail = Boolean(poster.dataset.cinemaBackdrop);
+    const thumbnail = await captureVideoThumbnail(
+      entry,
+      Number.isFinite(explicitTime) ? explicitTime : -1,
+      isWideThumbnail ? 384 : 320,
+      isWideThumbnail ? 216 : 480
+    );
 
-    await new Promise<void>((resolve, reject) => {
-      video.addEventListener("loadedmetadata", () => resolve(), { once: true });
-      video.addEventListener("error", () => reject(new Error("Poster metadata failed.")), { once: true });
-    });
-
-    video.currentTime = Math.min(12, Math.max(0.5, (Number.isFinite(video.duration) ? video.duration : 6) * 0.08));
-
-    await new Promise<void>((resolve, reject) => {
-      video.addEventListener("seeked", () => resolve(), { once: true });
-      video.addEventListener("error", () => reject(new Error("Poster seek failed.")), { once: true });
-    });
-
-    const canvas = document.createElement("canvas");
-    canvas.width = 320;
-    canvas.height = 480;
-    const context = canvas.getContext("2d");
-
-    if (!context) {
+    if (!thumbnail) {
       return;
     }
 
-    const sourceWidth = video.videoWidth;
-    const sourceHeight = video.videoHeight;
-    const sourceRatio = sourceWidth / sourceHeight;
-    const targetRatio = canvas.width / canvas.height;
-    const cropWidth = sourceRatio > targetRatio ? sourceHeight * targetRatio : sourceWidth;
-    const cropHeight = sourceRatio > targetRatio ? sourceHeight : sourceWidth / targetRatio;
-    const cropX = (sourceWidth - cropWidth) / 2;
-    const cropY = (sourceHeight - cropHeight) / 2;
-
-    context.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);
-    poster.style.backgroundImage = `url(${canvas.toDataURL("image/jpeg", 0.72)})`;
+    poster.style.backgroundImage = `url(${thumbnail})`;
     poster.classList.add("ready");
-    poster.innerHTML = "";
+
+    if (poster.dataset.cinemaPoster || poster.classList.contains("cinema-chapter-thumb") || poster.classList.contains("cinema-next-thumb")) {
+      poster.innerHTML = "";
+    }
   };
 
-  const hydratePosters = (scope: ParentNode = container) => {
-    scope.querySelectorAll<HTMLElement>("[data-cinema-poster], [data-cinema-detail-poster], [data-cinema-backdrop]").forEach((poster) => {
-      const path = poster.dataset.cinemaPoster ?? poster.dataset.cinemaDetailPoster ?? poster.dataset.cinemaBackdrop;
+  const hydratePosters = () => {
+    app.querySelectorAll<HTMLElement>("[data-cinema-poster], [data-cinema-backdrop]").forEach((poster) => {
+      const path = poster.dataset.cinemaPoster ?? poster.dataset.cinemaBackdrop;
       const entry = entries.find((candidate) => candidate.path === path);
 
       if (entry) {
@@ -338,32 +756,63 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
     });
   };
 
-  const renderLibrary = () => {
-    const visibleEntries = filteredEntries();
-    heading.textContent = categoryLabel(activeCategory);
-    container.querySelectorAll<HTMLButtonElement>("[data-cinema-category]").forEach((button) => {
-      button.classList.toggle("active", button.dataset.cinemaCategory === activeCategory);
-    });
-    grid.innerHTML = renderCinemaCards(visibleEntries, activeCategory);
-    hydratePosters(grid);
+  const renderFooter = () => {
+    const server = currentServerInfo();
+    const now = new Date();
+
+    footer.innerHTML = `
+      <span><i class="cinema-status-dot ${server.online ? "online" : "offline"}"></i>${server.online ? "Server Online" : "Server Offline"}</span>
+      <span>${escapeHtml(server.name)} / ${escapeHtml(server.address)}</span>
+      <time>${now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time>
+    `;
   };
 
-  const renderTitle = () => {
-    if (!selected) {
-      return;
+  const render = () => {
+    topNav.innerHTML = renderTopNav(view);
+    content.classList.toggle("scanning", isScanning);
+
+    if (view === "library") {
+      content.innerHTML = renderLibrary(entries, activeCategory, query, selected);
     }
 
-    titleHost.innerHTML = renderTitleDetails(selected);
-    titleHost.hidden = false;
-    hydratePosters(titleHost);
-    bindTitleControls();
+    if (view === "watchlist") {
+      content.innerHTML = renderWatchlistView(entries, query);
+    }
+
+    if (view === "title-detail") {
+      content.innerHTML = selected ? renderTitleHero(selected, entries) : renderLibrary(entries, activeCategory, query, selected);
+    }
+
+    if (view === "player") {
+      content.innerHTML = selected ? renderPlayerView(selected) : renderLibrary(entries, activeCategory, query, selected);
+    }
+
+    if (view === "servers") {
+      content.innerHTML = renderServersView();
+    }
+
+    if (view === "identify") {
+      content.innerHTML = renderIdentifyView(selected);
+    }
+
+    const search = topNav.querySelector<HTMLInputElement>("[data-cinema-search]");
+    if (search) {
+      search.value = query;
+    }
+
+    content.querySelectorAll<HTMLButtonElement>("[data-cinema-category]").forEach((button) => {
+      button.classList.toggle("active", view === "library" && button.dataset.cinemaCategory === activeCategory);
+    });
+
+    renderFooter();
+    hydratePosters();
   };
 
   const openTitle = (entry: CinemaEntry) => {
     selected = entry;
-    playerHost.innerHTML = "";
-    renderTitle();
-    setView("title");
+    activeCategory = entry.category;
+    view = "title-detail";
+    render();
   };
 
   const openPlayer = (fullscreen = false) => {
@@ -371,15 +820,14 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
       return;
     }
 
-    playerHost.innerHTML = renderPlayerView(selected);
-    setView("player");
-    const player = playerHost.querySelector<HTMLMediaElement>("[data-cinema-player]");
+    view = "player";
+    render();
+
+    const player = content.querySelector<HTMLMediaElement>("[data-cinema-player]");
 
     if (fullscreen && player instanceof HTMLVideoElement) {
       void player.requestFullscreen?.();
     }
-
-    bindPlayerControls();
   };
 
   const frameBrightness = (context: CanvasRenderingContext2D, width: number, height: number) => {
@@ -442,78 +890,16 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
     return frames;
   };
 
-  const renderIdentificationResult = (panel: HTMLElement, frames: CinemaIdentificationFrame[], result: CinemaIdentifyResponse) => {
-    const provider = result.providers[0];
-    const configured = provider?.configured ?? false;
-    const pages = provider?.results.flatMap((entry) => entry.pages ?? []).filter((page) => page.url) ?? [];
-    const entities = provider?.results.flatMap((entry) => entry.webEntities ?? []) ?? [];
-
-    panel.hidden = false;
-    panel.innerHTML = `
-      <div class="cinema-identify-header">
-        <div>
-          <p class="eyebrow">Visual Search</p>
-          <h4>${configured ? "Online evidence" : "Search kit ready"}</h4>
-        </div>
-        <span>${frames.length} frames</span>
-      </div>
-      <div class="cinema-frame-strip">
-        ${frames
-          .map(
-            (frame) => `
-              <figure>
-                <img src="${frame.image}" alt="Sample frame at ${formatTime(frame.time)}" />
-                <figcaption>${formatTime(frame.time)}</figcaption>
-              </figure>
-            `
-          )
-          .join("")}
-      </div>
-      ${
-        result.candidates.length > 0
-          ? `
-            <div class="cinema-evidence-list">
-              <strong>Candidate entities</strong>
-              ${result.candidates.map((candidate) => `<span>${escapeHtml(candidate.name)} · ${candidate.score.toFixed(2)}</span>`).join("")}
-            </div>
-          `
-          : ""
-      }
-      ${
-        entities.length > 0
-          ? `
-            <div class="cinema-evidence-list">
-              <strong>Frame evidence</strong>
-              ${entities.slice(0, 8).map((entity) => `<span>${escapeHtml(entity.description)} · ${entity.score.toFixed(2)}</span>`).join("")}
-            </div>
-          `
-          : ""
-      }
-      ${
-        pages.length > 0
-          ? `
-            <div class="cinema-evidence-list">
-              <strong>Matching pages</strong>
-              ${pages.slice(0, 6).map((page) => `<a href="${escapeHtml(page.url)}" target="_blank" rel="noreferrer">${escapeHtml(page.title)}</a>`).join("")}
-            </div>
-          `
-          : `
-            <div class="cinema-evidence-list">
-              <strong>${configured ? "No matching pages found" : "Manual searches"}</strong>
-              ${result.frameQueries.slice(0, 6).map((query) => `<a href="${searchUrl(query)}" target="_blank" rel="noreferrer">${escapeHtml(query)}</a>`).join("")}
-            </div>
-          `
-      }
-    `;
-  };
-
   const identifySelectedVideo = async () => {
     if (!selected || selected.mediaKind !== "video") {
       return;
     }
 
-    const panel = titleHost.querySelector<HTMLElement>("[data-cinema-identify]");
-    const identify = titleHost.querySelector<HTMLButtonElement>("[data-cinema-action='identify']");
+    view = "identify";
+    render();
+
+    const panel = content.querySelector<HTMLElement>("[data-cinema-identify]");
+    const identify = content.querySelector<HTMLButtonElement>("[data-cinema-action='run-identify']");
 
     if (!panel || !identify) {
       return;
@@ -521,7 +907,6 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
 
     identify.disabled = true;
     identify.textContent = "Sampling";
-    panel.hidden = false;
     panel.innerHTML = `
       <div class="cinema-empty">
         <strong>Sampling video frames</strong>
@@ -537,12 +922,14 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
       }
 
       identify.textContent = "Searching";
-
-      renderIdentificationResult(panel, frames, await identifyCinemaFrames({
+      panel.innerHTML = renderIdentificationResult(
         frames,
-        path: selected.path,
-        title: selected.title
-      }));
+        await identifyCinemaFrames({
+          frames,
+          path: selected.path,
+          title: selected.title
+        })
+      );
     } catch (error) {
       panel.innerHTML = `
         <div class="cinema-empty">
@@ -552,7 +939,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
       `;
     } finally {
       identify.disabled = false;
-      identify.textContent = "Identify";
+      identify.textContent = "Identify Title";
     }
   };
 
@@ -561,14 +948,26 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
       return;
     }
 
+    view = "metadata-editor";
     editorHost.hidden = false;
     editorHost.innerHTML = renderEditForm(selected);
-    bindEditorControls();
+  };
+
+  const openSheet = (html: string) => {
+    editorHost.hidden = false;
+    editorHost.innerHTML = html;
+    hydratePosters();
+  };
+
+  const closeSheet = () => {
+    editorHost.hidden = true;
+    editorHost.innerHTML = "";
   };
 
   const closeEditor = () => {
-    editorHost.hidden = true;
-    editorHost.innerHTML = "";
+    view = selected ? "title-detail" : "library";
+    closeSheet();
+    render();
   };
 
   const saveMetadata = async (form: HTMLFormElement) => {
@@ -610,135 +1009,218 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
 
     entries = entries.map((entry) => (entry.path === selected?.path ? updatedEntry : entry));
     selected = updatedEntry;
-    updateCounts();
-    renderLibrary();
-    renderTitle();
     closeEditor();
   };
 
-  const bindTitleControls = () => {
-    titleHost.querySelectorAll<HTMLButtonElement>("[data-cinema-action]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const action = button.dataset.cinemaAction;
+  const toggleWatchlist = async (entry: CinemaEntry, button?: HTMLButtonElement) => {
+    const nextWatchlisted = !entry.watchlisted;
+    const payload: CinemaWatchlistUpdateRequest = {
+      path: entry.path,
+      watchlisted: nextWatchlisted
+    };
 
-        if (action === "back-library") {
-          selected = null;
-          titleHost.innerHTML = "";
-          setView("library");
-        }
+    if (button) {
+      button.disabled = true;
+      button.textContent = nextWatchlisted ? "Adding" : "Removing";
+    }
 
-        if (action === "home") {
-          onHome?.();
-        }
+    await updateCinemaWatchlist(payload);
 
-        if (action === "play") {
-          openPlayer(false);
-        }
+    const updatedEntry: CinemaEntry = {
+      ...entry,
+      watchlisted: nextWatchlisted
+    };
 
-        if (action === "fullscreen") {
-          openPlayer(true);
-        }
+    entries = entries.map((candidate) => (candidate.path === entry.path ? updatedEntry : candidate));
 
-        if (action === "edit") {
-          openEditor();
-        }
+    if (selected?.path === entry.path) {
+      selected = updatedEntry;
+    }
 
-        if (action === "identify") {
-          void identifySelectedVideo();
-        }
-      });
-    });
-  };
-
-  const bindPlayerControls = () => {
-    playerHost.querySelectorAll<HTMLButtonElement>("[data-cinema-action]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const action = button.dataset.cinemaAction;
-
-        if (action === "back-title") {
-          playerHost.innerHTML = "";
-          renderTitle();
-          setView("title");
-        }
-
-        if (action === "player-fullscreen") {
-          const player = playerHost.querySelector<HTMLMediaElement>("[data-cinema-player]");
-
-          if (player instanceof HTMLVideoElement) {
-            void player.requestFullscreen?.();
-          }
-        }
-      });
-    });
-  };
-
-  const bindEditorControls = () => {
-    const form = editorHost.querySelector<HTMLFormElement>("[data-cinema-editor-form]");
-
-    editorHost.querySelectorAll<HTMLButtonElement>("[data-cinema-action='close-editor']").forEach((button) => {
-      button.addEventListener("click", closeEditor);
-    });
-
-    form?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      void saveMetadata(form).catch((error) => {
-        const status = form.querySelector<HTMLElement>("[data-cinema-editor-status]");
-
-        if (status) {
-          status.textContent = error instanceof Error ? error.message : "Save failed.";
-        }
-      });
-    });
+    render();
   };
 
   const loadLibrary = async () => {
-    refresh.disabled = true;
-    refresh.textContent = "Scanning";
+    isScanning = true;
+    render();
 
     try {
       entries = (await listCinemaLibrary()).entries;
-      updateCounts();
-      renderLibrary();
+      selected = selected ? entries.find((entry) => entry.path === selected?.path) ?? selected : null;
     } catch (error) {
-      grid.innerHTML = `
+      content.innerHTML = `
         <div class="cinema-empty">
           <strong>Library unavailable</strong>
           <span>${escapeHtml(error instanceof Error ? error.message : "Unable to scan content.")}</span>
         </div>
       `;
     } finally {
-      refresh.disabled = false;
-      refresh.textContent = "Refresh";
+      isScanning = false;
+      render();
     }
   };
 
-  container.querySelectorAll<HTMLButtonElement>("[data-cinema-category]").forEach((button) => {
-    button.addEventListener("click", () => {
-      activeCategory = (button.dataset.cinemaCategory as CinemaCategory | undefined) ?? "movies";
+  app.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    const categoryButton = target.closest<HTMLButtonElement>("[data-cinema-category]");
+    const pathButton = target.closest<HTMLButtonElement>("[data-cinema-path]");
+    const actionButton = target.closest<HTMLButtonElement>("[data-cinema-action]");
+
+    if (categoryButton) {
+      activeCategory = (categoryButton.dataset.cinemaCategory as CinemaCategory | undefined) ?? "movies";
       selected = null;
-      renderLibrary();
-      setView("library");
-    });
-  });
+      view = "library";
+      render();
+      return;
+    }
 
-  grid.addEventListener("click", (event) => {
-    const card = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-cinema-path]");
-    const entry = entries.find((candidate) => candidate.path === card?.dataset.cinemaPath);
+    if (pathButton) {
+      const entry = entries.find((candidate) => candidate.path === pathButton.dataset.cinemaPath);
 
-    if (entry) {
-      openTitle(entry);
+      if (entry) {
+        closeSheet();
+        openTitle(entry);
+      }
+      return;
+    }
+
+    if (!actionButton) {
+      return;
+    }
+
+    const action = actionButton.dataset.cinemaAction;
+    const active =
+      (view === "watchlist" ? currentWatchlistEntries()[0] : selected ?? currentVisibleEntries()[0]) ??
+      entries.find((entry) => entry.watchlisted) ??
+      entries[0] ??
+      null;
+
+    if (action === "home") {
+      onHome?.();
+    }
+
+    if (action === "library") {
+      selected = null;
+      closeSheet();
+      view = "library";
+      render();
+    }
+
+    if (action === "watchlist") {
+      selected = null;
+      closeSheet();
+      view = "watchlist";
+      render();
+    }
+
+    if (action === "open-featured" && active) {
+      openTitle(active);
+    }
+
+    if ((action === "play" || action === "play-featured") && active) {
+      selected = active;
+      openPlayer(false);
+    }
+
+    if (action === "player-fullscreen") {
+      const player = content.querySelector<HTMLMediaElement>("[data-cinema-player]");
+
+      if (player instanceof HTMLVideoElement) {
+        void player.requestFullscreen?.();
+      }
+    }
+
+    if (action === "back-title") {
+      view = "title-detail";
+      render();
+    }
+
+    if (action === "edit" && active) {
+      selected = active;
+      openEditor();
+    }
+
+    if (action === "more" && active) {
+      selected = active;
+      openSheet(renderMoreSheet(active));
+    }
+
+    if (action === "view-chapters" && active) {
+      selected = active;
+      openSheet(renderChaptersSheet(active));
+    }
+
+    if (action === "view-queue") {
+      openSheet(renderQueueSheet(entries, selected ?? active));
+    }
+
+    if (action === "queue" && active) {
+      const targetPath = actionButton.dataset.cinemaWatchlistPath ?? active.path;
+      const targetEntry = entries.find((entry) => entry.path === targetPath) ?? active;
+      void toggleWatchlist(targetEntry, actionButton).catch(() => {
+        actionButton.disabled = false;
+        actionButton.textContent = targetEntry.watchlisted ? "In Watchlist" : "Add to Watchlist";
+      });
+    }
+
+    if (action === "close-editor") {
+      closeEditor();
+    }
+
+    if (action === "close-sheet") {
+      closeSheet();
+    }
+
+    if (action === "refresh") {
+      void loadLibrary();
+    }
+
+    if (action === "servers") {
+      view = "servers";
+      render();
+    }
+
+    if (action === "identify-nav") {
+      closeSheet();
+      view = "identify";
+      render();
+    }
+
+    if (action === "run-identify") {
+      void identifySelectedVideo();
     }
   });
 
-  search.addEventListener("input", renderLibrary);
-  refresh.addEventListener("click", () => {
-    void loadLibrary();
+  app.addEventListener("input", (event) => {
+    const input = (event.target as HTMLElement).closest<HTMLInputElement>("[data-cinema-search]");
+
+    if (input) {
+      query = input.value.trim();
+      if (view !== "watchlist") {
+        view = "library";
+      }
+      render();
+      input.focus();
+    }
   });
-  container.querySelectorAll<HTMLButtonElement>("[data-cinema-action='home']").forEach((button) => {
-    button.addEventListener("click", () => {
-      onHome?.();
+
+  editorHost.addEventListener("submit", (event) => {
+    const form = (event.target as HTMLElement).closest<HTMLFormElement>("[data-cinema-editor-form]");
+
+    if (!form) {
+      return;
+    }
+
+    event.preventDefault();
+    void saveMetadata(form).catch((error) => {
+      const status = form.querySelector<HTMLElement>("[data-cinema-editor-status]");
+
+      if (status) {
+        status.textContent = error instanceof Error ? error.message : "Save failed.";
+      }
     });
   });
 
+  render();
   void loadLibrary();
 };
