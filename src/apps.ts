@@ -24,10 +24,10 @@ export const dashboardApps: DashboardApp[] = [
     id: "arcade",
     name: "Arcade",
     kind: "games",
-    status: "planned",
+    status: "prototype",
     accent: "#ffcf3f",
     icon: "Gamepad2",
-    description: "Game launcher and controller-first discovery space."
+    description: "Moonlight-ready game streaming shell with mock host, session, and controller diagnostics."
   },
   {
     id: "studio",
