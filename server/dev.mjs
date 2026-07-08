@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
 import { createApiHandler } from "./api.mjs";
 import { createAuthGuard } from "./auth.mjs";
+import { applyApiCorsHeaders, handleApiPreflight } from "./cors.mjs";
 import { createStorage } from "./storage.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -28,6 +29,12 @@ const vite = await createViteServer({
 
 createHttpServer(async (request, response) => {
   if (request.url?.startsWith("/api/")) {
+    applyApiCorsHeaders(request, response);
+
+    if (handleApiPreflight(request, response)) {
+      return;
+    }
+
     if (!(await authGuard.authorize(request, response))) {
       return;
     }

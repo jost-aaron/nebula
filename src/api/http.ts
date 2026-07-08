@@ -60,23 +60,41 @@ export const setApiToken = (token: string) => {
   }
 };
 
-export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
+export const apiHeaders = (headers?: HeadersInit) => {
   const token = getApiToken();
-  const headers = new Headers(init?.headers);
+  const nextHeaders = new Headers(headers);
 
-  if (token && !headers.has("authorization")) {
-    headers.set("authorization", `Bearer ${token}`);
+  if (token && !nextHeaders.has("authorization")) {
+    nextHeaders.set("authorization", `Bearer ${token}`);
   }
 
+  return nextHeaders;
+};
+
+export const apiFetch = (path: string, init?: RequestInit) =>
+  fetch(apiUrl(path), {
+    ...init,
+    headers: apiHeaders(init?.headers)
+  });
+
+export const applyApiHeadersToRequest = (request: XMLHttpRequest, headers?: HeadersInit) => {
+  apiHeaders(headers).forEach((value, key) => {
+    request.setRequestHeader(key, value);
+  });
+};
+
+export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = apiHeaders(init?.headers);
   headers.set("content-type", headers.get("content-type") ?? "application/json");
 
-  const response = await fetch(apiUrl(path), {
+  const response = await apiFetch(path, {
     ...init,
     headers
   });
 
   if (!response.ok) {
-    throw new Error(`API request failed: ${response.status}`);
+    const body = (await response.json().catch(() => ({ error: response.statusText }))) as { error?: string };
+    throw new Error(body.error ?? `API request failed: ${response.status}`);
   }
 
   return (await response.json()) as T;
