@@ -1,4 +1,4 @@
-import { apiUrl } from "../api/http";
+import { apiFetch, apiJson, apiUrl, applyApiHeadersToRequest, getApiConnectionMode } from "../api/http";
 
 export interface FileEntry {
   modifiedAt: string;
@@ -68,22 +68,10 @@ const AUDIO_PATTERN = /\.(aac|flac|m4a|mp3|ogg|wav)$/i;
 const IMAGE_PATTERN = /\.(gif|jpe?g|png|svg|webp)$/i;
 const TEXT_PATTERN = /\.(css|html|js|json|md|txt)$/i;
 
-const api = async <T>(url: string, options?: RequestInit): Promise<T> => {
-  const response = await fetch(apiUrl(url), {
-    headers: {
-      "content-type": "application/json",
-      ...(options?.headers ?? {})
-    },
-    ...options
+const api = async <T>(url: string, options?: RequestInit): Promise<T> =>
+  apiJson<T>(url, options).catch((error) => {
+    throw new Error(error instanceof Error ? error.message : "File operation failed.");
   });
-
-  if (!response.ok) {
-    const body = (await response.json().catch(() => ({ error: response.statusText }))) as { error?: string };
-    throw new Error(body.error ?? "File operation failed.");
-  }
-
-  return response.json() as Promise<T>;
-};
 
 const escapeHtml = (value: string) =>
   value
@@ -111,8 +99,8 @@ const formatSize = (size: number) => {
 
 const parentPath = (currentPath: string) => currentPath.split("/").filter(Boolean).slice(0, -1).join("/");
 
-const fileUrl = (kind: "read" | "download", filePath: string) =>
-  apiUrl(`/api/files/${kind}?path=${encodeURIComponent(filePath)}`);
+const fileApiPath = (kind: "read" | "download", filePath: string) =>
+  `/api/files/${kind}?path=${encodeURIComponent(filePath)}`;
 
 const uploadUrl = (folderPath: string, fileName: string) =>
   `/api/files/upload?path=${encodeURIComponent(folderPath)}&name=${encodeURIComponent(fileName)}`;
@@ -304,7 +292,17 @@ const renderStorage = (entries: FileEntry[]) => {
   `;
 };
 
-const renderEntryCards = (entries: FileEntry[], selectedPath: string | null) => {
+const renderEntryCards = (entries: FileEntry[], selectedPath: string | null, needsServerConfig: boolean) => {
+  if (needsServerConfig) {
+    return `
+      <div class="file-empty file-server-empty">
+        <strong>Connect a Nebula server</strong>
+        <span>Files needs Settings -> Client -> Server URL in the iOS app.</span>
+        <button type="button" data-file-action="settings">Open Settings</button>
+      </div>
+    `;
+  }
+
   if (entries.length === 0) {
     return `
       <div class="file-empty">
@@ -337,7 +335,7 @@ const renderEntryCards = (entries: FileEntry[], selectedPath: string | null) => 
     .join("");
 };
 
-const renderPreview = (entry: FileEntry | null, preview: string | null) => {
+const renderPreview = (entry: FileEntry | null, preview: string | null, imagePreviewUrl: string | null) => {
   if (!entry) {
     return `
       <div class="file-preview-empty">
@@ -372,8 +370,8 @@ const renderPreview = (entry: FileEntry | null, preview: string | null) => {
   return `
     <div class="file-preview-card">
       ${
-        isImage
-          ? `<img class="file-preview-image" src="${fileUrl("read", entry.path)}" alt="${escapeHtml(entry.name)}" />`
+        isImage && imagePreviewUrl
+          ? `<img class="file-preview-image" src="${imagePreviewUrl}" alt="${escapeHtml(entry.name)}" />`
           : `<div class="file-preview-art ${entryAccent(entry)}"><span>${entryGlyph(entry)}</span></div>`
       }
       <h3>${escapeHtml(entry.name)}</h3>
@@ -456,7 +454,11 @@ export function renderFileBrowserShell() {
   `;
 }
 
-export function bindFileBrowser(container: ParentNode) {
+interface FileBrowserOptions {
+  onOpenSettings?: () => void;
+}
+
+export function bindFileBrowser(container: ParentNode, options: FileBrowserOptions = {}) {
   const browser = container.querySelector<HTMLElement>("[data-file-browser]");
   const sections = container.querySelector<HTMLElement>("[data-file-sections]");
   const storage = container.querySelector<HTMLElement>("[data-file-storage]");
@@ -485,6 +487,8 @@ export function bindFileBrowser(container: ParentNode) {
   let dragDepth = 0;
   let activeUpload: XMLHttpRequest | null = null;
   let activeUploadSessionId: string | null = null;
+  let activePreviewObjectUrl: string | null = null;
+  let needsServerConfig = false;
   let uploadCancelled = false;
 
   const selectedEntry = () => entries.find((entry) => entry.path === selectedPath) ?? null;
@@ -506,12 +510,29 @@ export function bindFileBrowser(container: ParentNode) {
   const loadPreview = async () => {
     const entry = selectedEntry();
     let content: string | null = null;
+    let imagePreviewUrl: string | null = null;
 
-    if (entry?.type === "file" && TEXT_PATTERN.test(entry.name)) {
-      content = await fetch(fileUrl("read", entry.path)).then((response) => response.text()).catch(() => null);
+    if (activePreviewObjectUrl) {
+      URL.revokeObjectURL(activePreviewObjectUrl);
+      activePreviewObjectUrl = null;
     }
 
-    preview.innerHTML = renderPreview(entry, content);
+    if (entry?.type === "file" && TEXT_PATTERN.test(entry.name)) {
+      content = await apiFetch(fileApiPath("read", entry.path)).then((response) => response.text()).catch(() => null);
+    } else if (entry?.type === "file" && IMAGE_PATTERN.test(entry.name)) {
+      imagePreviewUrl = await apiFetch(fileApiPath("read", entry.path))
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error("Preview failed.");
+          }
+
+          return URL.createObjectURL(await response.blob());
+        })
+        .catch(() => null);
+      activePreviewObjectUrl = imagePreviewUrl;
+    }
+
+    preview.innerHTML = renderPreview(entry, content, imagePreviewUrl);
     updateActionState();
   };
 
@@ -521,17 +542,32 @@ export function bindFileBrowser(container: ParentNode) {
     sections.innerHTML = renderSections(activeSection, entries);
     storage.innerHTML = renderStorage(entries);
     breadcrumbs.innerHTML = renderBreadcrumbs(currentPath);
-    list.innerHTML = renderEntryCards(entries, selectedPath);
+    list.innerHTML = renderEntryCards(entries, selectedPath, needsServerConfig);
     await loadPreview();
   };
 
   const load = async (path = currentPath) => {
-    const listing = await api<FileListing>(`/api/files?path=${encodeURIComponent(path)}`);
-    currentPath = listing.path;
-    entries = listing.entries;
-    selectedPath = entries[0]?.path ?? null;
-    setStatus(`Viewing /${currentPath}`);
-    await render();
+    try {
+      const listing = await api<FileListing>(`/api/files?path=${encodeURIComponent(path)}`);
+      needsServerConfig = false;
+      currentPath = listing.path;
+      entries = listing.entries;
+      selectedPath = entries[0]?.path ?? null;
+      setStatus(`Viewing /${currentPath}`);
+      await render();
+    } catch (error) {
+      if (getApiConnectionMode() === "Needs server URL") {
+        needsServerConfig = true;
+        currentPath = "";
+        entries = [];
+        selectedPath = null;
+        setStatus("Add a server URL in Settings -> Client.");
+        await render();
+        return;
+      }
+
+      throw error;
+    }
   };
 
   const loadSection = async (section: FileSection) => {
@@ -553,7 +589,26 @@ export function bindFileBrowser(container: ParentNode) {
       return;
     }
 
-    window.open(fileUrl("download", entry.path), "_blank");
+    await downloadEntry(entry).catch((error) => {
+      setStatus(error instanceof Error ? error.message : "Download failed.");
+    });
+  };
+
+  const downloadEntry = async (entry: FileEntry) => {
+    const response = await apiFetch(fileApiPath("download", entry.path));
+
+    if (!response.ok) {
+      throw new Error("Download failed.");
+    }
+
+    const objectUrl = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = entry.name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
   };
 
   const moveSelection = (delta: number) => {
@@ -620,7 +675,7 @@ export function bindFileBrowser(container: ParentNode) {
       });
 
       request.open("PUT", apiUrl(url));
-      request.setRequestHeader("content-type", contentType);
+      applyApiHeadersToRequest(request, { "content-type": contentType });
       request.send(body);
     });
   };
@@ -856,6 +911,13 @@ export function bindFileBrowser(container: ParentNode) {
   });
 
   list.addEventListener("click", (event) => {
+    const action = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-file-action='settings']");
+
+    if (action) {
+      options.onOpenSettings?.();
+      return;
+    }
+
     const row = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-entry-path]");
 
     if (!row) {
@@ -871,7 +933,9 @@ export function bindFileBrowser(container: ParentNode) {
 
     if (row) {
       const entry = entries.find((candidate) => candidate.path === row.dataset.entryPath);
-      void openEntry(entry ?? null);
+      void openEntry(entry ?? null).catch((error) => {
+        setStatus(error instanceof Error ? error.message : "Open failed.");
+      });
     }
   });
 
@@ -903,7 +967,9 @@ export function bindFileBrowser(container: ParentNode) {
   });
 
   browser.querySelector("[data-file-action='open']")?.addEventListener("click", () => {
-    void openEntry();
+    void openEntry().catch((error) => {
+      setStatus(error instanceof Error ? error.message : "Open failed.");
+    });
   });
 
   browser.querySelector("[data-file-action='new-folder']")?.addEventListener("click", async () => {
@@ -1013,7 +1079,9 @@ export function bindFileBrowser(container: ParentNode) {
     const entry = selectedEntry();
 
     if (entry?.type === "file") {
-      window.open(fileUrl("download", entry.path), "_blank");
+      void downloadEntry(entry).catch((error) => {
+        setStatus(error instanceof Error ? error.message : "Download failed.");
+      });
     }
   });
 

@@ -372,7 +372,15 @@ const launchApp = async (app: DashboardApp) => {
   }
 
   if (isFilesApp) {
-    bindFileBrowser(appSurface);
+    bindFileBrowser(appSurface, {
+      onOpenSettings: () => {
+        const settingsApp = dashboardApps.find((candidate) => candidate.id === "settings");
+
+        if (settingsApp) {
+          void launchApp(settingsApp);
+        }
+      }
+    });
     document.querySelector<HTMLButtonElement>("[data-file-close]")?.addEventListener("click", closeActiveApp);
   }
 

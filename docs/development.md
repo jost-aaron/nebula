@@ -118,7 +118,13 @@ from normal Docker development:
 - Do not leave ad-hoc host `dist/` output behind.
 - Use the Settings app Client tab to configure the API Server URL for mobile or
   private-network clients.
+- The iOS wrapper permits local HTTP networking for web content so simulator and
+  same-LAN Docker server URLs work during development.
 - Use `./scripts/ios-sync.sh` to rebuild and sync the Capacitor iOS wrapper.
+- Use `./scripts/ios-sync-dev-server.sh` when the iOS development bundle should
+  default to the current Docker server. Set `NEBULA_IOS_DEV_SERVER_URL` for a
+  real iPhone LAN URL; otherwise it defaults to `http://127.0.0.1:5173` for the
+  simulator.
 - Use `./scripts/ios-build-simulator.sh` to compile the iOS simulator app after
   Xcode and an iOS simulator runtime are installed.
 

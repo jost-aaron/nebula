@@ -1893,6 +1893,21 @@ h1 {
   color: #f6f8fb;
 }
 
+.file-server-empty button {
+  min-height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  padding: 0 14px;
+  color: #061019;
+  background: #f6f8fb;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.file-server-empty button:hover {
+  background: #c9f3ff;
+}
+
 .file-preview-card {
   min-height: 0;
   display: grid;

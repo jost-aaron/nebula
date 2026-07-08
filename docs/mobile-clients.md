@@ -87,6 +87,28 @@ still run through containerized Node:
 The script creates `dist/` only long enough for Capacitor to copy the web bundle
 into `ios/App/App/public/`, then removes the root `dist/` directory.
 
+For simulator or local-device development, the iOS bundle can also be synced
+with a default Server URL baked into the web assets:
+
+```sh
+./scripts/ios-sync-dev-server.sh
+```
+
+By default this points the iOS app at:
+
+```text
+http://127.0.0.1:5173
+```
+
+That is useful for the iOS simulator because simulator localhost reaches the
+Mac. For a real iPhone on the same network, pass a reachable Mac LAN address:
+
+```sh
+NEBULA_IOS_DEV_SERVER_URL=http://192.168.1.20:5173 ./scripts/ios-sync-dev-server.sh
+```
+
+The in-app Settings -> Client -> Server URL still overrides the baked default.
+
 To compile the simulator app from the command line:
 
 ```sh
@@ -135,6 +157,22 @@ internet. Supported access patterns should be:
 
 The app should only need a Server URL and auth/device pairing. It should not
 care which private network implementation makes that URL reachable.
+
+The iOS wrapper allows local HTTP networking for web content so simulator and
+same-LAN development URLs can be used from Settings -> Client -> Server URL, for
+example:
+
+```text
+http://127.0.0.1:5173
+http://10.44.0.1:5173
+```
+
+Production deployments should prefer HTTPS when the server is reachable through
+a stable private DNS name or tunnel.
+
+Cross-origin `/api/*` requests from the iOS web view are supported through
+minimal API-only CORS handling. If `NEBULA_REQUIRE_AUTH=true`, configure the
+same token in Settings -> Client -> API Token.
 
 ## Next Steps
 
