@@ -3,7 +3,7 @@ services:
     build:
       context: .
     ports:
-      - "5173:5173"
+      - "${DASHBOARD_PORT:-5173}:5173"
     volumes:
       - ./index.html:/app/index.html
       - ./package.json:/app/package.json

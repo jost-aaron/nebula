@@ -27,6 +27,38 @@ docker compose run --rm dashboard npm run check
 docker compose down
 ```
 
+For additional Git worktrees, isolate Docker Compose from the main dashboard
+instance by using a unique project name and a free host port:
+
+```sh
+export COMPOSE_PROJECT_NAME=nebula-$(basename "$PWD")
+export DASHBOARD_PORT=$(python3 - <<'PY'
+import socket
+with socket.socket() as s:
+    s.bind(("127.0.0.1", 0))
+    print(s.getsockname()[1])
+PY
+)
+docker compose up --build
+```
+
+Then open the worktree app at:
+
+```sh
+echo "http://127.0.0.1:${DASHBOARD_PORT}"
+```
+
+Use the same environment variables for worktree checks and shutdown:
+
+```sh
+COMPOSE_PROJECT_NAME=nebula-$(basename "$PWD") DASHBOARD_PORT=$DASHBOARD_PORT docker compose run --rm dashboard npm run check
+COMPOSE_PROJECT_NAME=nebula-$(basename "$PWD") DASHBOARD_PORT=$DASHBOARD_PORT docker compose down
+```
+
+Do not run side worktrees on the main `5173` port while the main dashboard is
+open. If the chosen port collides, stop that worktree and choose another free
+port before restarting.
+
 Avoid:
 
 ```sh
