@@ -34,6 +34,7 @@ src/cinema/renderCinemaView.ts
 
 It renders:
 
+- An explicit Dashboard/close command in the Cinema header.
 - Plex-like category tabs for Movies, TV Shows, and Music.
 - A searchable local media grid.
 - A persistent watchlist for saved titles.
@@ -42,6 +43,9 @@ It renders:
 - A metadata editor for every imported media item.
 - Browser-generated preview thumbnails.
 - A prototype visual identification workflow for selected videos.
+
+The Dashboard command uses the same close-app path as Escape, returning from the
+Cinema surface to the main dashboard without changing library state.
 
 Thumbnails are generated client-side by loading video metadata, seeking near the
 start of the file, drawing the frame to a canvas, and using that canvas image as

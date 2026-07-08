@@ -123,7 +123,12 @@ const renderTopNav = (view: CinemaView) => `
       <span>${renderCinemaIcon("Search")} Search</span>
       <input type="search" data-cinema-search placeholder="Search library" />
     </label>
-    <button class="cinema-icon-command" type="button" data-cinema-action="home" aria-label="Close Cinema" title="Close">${renderCinemaIcon("X")}</button>
+    <div class="cinema-dashboard-actions">
+      <button class="cinema-dashboard-command" type="button" data-cinema-action="home">
+        ${renderCinemaIcon("ArrowLeft")} Dashboard
+      </button>
+      <button class="cinema-icon-command" type="button" data-cinema-action="home" aria-label="Close Cinema" title="Close">${renderCinemaIcon("X")}</button>
+    </div>
   </header>
 `;
 

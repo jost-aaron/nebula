@@ -832,6 +832,7 @@ h1 {
 .cinema-brand,
 .cinema-nav-tabs,
 .cinema-global-search,
+.cinema-dashboard-actions,
 .cinema-actions,
 .cinema-footer-status,
 .cinema-watch-surface header {
@@ -2091,6 +2092,31 @@ h1 {
   font-size: 0.84rem;
 }
 
+.cinema-dashboard-actions {
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.cinema-dashboard-command {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  padding: 0 14px;
+  color: #dffcff;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cinema-dashboard-command:hover,
+.cinema-dashboard-command:focus-visible {
+  border-color: rgba(105, 247, 235, 0.58);
+  background: rgba(105, 247, 235, 0.14);
+}
+
 @media (max-width: 1100px) and (min-width: 761px) {
   .cinema-shell {
     padding:
@@ -2351,6 +2377,13 @@ h1 {
   .cinema-global-search input {
     padding: 0 10px;
     font-size: 0.92rem;
+  }
+
+  .cinema-dashboard-command {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
+    font-size: 0;
   }
 }
 
@@ -3651,6 +3684,15 @@ h1 {
 
   .cinema-brand {
     justify-content: space-between;
+  }
+
+  .cinema-dashboard-actions {
+    justify-content: stretch;
+  }
+
+  .cinema-dashboard-command {
+    flex: 1;
+    justify-content: center;
   }
 
   .cinema-nav-tabs {

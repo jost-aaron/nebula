@@ -50,6 +50,7 @@ Check:
 - Settings opens from the Applications strip and shows diagnostics.
 - Cinema opens the local media browser and shows supported videos from
   `content/`.
+- Cinema has a visible Dashboard command that returns to the main dashboard.
 - Cinema shows Movies, TV Shows, and Music category tabs.
 - Cinema keeps the player hidden until a title is selected.
 - Cinema can load selected media into the web player and the media endpoint
