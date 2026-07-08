@@ -55,6 +55,17 @@ Check:
 - Cinema keeps the player hidden until a title is selected.
 - Cinema can load selected media into the web player and the media endpoint
   supports byte-range requests.
+- Cinema Music opens MP3 and FLAC entries in a dedicated music detail view
+  without a large black video frame.
+- Cinema Music Play opens the dedicated music player with native audio controls,
+  title metadata, artwork/fallback art, server/status information, and next-up
+  queue.
+- Cinema Music does not show the fullscreen video command.
+- Cinema Music shows a friendly player status if browser playback fails or a
+  format is unsupported.
+- Cinema video titles still use the normal video player and fullscreen command.
+- Cinema Watchlist, More, Edit Details, Back to Library, Details, and Dashboard
+  close paths still work for audio titles.
 - Files opens the local content browser and is scoped to the ignored `content/`
   folder.
 - Files supports upload by button and drag/drop into the current folder.

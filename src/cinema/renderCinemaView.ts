@@ -74,6 +74,11 @@ const searchUrl = (query: string) => `https://www.google.com/search?q=${encodeUR
 const metadataLine = (entry: CinemaEntry) =>
   [entry.releaseYear, entry.rating, entry.genres.slice(0, 3).join(", "), estimateRuntime(entry)].filter(Boolean).join(" / ");
 
+const formatAudioFormat = (entry: CinemaEntry) => {
+  const extension = entry.name.split(".").pop()?.toUpperCase();
+  return extension ? `${extension} audio` : "Audio file";
+};
+
 const currentServerInfo = (): CinemaServerInfo => ({
   address: getEffectiveApiBaseUrl() || "No server URL",
   authState: getApiToken() ? "Token saved" : "Local unauthenticated",
@@ -162,6 +167,12 @@ const renderWatchlistButton = (entry: CinemaEntry) => `
     ${renderCinemaIcon(entry.watchlisted ? "Check" : "Plus")}
     ${entry.watchlisted ? "In Watchlist" : "Add to Watchlist"}
   </button>
+`;
+
+const renderAlbumArt = (entry: CinemaEntry) => `
+  <div class="cinema-album-art"${posterStyle(entry)}>
+    ${entry.posterUrl ? "" : renderPosterFallback(entry)}
+  </div>
 `;
 
 const renderPlaybackControls = (entry: CinemaEntry, server: CinemaServerInfo) => `
@@ -353,6 +364,10 @@ const renderWatchlistView = (entries: CinemaEntry[], query: string) => {
 };
 
 const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[]) => `
+  ${entry.mediaKind === "audio" ? renderAudioTitleHero(entry, entries) : renderVideoTitleHero(entry, entries)}
+`;
+
+const renderVideoTitleHero = (entry: CinemaEntry, entries: CinemaEntry[]) => `
   <main class="cinema-title-detail" data-cinema-view="title-detail">
     <section class="cinema-player-layout">
       <div class="cinema-player-frame" data-cinema-backdrop="${escapeHtml(entry.path)}"${posterStyle(entry)}>
@@ -390,29 +405,113 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[]) => `
   </main>
 `;
 
-const renderPlayerView = (entry: CinemaEntry) => {
-  const player =
-    entry.mediaKind === "audio"
-      ? `<audio class="cinema-player" data-cinema-player controls autoplay src="${entry.streamUrl}"></audio>`
-      : `<video class="cinema-player" data-cinema-player controls autoplay playsinline preload="metadata" src="${entry.streamUrl}"></video>`;
+const renderAudioTitleHero = (entry: CinemaEntry, entries: CinemaEntry[]) => `
+  <main class="cinema-title-detail cinema-music-detail" data-cinema-view="title-detail">
+    <section class="cinema-player-layout cinema-music-layout">
+      <div class="cinema-music-surface">
+        ${renderAlbumArt(entry)}
+        <div class="cinema-music-copy">
+          <p class="eyebrow">${escapeHtml(categoryLabel(entry.category))}</p>
+          <h2>${escapeHtml(entry.title)}</h2>
+          <p>${escapeHtml(entry.tagline || entry.summary || "Ready from your local Music library.")}</p>
+          <div class="cinema-music-controls">
+            <button type="button" data-cinema-action="play">${renderCinemaIcon("Play")} Play</button>
+            ${renderWatchlistButton(entry)}
+            <button type="button" data-cinema-action="more">${renderCinemaIcon("MoreHorizontal")} More</button>
+          </div>
+        </div>
+      </div>
+      <aside class="cinema-title-panel">
+        <button class="cinema-back-command" type="button" data-cinema-action="library">${renderCinemaIcon("ArrowLeft")} Back to Library</button>
+        <p class="eyebrow">Track Details</p>
+        <h2>${escapeHtml(entry.title)}</h2>
+        <p class="cinema-title-meta">${escapeHtml(metadataLine(entry) || `${formatAudioFormat(entry)} / ${formatSize(entry.size)}`)}</p>
+        <p>${escapeHtml(entry.summary || "No notes have been added for this track yet.")}</p>
+        <div class="cinema-actions">
+          <button type="button" data-cinema-action="play">${renderCinemaIcon("Play")} Play</button>
+          ${renderWatchlistButton(entry)}
+          <button type="button" data-cinema-action="more">${renderCinemaIcon("MoreHorizontal")} More</button>
+        </div>
+        <button class="cinema-edit-command" type="button" data-cinema-action="edit">${renderCinemaIcon("Pencil")} Edit Details</button>
+        ${renderServerCard(currentServerInfo(), true)}
+        <div class="cinema-meta-list">
+          <span>Type <strong>Music</strong></span>
+          <span>Format <strong>${escapeHtml(formatAudioFormat(entry))}</strong></span>
+          <span>Year <strong>${escapeHtml(entry.releaseYear || "Not set")}</strong></span>
+          <span>Genres <strong>${escapeHtml(entry.genres.join(", ") || "Not set")}</strong></span>
+          <span>Artist/Studio <strong>${escapeHtml(entry.studio || "Not set")}</strong></span>
+          <span>File <strong>${escapeHtml(entry.name)}</strong></span>
+        </div>
+      </aside>
+    </section>
+    <section class="cinema-detail-lower cinema-music-lower">
+      ${renderNextUpQueue(entries, entry)}
+    </section>
+  </main>
+`;
+
+const renderVideoPlayerView = (entry: CinemaEntry) => `
+  <main class="cinema-watch-surface" data-cinema-view="player">
+    <header>
+      <button type="button" data-cinema-action="back-title">Details</button>
+      <div>
+        <p class="eyebrow">Now Playing</p>
+        <h2>${escapeHtml(entry.title)}</h2>
+      </div>
+      <button type="button" data-cinema-action="player-fullscreen">Fullscreen</button>
+    </header>
+    <section class="cinema-video-stage">
+      <video class="cinema-player" data-cinema-player controls autoplay playsinline preload="metadata" src="${entry.streamUrl}"></video>
+      ${renderPlaybackControls(entry, currentServerInfo())}
+    </section>
+  </main>
+`;
+
+const renderAudioPlayerView = (entry: CinemaEntry, entries: CinemaEntry[]) => {
+  const server = currentServerInfo();
 
   return `
-    <main class="cinema-watch-surface" data-cinema-view="player">
+    <main class="cinema-watch-surface cinema-music-player-view" data-cinema-view="player">
       <header>
         <button type="button" data-cinema-action="back-title">Details</button>
         <div>
-          <p class="eyebrow">Now Playing</p>
+          <p class="eyebrow">Now Playing / Music</p>
           <h2>${escapeHtml(entry.title)}</h2>
         </div>
-        <button type="button" data-cinema-action="player-fullscreen">Fullscreen</button>
+        <button type="button" data-cinema-action="library">Library</button>
       </header>
-      <section class="cinema-video-stage">
-        ${player}
-        ${renderPlaybackControls(entry, currentServerInfo())}
+      <section class="cinema-music-surface">
+        ${renderAlbumArt(entry)}
+        <div class="cinema-music-now">
+          <p class="eyebrow">${escapeHtml(formatAudioFormat(entry))}</p>
+          <h2>${escapeHtml(entry.title)}</h2>
+          <p>${escapeHtml(metadataLine(entry) || `${entry.folder || "Content"} / ${formatSize(entry.size)}`)}</p>
+          <audio class="cinema-audio-player" data-cinema-player controls autoplay preload="metadata" src="${entry.streamUrl}">
+            Your browser cannot play this audio file.
+          </audio>
+          <p class="cinema-player-status" data-cinema-player-status>Starting playback from ${escapeHtml(server.name)}.</p>
+          <div class="cinema-music-controls">
+            <button type="button" data-cinema-action="play">${renderCinemaIcon("Play")} Play</button>
+            ${renderWatchlistButton(entry)}
+            <button type="button" data-cinema-action="more">${renderCinemaIcon("MoreHorizontal")} More</button>
+          </div>
+          <div class="cinema-meta-list">
+            <span>Server <strong>${escapeHtml(server.name)}</strong></span>
+            <span>Status <strong>${server.online ? "Online" : "Offline"}</strong></span>
+            <span>Format <strong>${escapeHtml(formatAudioFormat(entry))}</strong></span>
+            <span>Source <strong>${escapeHtml(entry.folder || "Content root")}</strong></span>
+          </div>
+        </div>
+      </section>
+      <section class="cinema-music-queue">
+        ${renderNextUpQueue(entries, entry)}
       </section>
     </main>
   `;
 };
+
+const renderPlayerView = (entry: CinemaEntry, entries: CinemaEntry[]) =>
+  entry.mediaKind === "audio" ? renderAudioPlayerView(entry, entries) : renderVideoPlayerView(entry);
 
 const renderServersView = () => {
   const server = currentServerInfo();
@@ -515,7 +614,7 @@ const renderMoreSheet = (entry: CinemaEntry) =>
     `
       <div class="cinema-more-actions">
         <button type="button" data-cinema-action="edit">${renderCinemaIcon("Pencil")} Edit Details</button>
-        <button type="button" data-cinema-action="view-chapters">${renderCinemaIcon("ListVideo")} View Chapters</button>
+        <button type="button" data-cinema-action="view-chapters" ${entry.mediaKind !== "video" ? "disabled" : ""}>${renderCinemaIcon("ListVideo")} View Chapters</button>
         <button type="button" data-cinema-action="view-queue">${renderCinemaIcon("ListOrdered")} View Queue</button>
         <button type="button" data-cinema-action="identify-nav" ${entry.mediaKind !== "video" ? "disabled" : ""}>${renderCinemaIcon("ScanSearch")} Identify Title</button>
       </div>
@@ -789,7 +888,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
     }
 
     if (view === "player") {
-      content.innerHTML = selected ? renderPlayerView(selected) : renderLibrary(entries, activeCategory, query, selected);
+      content.innerHTML = selected ? renderPlayerView(selected, entries) : renderLibrary(entries, activeCategory, query, selected);
     }
 
     if (view === "servers") {
@@ -825,22 +924,55 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
       return;
     }
 
+    const activeEntry = selected;
     view = "player";
     render();
 
     const player = content.querySelector<HTMLMediaElement>("[data-cinema-player]");
-    const stage = content.querySelector<HTMLElement>(".cinema-video-stage");
+    const stage = content.querySelector<HTMLElement>(".cinema-video-stage, .cinema-music-surface");
+    const status = content.querySelector<HTMLElement>("[data-cinema-player-status]");
 
     if (player && stage) {
       const renderPlaybackState = () => {
         stage.classList.toggle("is-playing", !player.paused && !player.ended);
       };
+      const setStatus = (message: string) => {
+        if (status) {
+          status.textContent = message;
+        }
+      };
 
-      player.addEventListener("play", renderPlaybackState);
-      player.addEventListener("playing", renderPlaybackState);
-      player.addEventListener("pause", renderPlaybackState);
-      player.addEventListener("ended", renderPlaybackState);
+      player.addEventListener("play", () => {
+        renderPlaybackState();
+        setStatus("Playback requested.");
+      });
+      player.addEventListener("playing", () => {
+        renderPlaybackState();
+        setStatus("Playing from the local Cinema server.");
+      });
+      player.addEventListener("pause", () => {
+        renderPlaybackState();
+        setStatus("Paused.");
+      });
+      player.addEventListener("ended", () => {
+        renderPlaybackState();
+        setStatus("Finished.");
+      });
+      player.addEventListener("stalled", () => setStatus("Playback is waiting for more data from the server."));
+      player.addEventListener("error", () =>
+        setStatus(
+          activeEntry.mediaKind === "audio"
+            ? "This audio file could not be played here. The browser may not support this format, especially some FLAC files."
+            : "This video could not be played here."
+        )
+      );
       renderPlaybackState();
+
+      if (activeEntry.mediaKind === "audio") {
+        void player.play().catch(() => {
+          setStatus("Ready to play. Use the audio controls if autoplay was blocked.");
+        });
+      }
     }
 
     if (fullscreen && player instanceof HTMLVideoElement) {

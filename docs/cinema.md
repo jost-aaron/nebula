@@ -39,7 +39,9 @@ It renders:
 - A searchable local media grid.
 - A persistent watchlist for saved titles.
 - A dedicated title details submenu after selecting a title.
-- A separate playback surface with a fullscreen command.
+- Separate playback surfaces for video and music.
+- A dedicated music player for audio files with album art/fallback art, native
+  audio controls, server/status information, metadata, and next-up queue.
 - A metadata editor for every imported media item.
 - Browser-generated preview thumbnails.
 - A prototype visual identification workflow for selected videos.
@@ -51,6 +53,13 @@ Thumbnails are generated client-side by loading video metadata, seeking near the
 start of the file, drawing the frame to a canvas, and using that canvas image as
 the poster background. If a browser cannot decode or seek a file, the card keeps
 its fallback poster.
+
+Audio files, including MP3 and FLAC, use the Music path instead of the video
+preview/player frame. Selecting an audio title shows a track-focused detail
+layout without the large black video area. Pressing Play opens a music player
+surface built around a real `<audio data-cinema-player controls autoplay>`
+element. Browser autoplay blocks or unsupported formats, such as FLAC in some
+browsers, are reported in the player status line.
 
 ## Visual Identification Prototype
 
