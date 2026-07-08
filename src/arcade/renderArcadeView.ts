@@ -1,5 +1,21 @@
 import { createElement, icons } from "lucide";
 import {
+  confirmArcadeHostPairing,
+  createArcadeHost,
+  createArcadeSession,
+  deleteArcadeSession,
+  getArcadeCapabilities,
+  listArcadeEvents,
+  listArcadeHosts,
+  startArcadeHostPairing
+} from "../api/arcadeApi";
+import type {
+  ArcadeCapabilitiesResponse,
+  ArcadeEvent,
+  ArcadeHost as ApiArcadeHost,
+  ArcadeSession
+} from "../shared/arcadeTypes";
+import {
   readArcadeInputDiagnostics,
   renderArcadeInputDiagnosticsPanel,
   type ArcadeInputDiagnosticsSnapshot
@@ -17,6 +33,7 @@ type ArcadeHostStatus = "add-host" | "pairing" | "paired" | "connecting" | "stre
 
 interface ArcadeHost {
   address: string;
+  apiHost?: ApiArcadeHost;
   bitrate: string;
   codec: string;
   detail: string;
@@ -31,8 +48,15 @@ interface ArcadeHost {
 
 interface ArcadeState {
   activeHostId: string;
+  apiError: string | null;
+  apiNote: string;
+  busyAction: ArcadeHostStatus | null;
+  capabilities: ArcadeCapabilitiesResponse | null;
+  events: ArcadeEvent[];
   hosts: ArcadeHost[];
   inputDiagnostics: ArcadeInputDiagnosticsSnapshot;
+  loading: boolean;
+  sessions: ArcadeSession[];
   streamDiagnostics: ArcadeMockStreamDiagnostics;
   streamRendererCapabilities: ArcadeStreamRendererCapabilities;
 }
@@ -96,6 +120,54 @@ const escapeHtml = (value: string) =>
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 
+const mapApiHostStatus = (status: ApiArcadeHost["status"]): ArcadeHostStatus => {
+  switch (status) {
+    case "connecting":
+      return "connecting";
+    case "streaming":
+    case "poor-connection":
+      return "streaming";
+    case "offline":
+    case "unknown":
+    case "unpaired":
+      return "disconnected";
+    case "paired":
+    case "online":
+      return "paired";
+    case "disconnected":
+      return "disconnected";
+  }
+};
+
+const mapApiHost = (host: ApiArcadeHost): ArcadeHost => ({
+  address: host.address,
+  apiHost: host,
+  bitrate: `${host.settings.bitrateMbps} Mbps`,
+  codec: host.settings.codec === "auto" ? "Auto" : host.settings.codec.toUpperCase(),
+  detail: `${host.provider === "sunshine" ? "Sunshine" : "GameStream"} host / ${host.paired ? "Mock paired" : "Awaiting pair"}`,
+  fps: `${host.settings.fps} FPS`,
+  id: host.id,
+  input: "Gamepad + keyboard",
+  latency: host.lastSeenAt ? "Mock API online" : "Not seen",
+  name: host.name,
+  resolution: `${host.settings.width} x ${host.settings.height}`,
+  status: mapApiHostStatus(host.status)
+});
+
+const setHostStatus = (state: ArcadeState, hostId: string, status: ArcadeHostStatus, latency?: string) => {
+  const host = state.hosts.find((candidate) => candidate.id === hostId);
+
+  if (!host) {
+    return;
+  }
+
+  host.status = status;
+
+  if (latency) {
+    host.latency = latency;
+  }
+};
+
 const renderArcadeIcon = (iconName: keyof typeof icons, className = "arcade-ui-icon") => {
   const iconNode = icons[iconName] ?? icons.Circle;
   const node = createElement(iconNode);
@@ -122,6 +194,22 @@ const renderHostCard = (host: ArcadeHost, activeHostId: string) => {
         <strong>${escapeHtml(status.label)}</strong>
       </span>
     </button>
+  `;
+};
+
+const renderApiStatus = (state: ArcadeState) => {
+  const bridge = state.capabilities?.bridge;
+  const bridgeCopy = bridge
+    ? `${bridge.mode} bridge / ${bridge.available ? "available" : "sidecar unavailable"}`
+    : state.loading
+      ? "Loading Arcade API"
+      : "Local fallback";
+
+  return `
+    <section class="arcade-api-status" aria-label="Arcade API status">
+      <span>${renderArcadeIcon(bridge?.available ? "Network" : "Unplug")} ${escapeHtml(bridgeCopy)}</span>
+      <span>${escapeHtml(state.apiError ?? state.apiNote)}</span>
+    </section>
   `;
 };
 
@@ -228,6 +316,37 @@ const renderActions = (host: ArcadeHost) => `
   </div>
 `;
 
+const renderEvents = (events: ArcadeEvent[]) => `
+  <section class="arcade-events" aria-label="Arcade events">
+    <header>
+      <p class="eyebrow">API Events</p>
+      <h3>Mock Lifecycle</h3>
+    </header>
+    <div class="arcade-event-list">
+      ${
+        events.length > 0
+          ? events
+              .slice(0, 5)
+              .map(
+                (event) => `
+                  <article class="arcade-event">
+                    <strong>${escapeHtml(event.type)}</strong>
+                    <span>${escapeHtml(event.message)}</span>
+                  </article>
+                `
+              )
+              .join("")
+          : `
+            <article class="arcade-event">
+              <strong>No events</strong>
+              <span>Open a mock pair or stream action to create API lifecycle events.</span>
+            </article>
+          `
+      }
+    </div>
+  </section>
+`;
+
 const renderArcadeBody = (state: ArcadeState) => {
   const activeHost = state.hosts.find((host) => host.id === state.activeHostId) ?? state.hosts[0];
 
@@ -238,6 +357,7 @@ const renderArcadeBody = (state: ArcadeState) => {
           <p class="eyebrow">Arcade Hosts</p>
           <h2>Moonlight Clients</h2>
         </header>
+        ${renderApiStatus(state)}
         <div class="arcade-host-list">
           ${state.hosts.map((host) => renderHostCard(host, activeHost.id)).join("")}
         </div>
@@ -246,6 +366,7 @@ const renderArcadeBody = (state: ArcadeState) => {
         ${renderSessionPreview(activeHost)}
         ${renderTimeline(activeHost.status)}
         ${renderActions(activeHost)}
+        ${renderEvents(state.events)}
       </section>
       ${renderSettingsPanel(
         activeHost,
@@ -290,8 +411,15 @@ export const bindArcadeView = (container: ParentNode, onClose: () => void) => {
 
   const state: ArcadeState = {
     activeHostId: initialHosts[0].id,
+    apiError: null,
+    apiNote: "Using local fallback until the Arcade API responds.",
+    busyAction: null,
+    capabilities: null,
+    events: [],
     hosts: initialHosts.map((host) => ({ ...host })),
     inputDiagnostics: readArcadeInputDiagnostics(),
+    loading: true,
+    sessions: [],
     streamDiagnostics: createArcadeMockStreamDiagnostics(),
     streamRendererCapabilities: readArcadeStreamRendererCapabilities()
   };
@@ -303,7 +431,64 @@ export const bindArcadeView = (container: ParentNode, onClose: () => void) => {
     content.innerHTML = renderArcadeBody(state);
   };
 
-  const updateActiveHostStatus = (status: ArcadeHostStatus) => {
+  const refreshArcadeApiState = async () => {
+    state.loading = true;
+    state.apiError = null;
+    render();
+
+    try {
+      const [hostsResponse, capabilitiesResponse, eventsResponse] = await Promise.all([
+        listArcadeHosts(),
+        getArcadeCapabilities(),
+        listArcadeEvents()
+      ]);
+
+      const apiHosts = hostsResponse.hosts.map(mapApiHost);
+      state.hosts = apiHosts.length > 0 ? apiHosts : state.hosts;
+      state.capabilities = capabilitiesResponse;
+      state.events = eventsResponse.events;
+      state.apiNote = hostsResponse.note ?? eventsResponse.note ?? "Arcade API mock facade online.";
+      state.sessions = eventsResponse.sessions?.map((session) => ({
+        appId: "desktop",
+        bridgeMode: "mock",
+        createdAt: session.updatedAt,
+        diagnostics: {
+          bitrateMbps: 0,
+          codec: "auto",
+          droppedFrames: 0,
+          latencyMs: null,
+          packetsLost: 0
+        },
+        hostId: session.hostId,
+        id: session.id,
+        settings: {
+          audio: "stereo",
+          bitrateMbps: 40,
+          codec: "auto",
+          fps: 60,
+          hdr: "auto",
+          height: 1080,
+          width: 1920
+        },
+        startedAt: null,
+        status: session.status,
+        streamUrl: null,
+        updatedAt: session.updatedAt
+      })) ?? [];
+
+      if (!state.hosts.some((host) => host.id === state.activeHostId)) {
+        state.activeHostId = state.hosts[0]?.id ?? initialHosts[0].id;
+      }
+    } catch (error) {
+      state.apiError = error instanceof Error ? error.message : "Arcade API request failed.";
+      state.apiNote = "Arcade is showing local fallback data.";
+    } finally {
+      state.loading = false;
+      render();
+    }
+  };
+
+  const updateActiveHostStatus = async (status: ArcadeHostStatus) => {
     const activeHost = state.hosts.find((host) => host.id === state.activeHostId);
 
     if (!activeHost) {
@@ -311,29 +496,78 @@ export const bindArcadeView = (container: ParentNode, onClose: () => void) => {
     }
 
     activeHost.status = status;
+    state.busyAction = status;
+    render();
 
     if (status === "add-host") {
       const newHostNumber = state.hosts.filter((host) => host.id.startsWith("new-host")).length + 1;
-      const id = `new-host-${newHostNumber}`;
-      state.hosts = [
-        ...state.hosts,
-        {
+
+      try {
+        const response = await createArcadeHost({
           address: `192.168.4.${80 + newHostNumber}`,
-          bitrate: "25 Mbps",
-          codec: "Auto",
-          detail: "New Sunshine host / Awaiting pair",
-          fps: "60 FPS",
-          id,
-          input: "Gamepad + touch",
-          latency: "Not tested",
           name: `New Host ${newHostNumber}`,
-          resolution: "1920 x 1080",
-          status: "pairing"
+          provider: "sunshine"
+        });
+        state.activeHostId = response.host.id;
+        state.apiNote = response.host.paired ? "Mock host added." : "Mock host added. Pairing still uses dev state.";
+        await refreshArcadeApiState();
+      } catch {
+        const id = `new-host-${newHostNumber}`;
+        state.hosts = [
+          ...state.hosts,
+          {
+            address: `192.168.4.${80 + newHostNumber}`,
+            bitrate: "25 Mbps",
+            codec: "Auto",
+            detail: "New Sunshine host / Awaiting pair",
+            fps: "60 FPS",
+            id,
+            input: "Gamepad + touch",
+            latency: "Not tested",
+            name: `New Host ${newHostNumber}`,
+            resolution: "1920 x 1080",
+            status: "pairing"
+          }
+        ];
+        state.activeHostId = id;
+      }
+    } else if (status === "pairing" && activeHost.apiHost) {
+      try {
+        await startArcadeHostPairing(activeHost.apiHost.id);
+        await confirmArcadeHostPairing(activeHost.apiHost.id, { pin: "0000" });
+        state.apiNote = "Mock pairing confirmed through Arcade API.";
+        await refreshArcadeApiState();
+      } catch (error) {
+        state.apiError = error instanceof Error ? error.message : "Mock pairing failed.";
+      }
+    } else if ((status === "connecting" || status === "streaming") && activeHost.apiHost) {
+      try {
+        const response = await createArcadeSession({
+          appId: "desktop",
+          hostId: activeHost.apiHost.id,
+          settings: activeHost.apiHost.settings
+        });
+        state.sessions = [response.session, ...state.sessions.filter((session) => session.id !== response.session.id)];
+        state.apiNote = status === "streaming" ? "Mock stream session created through Arcade API." : "Mock connection session created through Arcade API.";
+        await refreshArcadeApiState();
+        setHostStatus(state, activeHost.apiHost.id, status, status === "streaming" ? "Mock stream live" : "Mock session ready");
+      } catch (error) {
+        state.apiError = error instanceof Error ? error.message : "Mock session failed.";
+      }
+    } else if (status === "disconnected" && state.sessions.length > 0) {
+      try {
+        await deleteArcadeSession(state.sessions[0].id);
+        state.apiNote = "Mock session stopped through Arcade API.";
+        await refreshArcadeApiState();
+        if (activeHost.apiHost) {
+          setHostStatus(state, activeHost.apiHost.id, "disconnected", "Mock session stopped");
         }
-      ];
-      state.activeHostId = id;
+      } catch (error) {
+        state.apiError = error instanceof Error ? error.message : "Mock disconnect failed.";
+      }
     }
 
+    state.busyAction = null;
     render();
   };
 
@@ -357,7 +591,7 @@ export const bindArcadeView = (container: ParentNode, onClose: () => void) => {
     const action = actionButton?.dataset.arcadeAction as ArcadeHostStatus | undefined;
 
     if (action && action in statusCopy) {
-      updateActiveHostStatus(action);
+      void updateActiveHostStatus(action);
     }
   });
 
@@ -370,4 +604,5 @@ export const bindArcadeView = (container: ParentNode, onClose: () => void) => {
   });
 
   render();
+  void refreshArcadeApiState();
 };

@@ -3609,6 +3609,28 @@ h1 {
   scrollbar-width: thin;
 }
 
+.arcade-api-status {
+  display: grid;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.arcade-api-status span {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #aeb8c4;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.arcade-api-status span:first-child {
+  color: #f8fbff;
+}
+
 .arcade-host-card {
   position: relative;
   min-height: 108px;
@@ -3815,6 +3837,49 @@ h1 {
 
 .arcade-actions span {
   margin-left: auto;
+}
+
+.arcade-events {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 12px;
+}
+
+.arcade-events header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.arcade-events h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.arcade-event-list {
+  display: grid;
+  gap: 8px;
+}
+
+.arcade-event {
+  display: grid;
+  gap: 4px;
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.arcade-event strong {
+  color: #f8fbff;
+  font-size: 0.8rem;
+}
+
+.arcade-event span {
+  color: #aeb8c4;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
 }
 
 .arcade-settings-panel {

@@ -11,7 +11,7 @@ export type ArcadeHostStatus =
   | "poor-connection"
   | "disconnected";
 
-export type ArcadeAppType = "desktop" | "game" | "application";
+export type ArcadeAppType = "desktop" | "game" | "application" | "diagnostic";
 
 export type ArcadeStreamCodec = "auto" | "h264" | "hevc" | "av1";
 
@@ -150,6 +150,7 @@ export interface ArcadeCapabilitiesResponse {
 export interface ArcadeHostsResponse {
   hosts: ArcadeHost[];
   mock: boolean;
+  note?: string;
 }
 
 export interface ArcadeHostResponse {
@@ -197,32 +198,47 @@ export interface ArcadePairingConfirmRequest {
 }
 
 export interface ArcadePairingResponse {
+  event?: ArcadeEvent;
   expiresAt?: string | null;
   host?: ArcadeHost;
   hostId: string;
   message?: string;
+  mock?: boolean;
+  note?: string;
+  pairing?: {
+    code?: string;
+    confirmationCode?: string | null;
+    createdAt: string;
+    expiresAt: string;
+    hostId: string;
+    id: string;
+    mode: ArcadeBridgeMode;
+    status: string;
+    updatedAt: string;
+  };
   pairingId?: string;
-  status: ArcadePairingStatus;
+  status?: ArcadePairingStatus;
 }
 
-export type ArcadeEventType =
-  | "bridge"
-  | "host"
-  | "pairing"
-  | "session"
-  | "stream"
-  | "input";
+export type ArcadeEventType = string;
 
 export interface ArcadeEvent {
   createdAt: string;
   id: string;
+  level?: "debug" | "info" | "warn" | "error";
   message: string;
+  pairingId?: string;
+  source?: string;
   sessionId?: string;
   hostId?: string;
   type: ArcadeEventType;
 }
 
 export interface ArcadeEventsResponse {
+  bridge?: ArcadeBridgeCapabilities;
   events: ArcadeEvent[];
   mock?: boolean;
+  note?: string;
+  serverTime?: string;
+  sessions?: Array<Pick<ArcadeSession, "hostId" | "id" | "status" | "updatedAt">>;
 }
