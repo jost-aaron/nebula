@@ -454,7 +454,66 @@ const launchFocusedApp = () => {
   void launchApp(app);
 };
 
+let isDraggingGrid = false;
+let gridDragStartX = 0;
+let gridDragStartScrollLeft = 0;
+let didDragGrid = false;
+
+grid.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0 || grid.scrollWidth <= grid.clientWidth) {
+    return;
+  }
+
+  isDraggingGrid = true;
+  didDragGrid = false;
+  gridDragStartX = event.clientX;
+  gridDragStartScrollLeft = grid.scrollLeft;
+  grid.classList.add("dragging");
+  grid.setPointerCapture(event.pointerId);
+});
+
+grid.addEventListener("pointermove", (event) => {
+  if (!isDraggingGrid) {
+    return;
+  }
+
+  const deltaX = event.clientX - gridDragStartX;
+
+  if (Math.abs(deltaX) > 4) {
+    didDragGrid = true;
+  }
+
+  grid.scrollLeft = gridDragStartScrollLeft - deltaX;
+});
+
+const stopGridDrag = (event: PointerEvent) => {
+  if (!isDraggingGrid) {
+    return;
+  }
+
+  isDraggingGrid = false;
+  grid.classList.remove("dragging");
+
+  if (grid.hasPointerCapture(event.pointerId)) {
+    grid.releasePointerCapture(event.pointerId);
+  }
+};
+
+grid.addEventListener("pointerup", stopGridDrag);
+grid.addEventListener("pointercancel", stopGridDrag);
+grid.addEventListener("lostpointercapture", () => {
+  isDraggingGrid = false;
+  grid.classList.remove("dragging");
+});
+
 grid.addEventListener("click", (event) => {
+  if (didDragGrid) {
+    didDragGrid = false;
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>(".app-tile");
 
   if (!button) {

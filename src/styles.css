@@ -216,6 +216,12 @@ h1 {
   scroll-padding-inline: 2px;
   touch-action: pan-x;
   -webkit-overflow-scrolling: touch;
+  cursor: grab;
+  user-select: none;
+}
+
+.app-grid.dragging {
+  cursor: grabbing;
 }
 
 .app-grid::-webkit-scrollbar {
