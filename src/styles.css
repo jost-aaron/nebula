@@ -3843,6 +3843,83 @@ h1 {
   padding-top: 14px;
 }
 
+.arcade-stream-renderer-diagnostics {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 14px;
+}
+
+.arcade-stream-renderer-diagnostics header {
+  display: grid;
+  gap: 4px;
+}
+
+.arcade-stream-renderer-diagnostics h3 {
+  margin: 0;
+  color: #f8fbff;
+  font-size: 0.95rem;
+}
+
+.arcade-stream-renderer-diagnostics__capabilities,
+.arcade-stream-renderer-diagnostics__notes ul,
+.arcade-stream-renderer-diagnostics__metrics {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.arcade-stream-renderer-diagnostics__capabilities li,
+.arcade-stream-renderer-diagnostics__metrics div {
+  display: grid;
+  gap: 4px;
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.26);
+}
+
+.arcade-stream-renderer-diagnostics__capabilities li span {
+  width: fit-content;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: #dbe4ee;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.arcade-stream-renderer-diagnostics__capabilities li[data-stream-capability="available"] span {
+  border-color: rgba(124, 255, 178, 0.36);
+  color: #7cffb2;
+}
+
+.arcade-stream-renderer-diagnostics__capabilities li[data-stream-capability="unavailable"] span {
+  border-color: rgba(255, 123, 138, 0.34);
+  color: #ff9aa5;
+}
+
+.arcade-stream-renderer-diagnostics__notes {
+  display: grid;
+  gap: 7px;
+}
+
+.arcade-stream-renderer-diagnostics__notes strong,
+.arcade-stream-renderer-diagnostics__metrics dt {
+  color: #f8fbff;
+  font-size: 0.78rem;
+}
+
+.arcade-stream-renderer-diagnostics__notes li,
+.arcade-stream-renderer-diagnostics__metrics dd,
+.arcade-stream-renderer-diagnostics__capabilities small {
+  margin: 0;
+  color: #aeb8c4;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
 .arcade-input-diagnostics__header,
 .arcade-input-diagnostics__device-main,
 .arcade-input-diagnostics__metrics,

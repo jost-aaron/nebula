@@ -4,6 +4,14 @@ import {
   renderArcadeInputDiagnosticsPanel,
   type ArcadeInputDiagnosticsSnapshot
 } from "./inputDiagnostics";
+import {
+  createArcadeMockStreamDiagnostics,
+  readArcadeStreamRendererCapabilities,
+  renderArcadeMockStreamDiagnostics,
+  renderArcadeStreamRendererCapabilitySummary,
+  type ArcadeMockStreamDiagnostics,
+  type ArcadeStreamRendererCapabilities
+} from "./streamRenderer";
 
 type ArcadeHostStatus = "add-host" | "pairing" | "paired" | "connecting" | "streaming" | "disconnected";
 
@@ -25,6 +33,8 @@ interface ArcadeState {
   activeHostId: string;
   hosts: ArcadeHost[];
   inputDiagnostics: ArcadeInputDiagnosticsSnapshot;
+  streamDiagnostics: ArcadeMockStreamDiagnostics;
+  streamRendererCapabilities: ArcadeStreamRendererCapabilities;
 }
 
 const statusCopy: Record<ArcadeHostStatus, { label: string; tone: string }> = {
@@ -139,7 +149,12 @@ const renderSessionPreview = (host: ArcadeHost) => {
   `;
 };
 
-const renderSettingsPanel = (host: ArcadeHost, inputDiagnostics: ArcadeInputDiagnosticsSnapshot) => `
+const renderSettingsPanel = (
+  host: ArcadeHost,
+  inputDiagnostics: ArcadeInputDiagnosticsSnapshot,
+  streamRendererCapabilities: ArcadeStreamRendererCapabilities,
+  streamDiagnostics: ArcadeMockStreamDiagnostics
+) => `
   <aside class="arcade-settings-panel" aria-label="Stream settings">
     <header>
       <p class="eyebrow">Stream Settings</p>
@@ -171,6 +186,8 @@ const renderSettingsPanel = (host: ArcadeHost, inputDiagnostics: ArcadeInputDiag
         <strong>Native bridge later</strong>
       </span>
     </div>
+    ${renderArcadeStreamRendererCapabilitySummary(streamRendererCapabilities)}
+    ${renderArcadeMockStreamDiagnostics(streamDiagnostics)}
     ${renderArcadeInputDiagnosticsPanel(inputDiagnostics)}
   </aside>
 `;
@@ -230,7 +247,12 @@ const renderArcadeBody = (state: ArcadeState) => {
         ${renderTimeline(activeHost.status)}
         ${renderActions(activeHost)}
       </section>
-      ${renderSettingsPanel(activeHost, state.inputDiagnostics)}
+      ${renderSettingsPanel(
+        activeHost,
+        state.inputDiagnostics,
+        state.streamRendererCapabilities,
+        state.streamDiagnostics
+      )}
     </main>
   `;
 };
@@ -269,11 +291,15 @@ export const bindArcadeView = (container: ParentNode, onClose: () => void) => {
   const state: ArcadeState = {
     activeHostId: initialHosts[0].id,
     hosts: initialHosts.map((host) => ({ ...host })),
-    inputDiagnostics: readArcadeInputDiagnostics()
+    inputDiagnostics: readArcadeInputDiagnostics(),
+    streamDiagnostics: createArcadeMockStreamDiagnostics(),
+    streamRendererCapabilities: readArcadeStreamRendererCapabilities()
   };
 
   const render = () => {
     state.inputDiagnostics = readArcadeInputDiagnostics();
+    state.streamRendererCapabilities = readArcadeStreamRendererCapabilities();
+    state.streamDiagnostics = createArcadeMockStreamDiagnostics(undefined, state.streamRendererCapabilities);
     content.innerHTML = renderArcadeBody(state);
   };
 
