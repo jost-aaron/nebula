@@ -13,23 +13,30 @@ const defaultStreamSettings = {
   width: 1920
 };
 
+const mockAppCatalog = [
+  {
+    id: "desktop",
+    name: "Desktop",
+    type: "desktop"
+  },
+  {
+    id: "steam-big-picture",
+    name: "Steam Big Picture",
+    type: "game"
+  },
+  {
+    id: "moonlight-test-pattern",
+    name: "Moonlight Test Pattern",
+    type: "diagnostic"
+  }
+];
+
 const createMockHost = () => {
   const timestamp = nowIso();
 
   return {
     address: "192.168.1.42",
-    apps: [
-      {
-        id: "desktop",
-        name: "Desktop",
-        type: "desktop"
-      },
-      {
-        id: "steam-big-picture",
-        name: "Steam Big Picture",
-        type: "game"
-      }
-    ],
+    apps: mockAppCatalog,
     capabilities: {
       codecs: ["h264", "hevc"],
       hdr: false,
@@ -53,7 +60,18 @@ const createMockHost = () => {
 };
 
 const hostState = {
+  events: [
+    {
+      id: randomUUID(),
+      createdAt: nowIso(),
+      level: "info",
+      message: "Arcade mock API started without a Moonlight sidecar.",
+      source: "arcade-api",
+      type: "mock-started"
+    }
+  ],
   hosts: [createMockHost()],
+  pairings: [],
   sessions: []
 };
 
@@ -85,6 +103,20 @@ const sanitizeStreamSettings = (value = {}) => {
 const findHost = (id) => hostState.hosts.find((host) => host.id === id);
 
 const findSession = (id) => hostState.sessions.find((session) => session.id === id);
+
+const recordEvent = (event) => {
+  const entry = {
+    id: randomUUID(),
+    createdAt: nowIso(),
+    source: "arcade-api",
+    ...event
+  };
+
+  hostState.events.unshift(entry);
+  hostState.events = hostState.events.slice(0, 40);
+
+  return entry;
+};
 
 const createHost = async (request, response) => {
   const body = await readBody(request);
@@ -119,13 +151,41 @@ const createHost = async (request, response) => {
   };
 
   hostState.hosts.push(host);
-  json(response, 201, { host });
+  recordEvent({
+    hostId: host.id,
+    level: "info",
+    message: `Mock Arcade host "${host.name}" was added. No Moonlight sidecar was contacted.`,
+    type: "host-added"
+  });
+
+  json(response, 201, {
+    host,
+    mock: true,
+    note: "Host was added to in-memory mock/dev state only. No real Moonlight sidecar exists."
+  });
 };
 
 const listHosts = async (request, response) => {
   json(response, 200, {
     hosts: hostState.hosts,
-    mock: true
+    mock: true,
+    note: "Hosts are mock/dev state. No real Moonlight sidecar exists."
+  });
+};
+
+const listHostApps = async (request, response, id) => {
+  const host = findHost(id);
+
+  if (!host) {
+    json(response, 404, { error: "Arcade host not found." });
+    return;
+  }
+
+  json(response, 200, {
+    apps: host.apps,
+    hostId: host.id,
+    mock: true,
+    note: "Apps are mock/dev launch targets. No Sunshine app list was queried."
   });
 };
 
@@ -155,17 +215,129 @@ const listCapabilities = async (request, response) => {
     routes: [
       "GET /api/arcade/hosts",
       "POST /api/arcade/hosts",
+      "GET /api/arcade/hosts/:id/apps",
+      "POST /api/arcade/hosts/:id/pair/start",
+      "POST /api/arcade/hosts/:id/pair/confirm",
       "GET /api/arcade/capabilities",
       "GET /api/arcade/sessions",
       "POST /api/arcade/sessions",
       "GET /api/arcade/sessions/:id",
-      "DELETE /api/arcade/sessions/:id"
+      "DELETE /api/arcade/sessions/:id",
+      "GET /api/arcade/events"
     ],
     streaming: {
       actualMoonlightSession: false,
       recommendedBackend: "native-moonlight-core-sidecar",
       statusEvents: "planned"
     }
+  });
+};
+
+const startPairing = async (request, response, id) => {
+  const host = findHost(id);
+
+  if (!host) {
+    json(response, 404, { error: "Arcade host not found." });
+    return;
+  }
+
+  const timestamp = nowIso();
+  const pairing = {
+    code: "0000",
+    createdAt: timestamp,
+    expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    hostId: host.id,
+    id: randomUUID(),
+    mode: "mock",
+    status: "awaiting-confirmation",
+    updatedAt: timestamp
+  };
+
+  hostState.pairings = hostState.pairings.filter((item) => item.hostId !== host.id);
+  hostState.pairings.unshift(pairing);
+  host.status = "pairing";
+  host.updatedAt = timestamp;
+
+  const event = recordEvent({
+    hostId: host.id,
+    level: "info",
+    message: `Mock pairing started for "${host.name}". No Sunshine PIN challenge was opened.`,
+    pairingId: pairing.id,
+    type: "pairing-started"
+  });
+
+  json(response, 202, {
+    event,
+    mock: true,
+    note: "Pairing is mock/dev state only. No real Moonlight sidecar or Sunshine host was contacted.",
+    pairing
+  });
+};
+
+const confirmPairing = async (request, response, id) => {
+  const host = findHost(id);
+
+  if (!host) {
+    json(response, 404, { error: "Arcade host not found." });
+    return;
+  }
+
+  const body = await readBody(request);
+  const timestamp = nowIso();
+  const pairing = hostState.pairings.find((item) => item.hostId === host.id);
+
+  if (!pairing) {
+    json(response, 409, {
+      error: "No active mock pairing exists for this Arcade host.",
+      mock: true
+    });
+    return;
+  }
+
+  pairing.confirmationCode = String(body.code ?? body.pin ?? "").trim() || null;
+  pairing.status = "confirmed";
+  pairing.updatedAt = timestamp;
+  host.apps = host.apps.length > 0 ? host.apps : mockAppCatalog;
+  host.lastSeenAt = timestamp;
+  host.paired = true;
+  host.status = "paired";
+  host.updatedAt = timestamp;
+
+  const event = recordEvent({
+    hostId: host.id,
+    level: "info",
+    message: `Mock pairing confirmed for "${host.name}". Credentials were not created.`,
+    pairingId: pairing.id,
+    type: "pairing-confirmed"
+  });
+
+  json(response, 200, {
+    event,
+    host,
+    mock: true,
+    note: "Pairing confirmation is mock/dev state only. No credentials or Moonlight certificates were generated.",
+    pairing
+  });
+};
+
+const listEvents = async (request, response) => {
+  json(response, 200, {
+    bridge: {
+      available: false,
+      mode: "mock",
+      moonlightCore: false,
+      sidecar: false
+    },
+    events: hostState.events,
+    mock: true,
+    note: "Lifecycle events are mock/dev status snapshots. This is not an SSE stream and no real Moonlight sidecar exists.",
+    serverTime: nowIso(),
+    sessions: hostState.sessions.map((session) => ({
+      hostId: session.hostId,
+      id: session.id,
+      status: session.status,
+      updatedAt: session.updatedAt
+    }))
   });
 };
 
@@ -208,7 +380,19 @@ const createSession = async (request, response) => {
   };
 
   hostState.sessions.unshift(session);
-  json(response, 201, { session });
+  recordEvent({
+    hostId: host.id,
+    level: "info",
+    message: `Mock session created for "${host.name}". No encoded stream was requested.`,
+    sessionId: session.id,
+    type: "session-created"
+  });
+
+  json(response, 201, {
+    mock: true,
+    note: "Session was created in mock/dev state only. No real Moonlight sidecar exists.",
+    session
+  });
 };
 
 const getSession = async (request, response, id) => {
@@ -219,7 +403,11 @@ const getSession = async (request, response, id) => {
     return;
   }
 
-  json(response, 200, { session });
+  json(response, 200, {
+    mock: true,
+    note: "Session is mock/dev state only. No real Moonlight stream exists.",
+    session
+  });
 };
 
 const deleteSession = async (request, response, id) => {
@@ -231,7 +419,18 @@ const deleteSession = async (request, response, id) => {
   }
 
   hostState.sessions.splice(index, 1);
-  json(response, 200, { ok: true });
+  recordEvent({
+    level: "info",
+    message: "Mock Arcade session was deleted.",
+    sessionId: id,
+    type: "session-deleted"
+  });
+
+  json(response, 200, {
+    mock: true,
+    note: "Deleted an in-memory mock/dev session only.",
+    ok: true
+  });
 };
 
 export const createArcadeRoutes = () => async (request, response, url) => {
@@ -247,6 +446,11 @@ export const createArcadeRoutes = () => async (request, response, url) => {
 
   if (request.method === "GET" && url.pathname === "/api/arcade/capabilities") {
     await listCapabilities(request, response);
+    return true;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/arcade/events") {
+    await listEvents(request, response);
     return true;
   }
 
@@ -274,6 +478,30 @@ export const createArcadeRoutes = () => async (request, response, url) => {
       await deleteSession(request, response, id);
       return true;
     }
+  }
+
+  const hostAppsMatch = url.pathname.match(/^\/api\/arcade\/hosts\/([^/]+)\/apps$/);
+
+  if (hostAppsMatch && request.method === "GET") {
+    const [, id] = hostAppsMatch;
+    await listHostApps(request, response, id);
+    return true;
+  }
+
+  const hostPairStartMatch = url.pathname.match(/^\/api\/arcade\/hosts\/([^/]+)\/pair\/start$/);
+
+  if (hostPairStartMatch && request.method === "POST") {
+    const [, id] = hostPairStartMatch;
+    await startPairing(request, response, id);
+    return true;
+  }
+
+  const hostPairConfirmMatch = url.pathname.match(/^\/api\/arcade\/hosts\/([^/]+)\/pair\/confirm$/);
+
+  if (hostPairConfirmMatch && request.method === "POST") {
+    const [, id] = hostPairConfirmMatch;
+    await confirmPairing(request, response, id);
+    return true;
   }
 
   return false;
