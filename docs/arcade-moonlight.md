@@ -257,6 +257,11 @@ This phase can live outside the normal dashboard container at first. Do not add
 host dependencies to the project tree or violate the Docker-first frontend
 workflow.
 
+See `docs/arcade-sidecar-spike.md` for the concrete future spike plan,
+including process model, IPC messages, pairing-secret questions, callback
+translation, dependency inventory, proof-of-life milestones, risks, and
+non-goals.
+
 ### Phase 3: Backend Facade
 
 Add `server/arcade.mjs` as a facade:

@@ -37,6 +37,7 @@ decode.
 See:
 
 - `docs/arcade-moonlight.md`
+- `docs/arcade-sidecar-spike.md`
 
 ## Video Player Direction
 
