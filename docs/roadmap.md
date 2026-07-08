@@ -25,6 +25,19 @@ will need:
 - Background tasks.
 - Notifications.
 
+## Arcade Direction
+
+Arcade should grow into a Moonlight/Sunshine-compatible game streaming client
+surface. The recommended path is to build the Arcade frontend as the
+host/session/control UI, then integrate Moonlight Core through a native sidecar,
+plugin, or future native runtime. WebGPU should act as the presentation and
+overlay compositor, not as a replacement for Moonlight transport or video
+decode.
+
+See:
+
+- `docs/arcade-moonlight.md`
+
 ## Video Player Direction
 
 The future video player should be treated as a first-class app and capability

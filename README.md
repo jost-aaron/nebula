@@ -74,6 +74,7 @@ Start with:
 - [docs/architecture.md](docs/architecture.md)
 - [docs/cinema.md](docs/cinema.md)
 - [docs/studio.md](docs/studio.md)
+- [docs/arcade-moonlight.md](docs/arcade-moonlight.md)
 - [docs/webgpu-renderer.md](docs/webgpu-renderer.md)
 - [docs/files.md](docs/files.md)
 - [docs/library.md](docs/library.md)

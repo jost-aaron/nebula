@@ -118,10 +118,11 @@ Read these in order:
 3. `docs/architecture.md`
 4. `docs/cinema.md`
 5. `docs/studio.md`
-6. `docs/files.md`
-7. `docs/mobile-clients.md`
-8. `docs/testing.md`
-9. `docs/development.md`
+6. `docs/arcade-moonlight.md`
+7. `docs/files.md`
+8. `docs/mobile-clients.md`
+9. `docs/testing.md`
+10. `docs/development.md`
 
 ## Recent Verification
 
