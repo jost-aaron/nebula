@@ -41,7 +41,7 @@ export interface RuntimeDiagnostics {
 }
 
 export interface AppDiagnostics {
-  activeRail: string;
+  activeNavigation: string;
   appCount: number;
   apps: DashboardApp[];
   focusedApp: DashboardApp;

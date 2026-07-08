@@ -824,6 +824,19 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
     render();
 
     const player = content.querySelector<HTMLMediaElement>("[data-cinema-player]");
+    const stage = content.querySelector<HTMLElement>(".cinema-video-stage");
+
+    if (player && stage) {
+      const renderPlaybackState = () => {
+        stage.classList.toggle("is-playing", !player.paused && !player.ended);
+      };
+
+      player.addEventListener("play", renderPlaybackState);
+      player.addEventListener("playing", renderPlaybackState);
+      player.addEventListener("pause", renderPlaybackState);
+      player.addEventListener("ended", renderPlaybackState);
+      renderPlaybackState();
+    }
 
     if (fullscreen && player instanceof HTMLVideoElement) {
       void player.requestFullscreen?.();
@@ -1115,6 +1128,15 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
 
     if (action === "open-featured" && active) {
       openTitle(active);
+    }
+
+    if (action === "play" && view === "player") {
+      const player = content.querySelector<HTMLMediaElement>("[data-cinema-player]");
+
+      if (player) {
+        void player.play();
+      }
+      return;
     }
 
     if ((action === "play" || action === "play-featured") && active) {

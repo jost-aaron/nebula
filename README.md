@@ -40,13 +40,13 @@ files needed for local development, so the host project should not need a local
 
 ## Project Map
 
-- `src/main.ts` - dashboard shell, app selection state, rail navigation, panels,
+- `src/main.ts` - dashboard shell, app selection state, detail panels,
   full-screen app launch surfaces, keyboard/mouse handlers.
 - `src/apps.ts` - app registry and app metadata types.
 - `src/diagnostics/` - renderer, display, runtime, app, and performance
   diagnostics collectors.
 - `src/settings/` - shared Settings/Diagnostics panel renderer.
-- `src/search/` - shared Search UI for the sidebar and Search app.
+- `src/search/` - shared Search UI for the Search app.
 - `src/library/` - installed-app Library grid renderer.
 - `src/cinema/` - Plex-like local media library and lazy web player.
 - `src/files/` - local content file browser UI.

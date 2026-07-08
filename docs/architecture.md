@@ -50,7 +50,7 @@ flowchart TD
 - Builds the shell markup.
 - Renders app tiles and detail panels.
 - Handles keyboard and pointer input.
-- Manages rail navigation state.
+- Manages app-first dashboard navigation.
 - Launches focused apps into the full-screen app surface.
 - Starts the WebGPU renderer.
 
@@ -93,18 +93,18 @@ flowchart TD
 
 `src/settings/`
 
-- Renders the Settings/Diagnostics system panel.
+- Renders the Settings/Diagnostics app surface.
 - Keeps dense diagnostics markup out of `src/main.ts`.
 
 `src/search/`
 
-- Renders the shared Search UI for the sidebar Search panel and full Search app.
+- Renders the shared Search UI for the Search app.
 - Filters app registry entries by name.
 
 `src/library/`
 
 - Renders the installed-app Library grid.
-- Keeps app-library markup separate from rail routing.
+- Keeps app-library markup reusable for future application library surfaces.
 
 `src/files/`
 
@@ -165,15 +165,11 @@ The current state is deliberately small:
 let focusedIndex = 0;
 let launchedApp: DashboardApp | null = null;
 let activeApp: DashboardApp | null = null;
-let activeRail = "home";
 ```
 
 `focusedIndex` controls the featured app and focused tile.
 
 `launchedApp` controls app detail panel visibility and content.
-
-`activeRail` controls which system rail item is active and which shell panel is
-open.
 
 `activeApp` controls the full-screen app surface opened by the primary Open
 command.
@@ -182,11 +178,9 @@ command.
 
 This app uses explicit render functions instead of a framework:
 
-- `renderRailIcons()`
 - `renderGrid()`
 - `renderFocus()`
 - `renderPanel()`
-- `renderRailState()`
 - feature renderers under `src/cinema/`, `src/settings/`, `src/search/`,
   `src/library/`, and `src/files/`
 
@@ -198,11 +192,9 @@ This prevents duplicate icons, stale controls, and repeated event binding.
 
 Add new apps in `src/apps.ts`.
 
-Add new rail sections in `src/main.ts`:
-
-1. Add a rail button in the root shell markup.
-2. Add corresponding content in `openShellPanel()`.
-3. Update tests/manual verification for the new section.
+Prefer app-first navigation. If a feature needs a persistent global navigation
+surface later, document why it should sit outside the Applications strip and
+update the manual browser checks with the new behavior.
 
 Add renderer-driven UI effects in `src/webgpuRenderer.ts`. The shader already
 receives `focus` as a uniform, populated from `document.documentElement.dataset`.

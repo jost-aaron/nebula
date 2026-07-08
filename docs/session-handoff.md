@@ -14,11 +14,11 @@ Nebula Dashboard is a Docker Compose first browser dashboard/runtime prototype.
 The current app includes:
 
 - WebGPU animated background with Canvas fallback.
-- Console-like app shell with rail navigation and full-screen app launch
+- Console-like app shell with app-first navigation and full-screen app launch
   animation.
-- Search app and sidebar search.
-- Library app grid.
-- Shared Settings/Diagnostics app and sidebar panel.
+- Search app.
+- Applications grid.
+- Shared Settings/Diagnostics app.
 - Files app for ignored local content under `content/`, with a Variant 2
   console-style layout and iOS-compatible API targeting.
 - Cinema app with a dedicated full-screen surface, browsing-first library,
@@ -96,6 +96,9 @@ iOS:
 - Use `./scripts/ios-build-simulator.sh` for command-line simulator builds.
 - `server/cors.mjs` adds API-only CORS for `capacitor://localhost` and other
   API clients that send an `Origin` header.
+- The iOS app uses `viewport-fit=cover` plus CSS `env(safe-area-inset-*)`
+  variables to keep dashboard and Cinema surfaces clear of the Dynamic Island,
+  status bar, and home indicator.
 
 ## Good First Reads
 
@@ -117,6 +120,8 @@ At handoff time:
 - `docker compose run --rm dashboard npm run check` passed.
 - `./scripts/ios-sync-dev-server.sh` passed.
 - `./scripts/ios-build-simulator.sh` passed.
+- iPhone 17 Pro simulator launch/screenshot passed for the dashboard safe-area
+  smoke test.
 - API CORS preflight from `Origin: capacitor://localhost` returned
   `access-control-allow-origin: capacitor://localhost`.
 - `content/` is ignored by Git.
@@ -128,6 +133,9 @@ At handoff time:
 ## Known Gaps
 
 - No automated browser test suite yet.
+- Command-line simulator testing currently screenshots the launched dashboard,
+  but tap-through Cinema/Files safe-area checks still need a manual simulator
+  pass.
 - Cinema metadata is local and heuristic, not scraped.
 - Cinema thumbnails are generated client-side, not persisted.
 - Watch progress is not persisted.

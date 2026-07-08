@@ -1,12 +1,11 @@
 # Settings And Diagnostics
 
-Settings is the first system app with real runtime data. The sidebar Settings
-rail and the Settings app use the same renderer and diagnostics collectors.
+Settings is the first system app with real runtime data. It uses the shared
+renderer and diagnostics collectors.
 
 ## Current Scope
 
-The Settings rail button opens a wide system panel with diagnostics sections.
-Launching the Settings app opens the same menu inside the full-screen app
+Launching the Settings app opens diagnostics sections inside the full-screen app
 surface.
 
 - Renderer
@@ -53,7 +52,7 @@ Apps:
 
 - App registry from `src/apps.ts`.
 - Focused app index from shell state.
-- Active rail state.
+- Current navigation mode.
 - Open panel/app state.
 
 Runtime:

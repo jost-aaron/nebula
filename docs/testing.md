@@ -38,7 +38,6 @@ Check:
 
 - Dashboard heading is visible.
 - GPU status says either `WebGPU · ...` or `Canvas fallback`.
-- Four rail icons are visible.
 - App strip shows Cinema, Arcade, Studio, Party, Settings, and Search.
 - App strip includes Files.
 - Clicking a tile updates the featured app.
@@ -47,10 +46,8 @@ Check:
 - The details button opens the focused app detail panel.
 - Escape closes the full-screen app surface.
 - Close button hides the panel.
-- Search, Library, and Settings rail buttons open shell panels.
-- Sidebar Search filters apps by name and Enter launches the active result.
 - The Search app filters apps by name and Enter launches the active result.
-- Library shows all installed apps in a grid and clicking an app launches it.
+- Settings opens from the Applications strip and shows diagnostics.
 - Cinema opens the local media browser and shows supported videos from
   `content/`.
 - Cinema shows Movies, TV Shows, and Music category tabs.
@@ -64,60 +61,103 @@ Check:
   while uploading.
 - Files uses resumable chunk sessions for files larger than 64 MB.
 - Re-selecting the same interrupted large file resumes from uploaded chunks.
-- Home rail button clears shell panels.
 - Settings shows Renderer, Display, Performance, Apps, GPU Limits, and Runtime
   diagnostics.
-- The Settings app shows the same Settings menu as the sidebar Settings panel.
 
 ## Keyboard Test
 
 - ArrowRight/ArrowDown moves focus forward.
 - ArrowLeft/ArrowUp moves focus backward.
 - Enter launches the focused app surface.
-- Escape closes the active app surface first, otherwise closes panels and
-  returns rail state to Home.
+- Escape closes the active app surface first, otherwise closes detail panels.
 
-## Icon Regression Test
+## Navigation Regression Test
 
-Rail icons previously duplicated because icon creation happened inside a repeated
-render path.
+The old Home/Search/Library/Settings rail was removed in favor of app-first
+navigation.
 
 Expected:
 
-- `.rail-button` count is `4`.
-- `.rail-button svg` count is `4`.
-- Each rail button has exactly one `svg`.
-- Repeated rail clicks do not change those counts.
+- `.rail-button` count is `0`.
+- Search and Settings appear as application tiles.
+- Opening Search or Settings uses the full-screen app surface.
+- The Applications strip scrolls horizontally by touch/trackpad.
+- Keyboard/controller focus scrolls off-screen app tiles into view.
 
 Browser console snippet:
 
 ```js
-Array.from(document.querySelectorAll(".rail-button")).map((button) => ({
-  nav: button.getAttribute("data-nav"),
-  icons: button.querySelectorAll("svg").length
-}));
+document.querySelectorAll(".rail-button").length;
 ```
 
-Every `icons` value should be `1`.
+The result should be `0`.
 
 ## Responsive Test
 
 At a phone-like viewport, for example `390 x 844`:
 
-- Bottom rail is visible.
-- Detail panel does not overlap the bottom rail.
+- No bottom rail is visible.
+- Detail panel does not reserve bottom-rail space.
 - Full-screen app surface fits within the viewport.
-- Library grid uses three columns on phone-sized viewports.
 - Cinema stacks the library and playback panel without overlap.
 - Files layout keeps the list and preview usable on phone-sized viewports.
 - App strip scrolls horizontally.
 - Status pills wrap without text overlap.
+
+## iOS Safe-Area Test
+
+The app is intended to run under Capacitor with `viewport-fit=cover`, so iOS
+notches, the Dynamic Island, status indicators, and the home indicator must be
+kept clear by CSS safe-area padding.
+
+Verify the source hooks:
+
+- `index.html` includes `viewport-fit=cover`.
+- `src/styles.css` defines `--safe-area-top`, `--safe-area-right`,
+  `--safe-area-bottom`, and `--safe-area-left`.
+- Mobile `.home` padding uses the safe-area variables.
+- Cinema `.cinema-shell` padding uses the safe-area variables at desktop,
+  tablet, and phone breakpoints.
+
+Command-line simulator smoke test:
+
+```sh
+./scripts/ios-sync-dev-server.sh
+./scripts/ios-build-simulator.sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun simctl list devices available
+```
+
+Use a notched iPhone simulator, such as iPhone 17 Pro, then install and launch
+the built app:
+
+```sh
+DEVICE_ID=<simulator-udid>
+APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -path '*/Build/Products/Debug-iphonesimulator/App.app' -type d -print | sort | tail -1)
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun simctl boot "$DEVICE_ID" || true
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun simctl bootstatus "$DEVICE_ID" -b
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun simctl install "$DEVICE_ID" "$APP_PATH"
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun simctl launch "$DEVICE_ID" com.nebula.dashboard
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun simctl io "$DEVICE_ID" screenshot /tmp/nebula-ios-safe-area-home.png
+```
+
+Expected:
+
+- Dashboard content starts below the Dynamic Island/status bar region.
+- The Applications strip remains above the home indicator.
+- No bottom rail is present or reserving extra space.
+- Native screenshot dimensions match the selected simulator display.
+
+Current command-line `simctl` can screenshot the launched dashboard, but it does
+not provide tap automation in this setup. Use a quick manual simulator pass for
+Cinema and Files surfaces after major layout changes.
 
 ## Future Automated Tests
 
 Good next additions:
 
 - Playwright smoke test in Docker.
-- DOM tests for rail icon counts and panel state transitions.
+- DOM tests for app-first navigation and panel state transitions.
 - Visual screenshot checks for desktop and mobile.
+- A repeatable iOS simulator UI test that taps through Cinema and Files safe
+  areas.
 - WebGPU capability test that accepts both WebGPU and Canvas fallback modes.

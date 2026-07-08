@@ -118,7 +118,7 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot): string {
         [
           renderMetric("Installed", String(snapshot.apps.appCount)),
           renderMetric("Focused", snapshot.apps.focusedApp.name),
-          renderMetric("Rail", snapshot.apps.activeRail),
+          renderMetric("Navigation", snapshot.apps.activeNavigation),
           renderMetric("Open panel", snapshot.apps.openPanel),
           `<div class="app-diagnostic-list">${appRows}</div>`
         ].join("")

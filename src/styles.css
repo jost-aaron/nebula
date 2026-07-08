@@ -51,24 +51,12 @@ button {
 .shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 76px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   background:
     linear-gradient(90deg, rgba(5, 7, 12, 0.88), rgba(5, 7, 12, 0.18) 45%, rgba(5, 7, 12, 0.58)),
     linear-gradient(0deg, rgba(5, 7, 12, 0.78), rgba(5, 7, 12, 0.08));
 }
 
-.rail {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  padding: 28px 12px;
-  border-right: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(5, 7, 12, 0.58);
-  backdrop-filter: blur(24px);
-}
-
-.rail-button,
 .icon-command {
   width: 44px;
   height: 44px;
@@ -81,18 +69,9 @@ button {
   cursor: pointer;
 }
 
-.rail-button:hover,
-.rail-button.active,
 .icon-command:hover {
   border-color: rgba(255, 255, 255, 0.38);
   background: rgba(255, 255, 255, 0.16);
-}
-
-.rail-button svg {
-  width: 21px;
-  height: 21px;
-  stroke-width: 2.2;
-  pointer-events: none;
 }
 
 .home {
@@ -231,8 +210,12 @@ h1 {
   grid-auto-columns: minmax(180px, 230px);
   gap: 14px;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   padding: 4px 2px 12px;
   scrollbar-width: none;
+  scroll-padding-inline: 2px;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
 }
 
 .app-grid::-webkit-scrollbar {
@@ -1688,6 +1671,17 @@ h1 {
 
 .cinema-video-stage:hover .cinema-player-overlay {
   opacity: 1;
+}
+
+.cinema-video-stage .cinema-play-orb,
+.cinema-video-stage.is-playing .cinema-play-orb {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.86);
+}
+
+.cinema-video-stage .cinema-overlay-meta {
+  display: none;
 }
 
 .cinema-meta-list span,
@@ -3365,20 +3359,6 @@ h1 {
     scrollbar-width: none;
   }
 
-  .rail {
-    position: fixed;
-    z-index: 2;
-    right: calc(12px + var(--safe-area-right));
-    bottom: calc(12px + var(--safe-area-bottom));
-    left: calc(12px + var(--safe-area-left));
-    height: 60px;
-    flex-direction: row;
-    justify-content: center;
-    padding: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 8px;
-  }
-
   .home {
     height: 100dvh;
     min-height: 0;
@@ -3389,7 +3369,7 @@ h1 {
     padding:
       calc(16px + var(--safe-area-top))
       calc(18px + var(--safe-area-right))
-      calc(82px + var(--safe-area-bottom))
+      calc(18px + var(--safe-area-bottom))
       calc(18px + var(--safe-area-left));
   }
 
@@ -3664,6 +3644,7 @@ h1 {
   .cinema-content {
     overflow-y: auto;
     scrollbar-width: none;
+    align-content: start;
   }
 
   .cinema-content::-webkit-scrollbar {
@@ -3692,13 +3673,26 @@ h1 {
     grid-template-columns: 1fr;
   }
 
+  .cinema-title-detail {
+    grid-template-rows: auto auto;
+    align-content: start;
+  }
+
+  .cinema-player-layout {
+    grid-template-rows: auto auto;
+    align-content: start;
+  }
+
   .cinema-preview-frame,
   .cinema-player-frame {
-    min-height: 230px;
-    aspect-ratio: 16 / 10;
+    width: 100%;
+    min-height: 0;
+    height: clamp(170px, 38vh, 280px);
+    aspect-ratio: 16 / 9;
   }
 
   .cinema-title-panel {
+    max-height: none;
     overflow: visible;
   }
 

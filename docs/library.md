@@ -1,11 +1,13 @@
 # Library
 
-Library is available from the left rail. It shows all installed applications in
-an app-grid layout inspired by iOS-style app libraries.
+Library renders the installed application grid used by app-first navigation
+surfaces. It shows all installed applications in an app-grid layout inspired by
+iOS-style app libraries.
 
 ## Behavior
 
-- The Library rail opens a system panel.
+- Apps are selected directly from the Applications strip or a future library
+  surface.
 - Apps are loaded from `src/apps.ts`.
 - Each app appears as a rounded icon with a label.
 - Icons use a staggered scale/fade entrance animation.

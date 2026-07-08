@@ -1,11 +1,7 @@
 # Search
 
-Search is available from two places:
-
-- The sidebar Search rail button.
-- The Search app in the app strip.
-
-Both use the same reusable renderer in `src/search/renderSearchView.ts`.
+Search is available from the Search app in the Applications strip. It uses the
+reusable renderer in `src/search/renderSearchView.ts`.
 
 ## Behavior
 
@@ -16,8 +12,6 @@ Search behaves like a small Spotlight-style launcher:
 - ArrowDown and ArrowUp move through visible results.
 - Enter launches the active result.
 - Clicking a result launches that app.
-
-The sidebar Search opens as a system panel.
 
 The Search app opens as a full-screen app surface, using the same launch
 animation as other apps.

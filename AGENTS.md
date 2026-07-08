@@ -96,19 +96,17 @@ keep the migration focused.
 
 ## State Model
 
-`src/main.ts` keeps four pieces of shell state:
+`src/main.ts` keeps three pieces of shell state:
 
 - `focusedIndex` - selected app tile.
 - `launchedApp` - app detail panel currently open, or `null`.
-- `activeRail` - active rail item: `home`, `search`, `library`, or `settings`.
 - `activeApp` - full-screen app surface currently open, or `null`.
 
 Keyboard behavior:
 
 - Arrow keys cycle `focusedIndex`.
 - Enter launches the focused app surface.
-- Escape closes the active app surface first, otherwise closes panels and returns
-  the rail to Home.
+- Escape closes the active app surface first, otherwise closes detail panels.
 
 Mouse behavior:
 
@@ -116,15 +114,15 @@ Mouse behavior:
 - Double-clicking a tile launches the app surface.
 - The primary Open command launches the focused app into the full-screen app
   surface; the details button opens the compact app panel.
-- Rail buttons open shell panels or return Home.
-- Sidebar Search and the Search app both filter apps by name; Enter launches the
-  active result.
-- Library shows all installed apps from `src/apps.ts`; clicking one launches it.
+- Search is launched from the Applications strip and filters apps by name; Enter
+  launches the active result.
+- The Applications strip shows installed apps from `src/apps.ts`; clicking one
+  focuses it, and opening it launches the full-screen app surface.
 - Cinema scans ignored `content/` for Movies, TV Shows, and Music. The player is
   hidden until a title is selected.
 - Files browses and manages the ignored `content/` folder through the local API.
-- Sidebar Settings and the Settings app use the same Settings/Diagnostics
-  renderer.
+- Settings is launched from the Applications strip and uses the shared
+  Settings/Diagnostics renderer.
 
 ## Current App Surface
 
@@ -134,7 +132,7 @@ Mouse behavior:
 - `Files` is a ready local content browser. It supports drag/drop uploads,
   progress, cancel, resumable 64 MB chunks for files larger than 64 MB, and
   iOS-compatible Server URL/API token routing.
-- `Settings`, `Search`, and `Library` are ready shell/system apps.
+- `Settings` and `Search` are ready shell/system apps.
 - `Arcade` and `Party` are still planned placeholders.
 
 ## Content And Media
@@ -161,9 +159,9 @@ systems than a web landing page. Future work should preserve:
 
 ## Recent Bug Context
 
-Rail icons are rendered once by `renderRailIcons()` using `replaceChildren(...)`.
-Do not move icon creation into repeated panel or grid render paths; that caused
-icons to appear late and duplicate during clicks.
+The old Home/Search/Library/Settings rail has been removed. Keep navigation
+app-first through the Applications strip unless the user explicitly asks for a
+new global navigation surface.
 
 ## Verification Checklist
 
@@ -178,10 +176,14 @@ Browser checks:
 
 - Page loads at http://127.0.0.1:5173.
 - GPU status shows either `WebGPU · ...` or `Canvas fallback`.
-- Four rail icons are visible.
-- Rail buttons do not duplicate SVGs after repeated clicks.
+- Search, Settings, Files, and Cinema are available from the Applications strip.
+- The Applications strip scrolls horizontally, including when focus moves to an
+  off-screen app tile.
 - Arrow keys, Enter, and Escape work.
-- Mobile viewport does not overlap bottom rail and detail panel.
+- Mobile viewport does not reserve space for a bottom rail.
+- iOS safe-area checks should confirm `viewport-fit=cover` and
+  `env(safe-area-inset-*)` padding keep content clear of the status/Dynamic
+  Island and home-indicator regions.
 
 ## Read Next
 

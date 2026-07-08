@@ -1,4 +1,3 @@
-import { icons, createElement } from "lucide";
 import { renderAppIcon } from "./appIcons";
 import { apiJson, getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken, setApiBaseUrl, setApiToken } from "./api/http";
 import { dashboardApps, type DashboardApp } from "./apps";
@@ -7,7 +6,6 @@ import { collectDiagnostics } from "./diagnostics/collectDiagnostics";
 import { createPerformanceMonitor } from "./diagnostics/performanceMonitor";
 import type { RendererRuntimeState } from "./diagnostics/types";
 import { bindFileBrowser, renderFileBrowserShell } from "./files/fileBrowser";
-import { renderLibraryView } from "./library/renderLibraryView";
 import { filterApps, renderSearchResults, renderSearchView } from "./search/renderSearchView";
 import { renderSettingsPanel } from "./settings/renderSettingsPanel";
 import { startRenderer } from "./webgpuRenderer";
@@ -23,7 +21,6 @@ if (!root || !canvas) {
 let focusedIndex = 0;
 let launchedApp: DashboardApp | null = null;
 let activeApp: DashboardApp | null = null;
-let activeRail = "home";
 let rendererState: RendererRuntimeState = {
   adapterName: "Checking GPU",
   mode: "checking"
@@ -33,13 +30,6 @@ const performanceMonitor = createPerformanceMonitor();
 
 root.innerHTML = `
   <main class="shell" aria-label="Nebula dashboard">
-    <aside class="rail" aria-label="System navigation">
-      <button class="rail-button active" aria-label="Home" title="Home" data-nav="home" data-icon="House"></button>
-      <button class="rail-button" aria-label="Search" title="Search" data-nav="search" data-icon="Search"></button>
-      <button class="rail-button" aria-label="Library" title="Library" data-nav="library" data-icon="Library"></button>
-      <button class="rail-button" aria-label="Settings" title="Settings" data-nav="settings" data-icon="Settings"></button>
-    </aside>
-
     <section class="home" aria-live="polite">
       <header class="topbar">
         <div>
@@ -93,17 +83,6 @@ if (!grid || !featuredTitle || !featuredDescription || !launchButton || !details
   throw new Error("Dashboard controls failed to initialize.");
 }
 
-const renderRailIcons = () => {
-  document.querySelectorAll<HTMLButtonElement>("[data-icon]").forEach((button) => {
-    const iconName = button.dataset.icon as keyof typeof icons;
-    const iconNode = icons[iconName];
-
-    if (iconNode) {
-      button.replaceChildren(createElement(iconNode));
-    }
-  });
-};
-
 const renderGrid = () => {
   grid.innerHTML = dashboardApps
     .map((app, index) => {
@@ -127,6 +106,12 @@ const renderGrid = () => {
     .join("");
 };
 
+const scrollFocusedTileIntoView = () => {
+  grid
+    .querySelector<HTMLButtonElement>(`.app-tile[data-index="${focusedIndex}"]`)
+    ?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+};
+
 const renderFocus = () => {
   const app = dashboardApps[focusedIndex];
   document.documentElement.dataset.focusIndex = String(focusedIndex);
@@ -134,6 +119,7 @@ const renderFocus = () => {
   featuredDescription.textContent = app.description;
   launchButton.textContent = app.status === "planned" ? "Preview" : "Open";
   renderGrid();
+  scrollFocusedTileIntoView();
 };
 
 const renderPanel = () => {
@@ -167,22 +153,10 @@ const renderPanel = () => {
   });
 };
 
-const renderRailState = () => {
-  document.querySelectorAll<HTMLButtonElement>(".rail-button").forEach((button) => {
-    button.classList.toggle("active", button.dataset.nav === activeRail);
-  });
-};
-
 const closeShellPanel = () => {
-  activeRail = "home";
-  renderRailState();
   launchedApp = null;
   detailPanel.classList.remove("system-panel", "search-panel", "library-panel");
   renderPanel();
-};
-
-const bindClosePanel = () => {
-  document.querySelector<HTMLButtonElement>("#close-panel")?.addEventListener("click", closeShellPanel);
 };
 
 const closeActiveApp = () => {
@@ -275,22 +249,10 @@ const bindClientSettings = (container: ParentNode) => {
   });
 };
 
-const bindLibraryControls = (container: ParentNode) => {
-  container.querySelectorAll<HTMLButtonElement>("[data-library-app]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const app = dashboardApps.find((candidate) => candidate.id === button.dataset.libraryApp);
-
-      if (app) {
-        void launchApp(app);
-      }
-    });
-  });
-};
-
 const createSettingsContent = async () =>
   renderSettingsPanel(
     await collectDiagnostics({
-      activeRail,
+      activeNavigation: "Applications",
       apps: dashboardApps,
       focusedIndex,
       launchedApp,
@@ -307,8 +269,6 @@ const launchApp = async (app: DashboardApp) => {
 
   activeApp = app;
   launchedApp = null;
-  activeRail = isSettingsApp ? "settings" : "home";
-  renderRailState();
   detailPanel.classList.remove("system-panel", "search-panel", "library-panel");
   renderPanel();
 
@@ -475,107 +435,7 @@ const bindSearchControls = (container: ParentNode) => {
   window.setTimeout(() => input.focus(), 0);
 };
 
-const renderSettingsDiagnostics = async () => {
-  const snapshot = await collectDiagnostics({
-    activeRail,
-    apps: dashboardApps,
-    focusedIndex,
-    launchedApp,
-    performance: performanceMonitor.snapshot(),
-    renderer: rendererState
-  });
-
-  if (activeRail !== "settings") {
-    return;
-  }
-
-  detailPanel.hidden = false;
-  detailPanel.classList.add("system-panel");
-  detailPanel.classList.remove("search-panel", "library-panel");
-  detailPanel.innerHTML = renderSettingsPanel(snapshot);
-  bindClosePanel();
-  bindSettingsTabs();
-  bindClientSettings(detailPanel);
-};
-
-const openShellPanel = async (nav: string) => {
-  closeActiveApp();
-  activeRail = nav;
-  renderRailState();
-
-  if (nav === "home") {
-    closeShellPanel();
-    return;
-  }
-
-  if (nav === "settings") {
-    launchedApp = null;
-    detailPanel.hidden = false;
-    detailPanel.classList.add("system-panel");
-    detailPanel.classList.remove("search-panel", "library-panel");
-    detailPanel.innerHTML = `
-      <div class="panel-header">
-        <span class="panel-mark">S</span>
-        <div>
-          <p class="eyebrow">System</p>
-          <h2>Settings</h2>
-        </div>
-      </div>
-      <p class="panel-intro">Collecting diagnostics...</p>
-    `;
-    await renderSettingsDiagnostics();
-    return;
-  }
-
-  if (nav === "search") {
-    const searchApp = dashboardApps.find((app) => app.id === "search");
-    launchedApp = null;
-    detailPanel.hidden = false;
-    detailPanel.classList.add("system-panel", "search-panel");
-    detailPanel.classList.remove("library-panel");
-    detailPanel.innerHTML = `
-      <div class="panel-header">
-        <span class="panel-mark">${searchApp ? renderAppIcon(searchApp, "panel-icon") : ""}</span>
-        <div>
-          <p class="eyebrow">System</p>
-          <h2>Search</h2>
-        </div>
-        <button id="close-panel" class="icon-command" type="button" aria-label="Close panel" title="Close">×</button>
-      </div>
-      ${renderSearchView(dashboardApps, "panel")}
-    `;
-    bindClosePanel();
-    bindSearchControls(detailPanel);
-    return;
-  }
-
-  if (nav === "library") {
-    const libraryApp = dashboardApps.find((app) => app.id === "files");
-    launchedApp = null;
-    detailPanel.hidden = false;
-    detailPanel.classList.add("system-panel", "library-panel");
-    detailPanel.classList.remove("search-panel");
-    detailPanel.innerHTML = `
-      <div class="panel-header">
-        <span class="panel-mark">${libraryApp ? renderAppIcon(libraryApp, "panel-icon") : ""}</span>
-        <div>
-          <p class="eyebrow">Collection</p>
-          <h2>Library</h2>
-        </div>
-        <button id="close-panel" class="icon-command" type="button" aria-label="Close panel" title="Close">×</button>
-      </div>
-      ${renderLibraryView(dashboardApps)}
-    `;
-    bindClosePanel();
-    bindLibraryControls(detailPanel);
-    return;
-  }
-
-};
-
 const openFocusedApp = () => {
-  activeRail = "home";
-  renderRailState();
   detailPanel.classList.remove("system-panel", "search-panel", "library-panel");
   launchedApp = dashboardApps[focusedIndex];
   renderPanel();
@@ -600,12 +460,6 @@ grid.addEventListener("click", (event) => {
 grid.addEventListener("dblclick", launchFocusedApp);
 launchButton.addEventListener("click", launchFocusedApp);
 detailsButton.addEventListener("click", openFocusedApp);
-
-document.querySelectorAll<HTMLButtonElement>(".rail-button").forEach((button) => {
-  button.addEventListener("click", () => {
-    void openShellPanel(button.dataset.nav ?? "home");
-  });
-});
 
 window.addEventListener("keydown", (event) => {
   if (event.key === "ArrowRight" || event.key === "ArrowDown") {
@@ -643,7 +497,6 @@ const updateClock = () => {
 updateClock();
 setInterval(updateClock, 1000);
 performanceMonitor.start();
-renderRailIcons();
 renderFocus();
 
 startRenderer(canvas)
@@ -655,9 +508,6 @@ startRenderer(canvas)
     };
     gpuStatus.textContent = renderer.mode === "webgpu" ? `WebGPU · ${renderer.adapterName}` : "Canvas fallback";
     gpuStatus.classList.toggle("fallback", renderer.mode === "fallback");
-    if (activeRail === "settings") {
-      void renderSettingsDiagnostics();
-    }
   })
   .catch((error: unknown) => {
     console.error(error);

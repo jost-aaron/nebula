@@ -2,7 +2,7 @@ import type { DashboardApp } from "../apps";
 import type { DiagnosticsSnapshot, PerformanceSnapshot, RendererRuntimeState } from "./types";
 
 interface CollectDiagnosticsOptions {
-  activeRail: string;
+  activeNavigation: string;
   apps: DashboardApp[];
   focusedIndex: number;
   launchedApp: DashboardApp | null;
@@ -29,11 +29,11 @@ export async function collectDiagnostics(options: CollectDiagnosticsOptions): Pr
 
   return {
     apps: {
-      activeRail: options.activeRail,
+      activeNavigation: options.activeNavigation,
       appCount: options.apps.length,
       apps: options.apps,
       focusedApp: options.apps[options.focusedIndex],
-      openPanel: options.launchedApp?.name ?? (options.activeRail === "home" ? "None" : options.activeRail)
+      openPanel: options.launchedApp?.name ?? "None"
     },
     display: {
       colorScheme: window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",

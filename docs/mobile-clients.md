@@ -116,6 +116,19 @@ To compile the simulator app from the command line:
 ./scripts/ios-build-simulator.sh
 ```
 
+For command-line simulator checks, use Xcode's developer directory explicitly if
+plain `xcrun` cannot find `simctl`:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun simctl list devices available
+```
+
+Nebula's web bundle includes `viewport-fit=cover`, and the shared CSS maps iOS
+safe-area insets into `--safe-area-*` variables. The dashboard and Cinema
+surfaces should be verified on a notched simulator or device after layout
+changes to make sure content clears the Dynamic Island/status bar and home
+indicator.
+
 If Xcode is installed but the command-line tools still point at
 `/Library/Developer/CommandLineTools`, either set `DEVELOPER_DIR` for the
 command:
