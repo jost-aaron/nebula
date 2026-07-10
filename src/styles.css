@@ -4569,31 +4569,49 @@ h1 {
 
 .studio-waveform {
   position: relative;
-  height: 64px;
+  isolation: isolate;
+  height: clamp(72px, 7vw, 92px);
   margin-top: 18px;
   overflow: hidden;
-  border-bottom: 2px solid rgba(255, 255, 255, 0.12);
+  border-block: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background:
+    radial-gradient(ellipse at 45% 50%, rgba(245, 185, 79, 0.08), transparent 58%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.008));
+  box-shadow: inset 0 1px 14px rgba(0, 0, 0, 0.28);
 }
 
-.studio-waveform::before,
 .studio-waveform::after {
   position: absolute;
-  inset: 7px 0 8px;
+  z-index: 0;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 1px;
   content: "";
-  background: repeating-linear-gradient(
-    90deg,
-    var(--studio-amber) 0 2px,
-    transparent 2px 6px
-  );
-  mask: linear-gradient(180deg, transparent, #000 18%, #000 82%, transparent),
-    repeating-linear-gradient(102deg, #000 0 7%, transparent 7% 10%);
-  opacity: 0.9;
+  background: rgba(255, 255, 255, 0.065);
+  pointer-events: none;
 }
 
-.studio-waveform::after {
-  left: 57%;
-  background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.2) 0 2px, transparent 2px 6px);
-  opacity: 0.55;
+.studio-waveform canvas {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  transition: filter 260ms ease;
+}
+
+.studio-waveform canvas[data-studio-visualizer-mode="ambient"] {
+  filter: saturate(0.82) opacity(0.72);
+}
+
+.studio-waveform canvas[data-studio-visualizer-mode="ambient-playback"] {
+  filter: saturate(1.08) drop-shadow(0 0 6px rgba(245, 185, 79, 0.12));
+}
+
+.studio-waveform canvas[data-studio-visualizer-mode="reactive"] {
+  filter: saturate(1.2) drop-shadow(0 0 8px rgba(245, 185, 79, 0.22));
 }
 
 .studio-audio-player {

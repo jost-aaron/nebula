@@ -387,7 +387,9 @@ const renderNowPlaying = (entry: MusicEntry, entries: MusicEntry[]) => {
           <h2>${escapeHtml(entry.title)}</h2>
           <p class="studio-now-artist">${escapeHtml(entry.artist || "Unknown artist")}</p>
           <p class="studio-now-album">${escapeHtml(entry.album || entry.folder || "Local music")}</p>
-          <div class="studio-waveform" aria-hidden="true"><span></span></div>
+          <div class="studio-waveform" aria-hidden="true">
+            <canvas data-studio-visualizer data-studio-visualizer-mode="ambient"></canvas>
+          </div>
           <audio class="studio-audio-player" data-studio-player controls preload="metadata" src="${escapeHtml(entry.streamUrl)}">
             Your browser cannot play this audio file.
           </audio>
@@ -463,6 +465,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
   let query = "";
   let isScanning = false;
   let loadError = "";
+  let playerCleanup: (() => void) | null = null;
 
   const visibleEntries = () =>
     query
@@ -493,29 +496,234 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
     });
   };
 
-  const bindPlayerStatus = () => {
+  const bindPlayer = () => {
     const player = content.querySelector<HTMLAudioElement>("[data-studio-player]");
     const status = content.querySelector<HTMLElement>("[data-studio-player-status]");
+    const visualizer = content.querySelector<HTMLCanvasElement>("[data-studio-visualizer]");
 
     if (!player || !status) {
-      return;
+      return () => undefined;
     }
 
+    const audioPlayer = player;
+    const playerStatus = status;
+
     const setStatus = (message: string) => {
-      status.textContent = message;
+      playerStatus.textContent = message;
     };
 
-    player.addEventListener("play", () => setStatus("Playback requested."));
-    player.addEventListener("playing", () => setStatus("Playing from the local Studio server."));
-    player.addEventListener("pause", () => setStatus("Paused."));
-    player.addEventListener("ended", () => setStatus("Finished."));
-    player.addEventListener("stalled", () => setStatus("Playback is waiting for more data from the server."));
-    player.addEventListener("error", () =>
-      setStatus("This audio file could not be played here. The browser may not support this format, especially some FLAC files.")
-    );
+    const onPlay = () => {
+      setStatus("Playback requested.");
+      void activateAnalyser();
+    };
+    const onPlaying = () => {
+      setStatus("Playing from the local Studio server.");
+      void activateAnalyser();
+    };
+    const onPause = () => setStatus("Paused.");
+    const onEnded = () => setStatus("Finished.");
+    const onStalled = () => setStatus("Playback is waiting for more data from the server.");
+    const onError = () =>
+      setStatus("This audio file could not be played here. The browser may not support this format, especially some FLAC files.");
+
+    audioPlayer.addEventListener("play", onPlay);
+    audioPlayer.addEventListener("playing", onPlaying);
+    audioPlayer.addEventListener("pause", onPause);
+    audioPlayer.addEventListener("ended", onEnded);
+    audioPlayer.addEventListener("stalled", onStalled);
+    audioPlayer.addEventListener("error", onError);
+
+    const context = visualizer?.getContext("2d");
+
+    if (!visualizer || !context) {
+      return () => {
+        audioPlayer.removeEventListener("play", onPlay);
+        audioPlayer.removeEventListener("playing", onPlaying);
+        audioPlayer.removeEventListener("pause", onPause);
+        audioPlayer.removeEventListener("ended", onEnded);
+        audioPlayer.removeEventListener("stalled", onStalled);
+        audioPlayer.removeEventListener("error", onError);
+      };
+    }
+
+    const mediaUrl = new URL(audioPlayer.currentSrc || audioPlayer.src, window.location.href);
+    const canAnalyseAudio = mediaUrl.origin === window.location.origin && Boolean(window.AudioContext);
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const levels = new Float32Array(96);
+    let audioContext: AudioContext | null = null;
+    let source: MediaElementAudioSourceNode | null = null;
+    let analyser: AnalyserNode | null = null;
+    let spectrum: Uint8Array<ArrayBuffer> | null = null;
+    let animationFrame = 0;
+    let disposed = false;
+
+    async function activateAnalyser() {
+      if (!canAnalyseAudio || disposed) {
+        return;
+      }
+
+      try {
+        if (!audioContext) {
+          audioContext = new AudioContext();
+          analyser = audioContext.createAnalyser();
+          analyser.fftSize = 512;
+          analyser.minDecibels = -86;
+          analyser.maxDecibels = -18;
+          analyser.smoothingTimeConstant = 0.76;
+          source = audioContext.createMediaElementSource(audioPlayer);
+          source.connect(analyser);
+          analyser.connect(audioContext.destination);
+          spectrum = new Uint8Array(analyser.frequencyBinCount);
+        }
+
+        if (audioContext.state === "suspended") {
+          await audioContext.resume();
+        }
+      } catch {
+        analyser = null;
+        spectrum = null;
+      }
+    }
+
+    const sizeCanvas = () => {
+      const bounds = visualizer.getBoundingClientRect();
+      const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      const width = Math.max(1, Math.round(bounds.width * pixelRatio));
+      const height = Math.max(1, Math.round(bounds.height * pixelRatio));
+
+      if (visualizer.width !== width || visualizer.height !== height) {
+        visualizer.width = width;
+        visualizer.height = height;
+      }
+
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      return { height: bounds.height, width: bounds.width };
+    };
+
+    const drawVisualizer = (timestamp: number) => {
+      if (disposed) {
+        return;
+      }
+
+      if (!visualizer.isConnected) {
+        cleanup();
+        return;
+      }
+
+      const { height, width } = sizeCanvas();
+      const isPlaying = !audioPlayer.paused && !audioPlayer.ended && !audioPlayer.error;
+      const isReactive = isPlaying && Boolean(analyser && spectrum && audioContext?.state === "running");
+      const mode = isReactive ? "reactive" : isPlaying ? "ambient-playback" : "ambient";
+      visualizer.dataset.studioVisualizerMode = mode;
+
+      let fftEnergy = 0;
+
+      if (isReactive && analyser && spectrum) {
+        analyser.getByteFrequencyData(spectrum);
+        let sumOfSquares = 0;
+        const usableBins = Math.max(1, Math.floor(spectrum.length * 0.82));
+
+        for (let bin = 1; bin < usableBins; bin += 1) {
+          sumOfSquares += spectrum[bin] * spectrum[bin];
+        }
+
+        fftEnergy = Math.min(1, Math.sqrt(sumOfSquares / usableBins) / 255);
+      }
+
+      visualizer.dataset.studioVisualizerEnergy = fftEnergy.toFixed(3);
+
+      context.clearRect(0, 0, width, height);
+      const barCount = Math.max(32, Math.min(levels.length, Math.floor(width / 6)));
+      const gap = width < 420 ? 2.5 : 3;
+      const barWidth = Math.max(1.5, (width - gap * (barCount - 1)) / barCount);
+      const center = height / 2;
+      const maximumBarHeight = Math.max(16, height - 14);
+      const ambientTime = reduceMotion ? 0 : timestamp * (isPlaying ? 0.0026 : 0.00125);
+      const duration = Number.isFinite(audioPlayer.duration) && audioPlayer.duration > 0 ? audioPlayer.duration : 0;
+      const progress = duration ? Math.min(1, audioPlayer.currentTime / duration) : isPlaying ? 0.58 : 0.34;
+
+      for (let index = 0; index < barCount; index += 1) {
+        const position = index / Math.max(1, barCount - 1);
+        let target = 0;
+
+        if (isReactive && spectrum) {
+          const usableBins = Math.max(2, Math.floor(spectrum.length * 0.82));
+          const bucketStart = Math.min(
+            usableBins - 1,
+            Math.max(1, Math.floor(Math.pow(index / barCount, 1.78) * usableBins))
+          );
+          const bucketEnd = Math.min(
+            usableBins,
+            Math.max(bucketStart + 1, Math.ceil(Math.pow((index + 1) / barCount, 1.78) * usableBins))
+          );
+          let bucketSquares = 0;
+          let bucketPeak = 0;
+
+          for (let bin = bucketStart; bin < bucketEnd; bin += 1) {
+            const magnitude = spectrum[bin];
+            bucketSquares += magnitude * magnitude;
+            bucketPeak = Math.max(bucketPeak, magnitude);
+          }
+
+          const bucketSize = Math.max(1, bucketEnd - bucketStart);
+          const bucketRms = Math.sqrt(bucketSquares / bucketSize) / 255;
+          const bucketPeakLevel = bucketPeak / 255;
+          const lowFrequencyLift = 1 + (1 - position) * 0.22;
+          const bandMagnitude = (bucketRms * 0.74 + bucketPeakLevel * 0.26) * lowFrequencyLift;
+          target = Math.min(1, Math.pow(bandMagnitude, 0.74));
+        } else {
+          const primaryWave = (Math.sin(ambientTime + index * 0.57) + 1) / 2;
+          const secondaryWave = (Math.sin(ambientTime * 0.68 - index * 0.23) + 1) / 2;
+          const travellingPulse = Math.pow((Math.sin(ambientTime * 0.44 + position * Math.PI * 3.4) + 1) / 2, 3);
+          const energy = isPlaying ? 0.36 : 0.2;
+          target = 0.08 + primaryWave * energy * 0.48 + secondaryWave * energy * 0.28 + travellingPulse * energy;
+        }
+
+        const response = target > levels[index] ? 0.48 : 0.12;
+        levels[index] += (target - levels[index]) * response;
+        const magnitude = Math.max(0.055, Math.min(1, levels[index]));
+        const renderedHeight = Math.max(4, magnitude * maximumBarHeight);
+        const x = index * (barWidth + gap);
+        const y = center - renderedHeight / 2;
+        const played = position <= progress;
+
+        context.fillStyle = played
+          ? `rgba(255, ${Math.round(177 + magnitude * 48)}, ${Math.round(70 + magnitude * 34)}, ${0.56 + magnitude * 0.42})`
+          : `rgba(137, 151, 166, ${0.18 + magnitude * 0.36})`;
+        context.shadowBlur = isReactive && played ? 8 + magnitude * 10 : 0;
+        context.shadowColor = "rgba(255, 184, 70, 0.58)";
+        context.fillRect(x, y, barWidth, renderedHeight);
+      }
+
+      context.shadowBlur = 0;
+      animationFrame = window.requestAnimationFrame(drawVisualizer);
+    };
+
+    function cleanup() {
+      if (disposed) {
+        return;
+      }
+
+      disposed = true;
+      window.cancelAnimationFrame(animationFrame);
+      audioPlayer.removeEventListener("play", onPlay);
+      audioPlayer.removeEventListener("playing", onPlaying);
+      audioPlayer.removeEventListener("pause", onPause);
+      audioPlayer.removeEventListener("ended", onEnded);
+      audioPlayer.removeEventListener("stalled", onStalled);
+      audioPlayer.removeEventListener("error", onError);
+      source?.disconnect();
+      analyser?.disconnect();
+      void audioContext?.close().catch(() => undefined);
+    }
+
+    animationFrame = window.requestAnimationFrame(drawVisualizer);
+    return cleanup;
   };
 
   const render = () => {
+    playerCleanup?.();
+    playerCleanup = null;
     const visible = visibleEntries();
     const scopedEntries = libraryScope
       ? visible.filter((entry) => libraryScope?.tracks.some((track) => track.path === entry.path))
@@ -561,7 +769,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
 
     renderTabState();
     renderFooter();
-    bindPlayerStatus();
+    playerCleanup = bindPlayer();
   };
 
   const selectTrack = (entry: MusicEntry, autoplay = false) => {
@@ -630,6 +838,8 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
     }
 
     if (actionButton?.dataset.studioAction === "home") {
+      playerCleanup?.();
+      playerCleanup = null;
       onHome?.();
       return;
     }
