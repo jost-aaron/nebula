@@ -88,6 +88,33 @@ codex/archade-moonlight
 This branch is the large Arcade/Moonlight PR. It has been rebased onto current
 `main` after the Studio music move and pushed to `origin/codex/archade-moonlight`.
 
+Product baseline:
+
+- Nebula is past the blank scaffold phase and should be treated as an early
+  product shell with real app surfaces.
+- The app-first dashboard shell is the primary navigation model. The old
+  bottom/global rail has been removed; do not restore it casually.
+- Files is the local content manager for ignored `content/` media and supports
+  desktop plus iOS-compatible API targeting.
+- Cinema is now video-only and should stay focused on Movies and TV Shows.
+- Studio is now the dedicated music app for MP3, FLAC, M4A, WAV, AAC, and OGG.
+- Settings owns client/server configuration and diagnostics.
+- Search remains a shared system app and should stay fast to launch.
+- iOS compatibility matters for ordinary web changes: preserve safe-area
+  padding, configurable server URLs, API tokens, and API-only CORS.
+
+Near-term direction:
+
+- Keep moving toward a modern console/Plex-like experience: dense, fast,
+  controller-friendly, and comfortable on a TV or handheld device.
+- Use focused worktrees for larger efforts so multiple agents can work safely
+  in parallel without sharing Docker ports or Compose project names.
+- Split large shell/app files when doing meaningful refactors, especially
+  `src/main.ts`, but avoid framework migrations unless there is a clear product
+  reason.
+- Protect user media and generated output. Do not commit `content/`,
+  `ios/App/App/public`, host `node_modules`, or host `dist`.
+
 Arcade is now a mock/prototype app surface, not just a placeholder:
 
 - `src/arcade/renderArcadeView.ts` renders the full-screen Arcade surface.
