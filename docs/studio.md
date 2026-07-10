@@ -31,8 +31,8 @@ It renders:
 - Library grouping by artist first, then album within an artist.
 - A responsive, eclipse-branded now-playing surface with local fallback album
   art, previous/next track commands, and a compact up-next queue.
-- A real-time FFT visualizer that maps the audio window currently under the
-  playhead from low to high frequencies across the existing bar, with a
+- A real-time 2048-point FFT visualizer that maps the current audio window from
+  low to high frequencies across the existing bar, with a
   low-energy ambient animation when playback is paused, buffering, unsupported,
   or sourced from a server the browser cannot safely analyze.
 - Native `<audio data-studio-player controls>` playback.

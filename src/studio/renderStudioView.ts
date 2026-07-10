@@ -566,7 +566,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
         if (!audioContext) {
           audioContext = new AudioContext();
           analyser = audioContext.createAnalyser();
-          analyser.fftSize = 512;
+          analyser.fftSize = 2048;
           analyser.minDecibels = -86;
           analyser.maxDecibels = -18;
           analyser.smoothingTimeConstant = 0.76;
