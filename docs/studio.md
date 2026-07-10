@@ -27,14 +27,20 @@ src/studio/renderStudioView.ts
 It renders:
 
 - A Dashboard/close command in the Studio header.
-- Searchable local music browsing.
+- Searchable local music browsing with Library, Artists, and Albums views.
 - Library grouping by artist first, then album within an artist.
-- Selected-track summary with fallback album art.
+- A responsive, eclipse-branded now-playing surface with local fallback album
+  art, previous/next track commands, and a compact up-next queue.
 - Native `<audio data-studio-player controls>` playback.
-- Server/status information.
-- A next-up queue from the local audio library.
+- Server, source-file, format, and related-library information.
 - Friendly browser playback status and error messages for unsupported formats,
   including FLAC in browsers that cannot decode it.
+
+The player layout follows the dark console-style reference under
+`docs/studio-design/` and uses the tracked Nebula Studio branding variants under
+`src/assets/branding/`. The branding assets are presentation-only; local music
+metadata, grouping, queue selection, and playback still come from the existing
+music API response.
 
 Studio intentionally avoids the Cinema video player frame.
 

@@ -11,6 +11,7 @@ interface StudioServerInfo {
   online: boolean;
 }
 
+type StudioBrowseMode = "albums" | "artists" | "library";
 type StudioLibraryGroupKind = "album" | "artist";
 
 interface StudioLibraryGroup {
@@ -26,10 +27,19 @@ type StudioLibraryItem =
   | { itemKind: "track"; track: MusicEntry };
 
 interface StudioLibraryScope {
-  kind: "album" | "artist";
+  kind: StudioLibraryGroupKind;
   label: string;
   tracks: MusicEntry[];
 }
+
+const studioBrandMarkUrl = new URL(
+  "../assets/branding/nebula-studio-eclipse-thin-groove.png",
+  import.meta.url
+).href;
+const studioFallbackArtworkUrl = new URL(
+  "../assets/branding/nebula-studio-eclipse-pulse-core.png",
+  import.meta.url
+).href;
 
 const escapeHtml = (value: string) =>
   value
@@ -56,7 +66,7 @@ const metadataLine = (entry: MusicEntry) =>
   [entry.artist, entry.album, entry.releaseYear, entry.genres.slice(0, 2).join(", ")].filter(Boolean).join(" / ");
 
 const currentServerInfo = (): StudioServerInfo => ({
-  address: getEffectiveApiBaseUrl() || "No server URL",
+  address: getEffectiveApiBaseUrl() || "This device",
   authState: getApiToken() ? "Token saved" : "Local unauthenticated",
   mode: getApiConnectionMode(),
   name: getApiConnectionMode() === "Same origin" ? "Nebula Local" : "Nebula Server",
@@ -76,19 +86,21 @@ const renderArtwork = (entry: MusicEntry | null, fallbackLabel = "S") => {
   const style = entry?.posterUrl ? ` style="background-image: url('${escapeHtml(entry.posterUrl)}')"` : "";
 
   return `
-    <div class="studio-album-art"${style}>
-      ${entry?.posterUrl ? "" : `<span>${escapeHtml(initial)}</span>`}
+    <div class="studio-album-art ${entry?.posterUrl ? "has-poster" : "is-fallback"}"${style}>
+      ${
+        entry?.posterUrl
+          ? ""
+          : `<img src="${studioFallbackArtworkUrl}" alt="" aria-hidden="true" /><span aria-hidden="true">${escapeHtml(initial)}</span>`
+      }
     </div>
   `;
 };
 
 const normalizeGroupValue = (value: string) => value.trim();
-
 const groupId = (kind: StudioLibraryGroupKind, label: string) => `${kind}:${label.toLowerCase()}`;
-
 const pluralizeTracks = (count: number) => `${count} ${count === 1 ? "track" : "tracks"}`;
-
-const sortEntries = (left: MusicEntry, right: MusicEntry) => (left.sortTitle || left.title).localeCompare(right.sortTitle || right.title);
+const sortEntries = (left: MusicEntry, right: MusicEntry) =>
+  (left.sortTitle || left.title).localeCompare(right.sortTitle || right.title);
 
 const groupedLibraryItems = (tracks: MusicEntry[], scope: StudioLibraryScope | null): StudioLibraryItem[] => {
   const sortedTracks = [...tracks].sort(sortEntries);
@@ -104,7 +116,7 @@ const groupedLibraryItems = (tracks: MusicEntry[], scope: StudioLibraryScope | n
         const id = groupId("artist", artist);
         const group = groups.get(id) ?? {
           id,
-          kind: "artist",
+          kind: "artist" as const,
           label: artist,
           subtitle: "Artist",
           tracks: []
@@ -118,7 +130,7 @@ const groupedLibraryItems = (tracks: MusicEntry[], scope: StudioLibraryScope | n
         const id = groupId("album", album);
         const group = groups.get(id) ?? {
           id,
-          kind: "album",
+          kind: "album" as const,
           label: album,
           subtitle: "Album",
           tracks: []
@@ -136,7 +148,7 @@ const groupedLibraryItems = (tracks: MusicEntry[], scope: StudioLibraryScope | n
       const id = groupId("album", `${scope.label}:${album}`);
       const group = groups.get(id) ?? {
         id,
-        kind: "album",
+        kind: "album" as const,
         label: album,
         subtitle: scope.label,
         tracks: []
@@ -157,19 +169,59 @@ const groupedLibraryItems = (tracks: MusicEntry[], scope: StudioLibraryScope | n
   ];
 };
 
-const renderServerPills = (server: StudioServerInfo) => `
-  <div class="studio-server-pills">
-    <span><i class="studio-status-dot ${server.online ? "online" : "offline"}"></i>${server.online ? "Server Online" : "Server Offline"}</span>
-    <span>${escapeHtml(server.name)}</span>
-    <span>${escapeHtml(server.mode)}</span>
-    <span>${escapeHtml(server.authState)}</span>
-  </div>
-`;
+const groupedModeItems = (tracks: MusicEntry[], mode: Exclude<StudioBrowseMode, "library">): StudioLibraryItem[] => {
+  const groups = new Map<string, StudioLibraryGroup>();
+  const looseTracks: MusicEntry[] = [];
+
+  [...tracks].sort(sortEntries).forEach((track) => {
+    const artist = normalizeGroupValue(track.artist);
+    const album = normalizeGroupValue(track.album);
+    const label = mode === "artists" ? artist : album;
+
+    if (!label) {
+      looseTracks.push(track);
+      return;
+    }
+
+    const keyLabel = mode === "albums" ? `${artist}:${album}` : artist;
+    const kind: StudioLibraryGroupKind = mode === "artists" ? "artist" : "album";
+    const id = groupId(kind, keyLabel);
+    const group = groups.get(id) ?? {
+      id,
+      kind,
+      label,
+      subtitle: mode === "artists" ? "Artist" : artist || "Album",
+      tracks: []
+    };
+    group.tracks.push(track);
+    groups.set(id, group);
+  });
+
+  return [
+    ...Array.from(groups.values())
+      .sort((left, right) => left.label.localeCompare(right.label))
+      .map((group) => ({ group, itemKind: "group" as const })),
+    ...looseTracks.map((track) => ({ itemKind: "track" as const, track }))
+  ];
+};
+
+const libraryItemsFor = (
+  tracks: MusicEntry[],
+  mode: StudioBrowseMode,
+  scope: StudioLibraryScope | null
+): StudioLibraryItem[] => {
+  if (scope || mode === "library") {
+    return groupedLibraryItems(tracks, scope);
+  }
+
+  return groupedModeItems(tracks, mode);
+};
 
 const renderLibraryItems = (items: StudioLibraryItem[], selected: MusicEntry | null) => {
   if (items.length === 0) {
     return `
-      <div class="studio-empty">
+      <div class="studio-empty studio-library-empty">
+        <img src="${studioBrandMarkUrl}" alt="" aria-hidden="true" />
         <strong>No music found</strong>
         <span>Add MP3, FLAC, M4A, WAV, AAC, or OGG files with Files.</span>
       </div>
@@ -212,23 +264,27 @@ const renderLibraryItems = (items: StudioLibraryItem[], selected: MusicEntry | n
 const queueEntries = (entries: MusicEntry[], selected: MusicEntry | null) =>
   entries.filter((entry) => entry.path !== selected?.path).slice(0, 8);
 
-const renderQueue = (entries: MusicEntry[], selected: MusicEntry | null) => {
+const renderQueue = (entries: MusicEntry[], selected: MusicEntry) => {
   const queue = queueEntries(entries, selected);
 
   return `
     <section class="studio-queue">
       <header>
-        <strong>Next Up</strong>
-        <span>${queue.length} tracks</span>
+        <div>
+          <p class="eyebrow">Up Next</p>
+          <strong>${queue.length > 0 ? pluralizeTracks(queue.length) : "Queue clear"}</strong>
+        </div>
+        ${renderStudioIcon("ListPlus")}
       </header>
       <div>
         ${
           queue.length > 0
             ? queue
                 .map(
-                  (entry) => `
+                  (entry, index) => `
                     <button type="button" data-studio-path="${escapeHtml(entry.path)}">
-                      ${renderArtwork(entry)}
+                      <span class="studio-queue-index">${String(index + 1).padStart(2, "0")}</span>
+                      ${renderArtwork(entry, entry.title)}
                       <span>
                         <strong>${escapeHtml(entry.title)}</strong>
                         <small>${escapeHtml(entry.artist || entry.album || entry.folder || "Local music")}</small>
@@ -244,62 +300,152 @@ const renderQueue = (entries: MusicEntry[], selected: MusicEntry | null) => {
   `;
 };
 
-const renderNowPlaying = (entry: MusicEntry, entries: MusicEntry[]) => {
-  const server = currentServerInfo();
+const relatedEntries = (entries: MusicEntry[], selected: MusicEntry) => {
+  const related = entries.filter(
+    (entry) =>
+      entry.path !== selected.path &&
+      ((selected.album && entry.album === selected.album) || (selected.artist && entry.artist === selected.artist))
+  );
+
+  return (related.length > 0 ? related : queueEntries(entries, selected)).slice(0, 6);
+};
+
+const renderRelated = (entries: MusicEntry[], selected: MusicEntry) => {
+  const related = relatedEntries(entries, selected);
+  const label = selected.album
+    ? `More from ${selected.album}`
+    : selected.artist
+      ? `More from ${selected.artist}`
+      : "More from your library";
+
+  if (related.length === 0) {
+    return "";
+  }
 
   return `
-    <button class="studio-back-command" type="button" data-studio-action="library">${renderStudioIcon("ArrowLeft")} Back to Library</button>
-    <section class="studio-now">
-      ${renderArtwork(entry)}
-      <div class="studio-track-detail">
-        <p class="eyebrow">${escapeHtml(formatAudioFormat(entry))}</p>
-        <h2>${escapeHtml(entry.title)}</h2>
-        <p>${escapeHtml(entry.summary || metadataLine(entry) || `${entry.folder || "Content"} / ${formatSize(entry.size)}`)}</p>
-        <audio class="studio-audio-player" data-studio-player controls preload="metadata" src="${entry.streamUrl}">
-          Your browser cannot play this audio file.
-        </audio>
-        <p class="studio-player-status" data-studio-player-status>Ready from ${escapeHtml(server.name)}.</p>
-        ${renderServerPills(server)}
-        <div class="studio-meta-list">
-          <span>Format <strong>${escapeHtml(formatAudioFormat(entry))}</strong></span>
-          <span>Artist <strong>${escapeHtml(entry.artist || "Not set")}</strong></span>
-          <span>Album <strong>${escapeHtml(entry.album || "Not set")}</strong></span>
-          <span>Genres <strong>${escapeHtml(entry.genres.join(", ") || "Not set")}</strong></span>
-          <span>Source <strong>${escapeHtml(entry.folder || "Content root")}</strong></span>
-          <span>Size <strong>${formatSize(entry.size)}</strong></span>
-        </div>
+    <section class="studio-related">
+      <header>
+        <p class="eyebrow">${escapeHtml(label)}</p>
+        <span>${pluralizeTracks(related.length)}</span>
+      </header>
+      <div class="studio-related-rail">
+        ${related
+          .map(
+            (entry) => `
+              <button type="button" data-studio-path="${escapeHtml(entry.path)}">
+                ${renderArtwork(entry, entry.title)}
+                <strong>${escapeHtml(entry.title)}</strong>
+                <small>${escapeHtml(entry.artist || entry.album || "Local music")}</small>
+              </button>
+            `
+          )
+          .join("")}
       </div>
     </section>
-    ${renderQueue(entries, entry)}
   `;
 };
 
-export const renderStudioView = () => `
-  <section class="studio-shell" data-studio-app>
-    <header class="studio-top-nav">
-      <button class="studio-brand" type="button" data-studio-action="library" aria-label="Studio library">
-        <span class="studio-brand-mark">${renderStudioIcon("AudioLines")}</span>
-        <span>
-          <strong>Nebula Studio</strong>
-          <small>Music Library</small>
-        </span>
-      </button>
-      <label class="studio-search">
-        <span>${renderStudioIcon("Search")} Search</span>
-        <input type="search" data-studio-search placeholder="Search music" />
-      </label>
-      <button class="studio-dashboard-command" type="button" data-studio-action="home">${renderStudioIcon("ArrowLeft")} Dashboard</button>
-      <button class="studio-icon-command" type="button" data-studio-action="home" aria-label="Close Studio" title="Close">${renderStudioIcon("X")}</button>
-    </header>
-    <main class="studio-content" data-studio-content>
-      <div class="studio-empty">
-        <strong>Loading music</strong>
-        <span>Scanning content for audio files.</span>
-      </div>
-    </main>
-    <footer class="studio-footer" data-studio-footer></footer>
+const renderSourceCards = (entry: MusicEntry, server: StudioServerInfo) => `
+  <section class="studio-source-cards" aria-label="Track source details">
+    <article>
+      ${renderStudioIcon("AudioWaveform")}
+      <span>Audio</span>
+      <strong>${escapeHtml(formatAudioFormat(entry).replace(" audio", ""))}</strong>
+      <small>${escapeHtml(entry.genres.slice(0, 2).join(" / ") || "Local high fidelity")}</small>
+    </article>
+    <article>
+      ${renderStudioIcon("FolderOpen")}
+      <span>Local File</span>
+      <strong>${escapeHtml(entry.folder || "Content root")}</strong>
+      <small>${escapeHtml(`${entry.name} / ${formatSize(entry.size)}`)}</small>
+    </article>
+    <article>
+      ${renderStudioIcon("Server")}
+      <span>Nebula Server</span>
+      <strong class="${server.online ? "is-online" : ""}">${server.online ? "Connected" : "Offline"}</strong>
+      <small>${escapeHtml(`${server.name} / ${server.mode}`)}</small>
+    </article>
   </section>
 `;
+
+const renderNowPlaying = (entry: MusicEntry, entries: MusicEntry[]) => {
+  const server = currentServerInfo();
+  const currentIndex = entries.findIndex((candidate) => candidate.path === entry.path);
+  const hasPrevious = currentIndex > 0;
+  const hasNext = currentIndex >= 0 && currentIndex < entries.length - 1;
+
+  return `
+    <button class="studio-back-command" type="button" data-studio-action="library">${renderStudioIcon("ArrowLeft")} Back to Library</button>
+    <div class="studio-player-hero">
+      <section class="studio-now">
+        <div class="studio-artwork-stage">
+          ${renderArtwork(entry, entry.title)}
+          <span class="studio-format-chip">${escapeHtml(formatAudioFormat(entry).replace(" audio", ""))} / Local file</span>
+        </div>
+        <div class="studio-track-detail">
+          <p class="eyebrow">Now Playing</p>
+          <h2>${escapeHtml(entry.title)}</h2>
+          <p class="studio-now-artist">${escapeHtml(entry.artist || "Unknown artist")}</p>
+          <p class="studio-now-album">${escapeHtml(entry.album || entry.folder || "Local music")}</p>
+          <div class="studio-waveform" aria-hidden="true"><span></span></div>
+          <audio class="studio-audio-player" data-studio-player controls preload="metadata" src="${escapeHtml(entry.streamUrl)}">
+            Your browser cannot play this audio file.
+          </audio>
+          <div class="studio-playback-row">
+            <button type="button" data-studio-action="previous" aria-label="Previous track" ${hasPrevious ? "" : "disabled"}>${renderStudioIcon("SkipBack")}</button>
+            <p class="studio-player-status" data-studio-player-status>Ready from ${escapeHtml(server.name)}.</p>
+            <button type="button" data-studio-action="next" aria-label="Next track" ${hasNext ? "" : "disabled"}>${renderStudioIcon("SkipForward")}</button>
+          </div>
+        </div>
+      </section>
+      ${renderQueue(entries, entry)}
+    </div>
+    <div class="studio-player-lower">
+      ${renderSourceCards(entry, server)}
+      ${renderRelated(entries, entry)}
+    </div>
+  `;
+};
+
+const browseLabel = (mode: StudioBrowseMode) =>
+  mode === "artists" ? "Artists" : mode === "albums" ? "Albums" : "Music";
+
+export const renderStudioView = () => {
+  const server = currentServerInfo();
+
+  return `
+    <section class="studio-shell" data-studio-app>
+      <header class="studio-top-nav">
+        <button class="studio-brand" type="button" data-studio-tab="library" aria-label="Studio library">
+          <img src="${studioBrandMarkUrl}" alt="" aria-hidden="true" />
+          <strong>Nebula Studio</strong>
+        </button>
+        <nav class="studio-section-nav" aria-label="Studio sections">
+          <button class="active" type="button" data-studio-tab="library" aria-pressed="true">Library</button>
+          <button type="button" data-studio-tab="artists" aria-pressed="false">Artists</button>
+          <button type="button" data-studio-tab="albums" aria-pressed="false">Albums</button>
+          <span aria-disabled="true" title="Playlists are planned">Playlists <small>Soon</small></span>
+        </nav>
+        <label class="studio-search">
+          ${renderStudioIcon("Search")}
+          <span class="visually-hidden">Search your music</span>
+          <input type="search" data-studio-search placeholder="Search your music" />
+        </label>
+        <span class="studio-nav-status"><i class="studio-status-dot ${server.online ? "online" : "offline"}"></i>${server.online ? "Server Online" : "Server Offline"}</span>
+        <button class="studio-dashboard-command" type="button" data-studio-action="home">${renderStudioIcon("LayoutDashboard")} Dashboard</button>
+        <button class="studio-icon-command" type="button" data-studio-action="home" aria-label="Close Studio" title="Close">${renderStudioIcon("X")}</button>
+      </header>
+      <main class="studio-content" data-studio-content>
+        <div class="studio-empty">
+          <img src="${studioBrandMarkUrl}" alt="" aria-hidden="true" />
+          <strong>Loading music</strong>
+          <span>Scanning content for audio files.</span>
+        </div>
+      </main>
+      <footer class="studio-footer" data-studio-footer></footer>
+    </section>
+  `;
+};
 
 export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
   const app = container.querySelector<HTMLElement>("[data-studio-app]");
@@ -313,8 +459,10 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
   let entries: MusicEntry[] = [];
   let selected: MusicEntry | null = null;
   let libraryScope: StudioLibraryScope | null = null;
+  let browseMode: StudioBrowseMode = "library";
   let query = "";
   let isScanning = false;
+  let loadError = "";
 
   const visibleEntries = () =>
     query
@@ -332,8 +480,17 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
     footer.innerHTML = `
       <span><i class="studio-status-dot ${server.online ? "online" : "offline"}"></i>${server.online ? "Server Online" : "Server Offline"}</span>
       <span>${escapeHtml(server.name)} / ${escapeHtml(server.address)}</span>
+      <span>${pluralizeTracks(entries.length)}</span>
       <time>${now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time>
     `;
+  };
+
+  const renderTabState = () => {
+    app.querySelectorAll<HTMLButtonElement>("[data-studio-tab]").forEach((button) => {
+      const isActive = button.dataset.studioTab === browseMode;
+      button.classList.toggle("active", isActive);
+      button.setAttribute("aria-pressed", String(isActive));
+    });
   };
 
   const bindPlayerStatus = () => {
@@ -360,33 +517,49 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
 
   const render = () => {
     const visible = visibleEntries();
-    const scopedEntries = libraryScope ? visible.filter((entry) => libraryScope?.tracks.some((track) => track.path === entry.path)) : visible;
-    const libraryItems = groupedLibraryItems(scopedEntries, libraryScope);
+    const scopedEntries = libraryScope
+      ? visible.filter((entry) => libraryScope?.tracks.some((track) => track.path === entry.path))
+      : visible;
+    const libraryItems = libraryItemsFor(scopedEntries, browseMode, libraryScope);
     content.classList.toggle("has-selection", Boolean(selected));
     content.classList.toggle("scanning", isScanning);
-    content.innerHTML = `
-      ${
-        selected
-          ? `
-            <section class="studio-player-panel">
-              ${renderNowPlaying(selected, entries)}
-            </section>
-          `
-          : `
-            <section class="studio-library">
-              <header>
-                <div>
-                  <p class="eyebrow">${escapeHtml(libraryScope?.kind ?? "Library")}</p>
-                  <h3>${escapeHtml(libraryScope?.label ?? "Music")}</h3>
-                </div>
-                <span>${pluralizeTracks(scopedEntries.length)}</span>
-              </header>
-              ${libraryScope ? `<button class="studio-back-command" type="button" data-studio-action="library-root">${renderStudioIcon("ArrowLeft")} Back to Music</button>` : ""}
-              <div class="studio-track-list">${renderLibraryItems(libraryItems, selected)}</div>
-            </section>
-          `
-      }
-    `;
+
+    if (selected) {
+      content.innerHTML = `<section class="studio-player-panel">${renderNowPlaying(selected, entries)}</section>`;
+    } else if (loadError) {
+      content.innerHTML = `
+        <div class="studio-empty">
+          <img src="${studioBrandMarkUrl}" alt="" aria-hidden="true" />
+          <strong>Music unavailable</strong>
+          <span>${escapeHtml(loadError)}</span>
+        </div>
+      `;
+    } else {
+      content.innerHTML = `
+        <section class="studio-library">
+          <header>
+            <div>
+              <p class="eyebrow">${escapeHtml(libraryScope?.kind ?? (isScanning ? "Scanning" : browseMode))}</p>
+              <h1>${escapeHtml(libraryScope?.label ?? browseLabel(browseMode))}</h1>
+              <p>${
+                libraryScope
+                  ? `Browsing ${pluralizeTracks(scopedEntries.length)} in this ${escapeHtml(libraryScope.kind)}.`
+                  : "Your local collection, organized for fast playback."
+              }</p>
+            </div>
+            <span>${isScanning ? "Refreshing library" : pluralizeTracks(scopedEntries.length)}</span>
+          </header>
+          ${
+            libraryScope
+              ? `<button class="studio-back-command" type="button" data-studio-action="library-root">${renderStudioIcon("ArrowLeft")} Back to ${escapeHtml(browseLabel(browseMode))}</button>`
+              : ""
+          }
+          <div class="studio-track-list">${renderLibraryItems(libraryItems, selected)}</div>
+        </section>
+      `;
+    }
+
+    renderTabState();
     renderFooter();
     bindPlayerStatus();
   };
@@ -394,6 +567,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
   const selectTrack = (entry: MusicEntry, autoplay = false) => {
     selected = entry;
     render();
+    content.scrollTop = 0;
 
     if (autoplay) {
       const player = content.querySelector<HTMLAudioElement>("[data-studio-player]");
@@ -407,20 +581,29 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
     }
   };
 
+  const selectAdjacentTrack = (offset: -1 | 1) => {
+    if (!selected) {
+      return;
+    }
+
+    const index = entries.findIndex((entry) => entry.path === selected?.path);
+    const next = entries[index + offset];
+
+    if (next) {
+      selectTrack(next, true);
+    }
+  };
+
   const loadLibrary = async () => {
     isScanning = true;
+    loadError = "";
     render();
 
     try {
       entries = (await listMusicLibrary()).entries;
       selected = selected ? entries.find((entry) => entry.path === selected?.path) ?? null : null;
     } catch (error) {
-      content.innerHTML = `
-        <div class="studio-empty">
-          <strong>Music unavailable</strong>
-          <span>${escapeHtml(error instanceof Error ? error.message : "Unable to scan content.")}</span>
-        </div>
-      `;
+      loadError = error instanceof Error ? error.message : "Unable to scan content.";
     } finally {
       isScanning = false;
       render();
@@ -429,8 +612,22 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
 
   app.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
+    const tabButton = target.closest<HTMLButtonElement>("[data-studio-tab]");
     const actionButton = target.closest<HTMLButtonElement>("[data-studio-action]");
     const pathButton = target.closest<HTMLButtonElement>("[data-studio-path]");
+
+    if (tabButton) {
+      const mode = tabButton.dataset.studioTab;
+
+      if (mode === "library" || mode === "artists" || mode === "albums") {
+        browseMode = mode;
+        libraryScope = null;
+        selected = null;
+        render();
+        content.scrollTop = 0;
+      }
+      return;
+    }
 
     if (actionButton?.dataset.studioAction === "home") {
       onHome?.();
@@ -440,12 +637,25 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
     if (actionButton?.dataset.studioAction === "library") {
       selected = null;
       render();
+      content.scrollTop = 0;
       return;
     }
 
     if (actionButton?.dataset.studioAction === "library-root") {
+      selected = null;
       libraryScope = null;
       render();
+      content.scrollTop = 0;
+      return;
+    }
+
+    if (actionButton?.dataset.studioAction === "previous") {
+      selectAdjacentTrack(-1);
+      return;
+    }
+
+    if (actionButton?.dataset.studioAction === "next") {
+      selectAdjacentTrack(1);
       return;
     }
 
@@ -453,8 +663,10 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
 
     if (groupButton) {
       const visible = visibleEntries();
-      const scopedEntries = libraryScope ? visible.filter((entry) => libraryScope?.tracks.some((track) => track.path === entry.path)) : visible;
-      const group = groupedLibraryItems(scopedEntries, libraryScope)
+      const scopedEntries = libraryScope
+        ? visible.filter((entry) => libraryScope?.tracks.some((track) => track.path === entry.path))
+        : visible;
+      const group = libraryItemsFor(scopedEntries, browseMode, libraryScope)
         .filter((item): item is { group: StudioLibraryGroup; itemKind: "group" } => item.itemKind === "group")
         .map((item) => item.group)
         .find((candidate) => candidate.id === groupButton.dataset.studioGroup);
@@ -466,6 +678,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
           tracks: group.tracks
         };
         render();
+        content.scrollTop = 0;
       }
       return;
     }
@@ -487,6 +700,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
       selected = null;
       libraryScope = null;
       render();
+      content.scrollTop = 0;
       input.focus();
     }
   });
