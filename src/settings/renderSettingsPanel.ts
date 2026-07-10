@@ -2,6 +2,8 @@ import { renderAppIcon } from "../appIcons";
 import { getApiBaseUrl, getApiConnectionMode, getAppOrigin, getEffectiveApiBaseUrl, getApiToken } from "../api/http";
 import { dashboardApps } from "../apps";
 import type { DiagnosticsSnapshot } from "../diagnostics/types";
+import type { AccountSessionState } from "../shared/accountTypes";
+import { renderAccountSettings } from "../account/accountUi";
 
 const formatNumber = (value: number, digits = 1) => (Number.isFinite(value) ? value.toFixed(digits) : "0.0");
 
@@ -31,7 +33,7 @@ const renderSection = (title: string, body: string) => `
   </section>
 `;
 
-export function renderSettingsPanel(snapshot: DiagnosticsSnapshot): string {
+export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSession: AccountSessionState): string {
   const settingsApp = dashboardApps.find((app) => app.id === "settings");
   const configuredApiBaseUrl = getApiBaseUrl();
   const effectiveApiBaseUrl = getEffectiveApiBaseUrl();
@@ -71,6 +73,7 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot): string {
 
     <div class="settings-categories" aria-label="Settings categories">
       <button class="active" type="button" data-diagnostic-tab="all">Overview</button>
+      <button type="button" data-diagnostic-tab="account">Account</button>
       <button type="button" data-diagnostic-tab="renderer">Renderer</button>
       <button type="button" data-diagnostic-tab="display">Display</button>
       <button type="button" data-diagnostic-tab="performance">Performance</button>
@@ -80,6 +83,7 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot): string {
     </div>
 
     <div class="diagnostics-board">
+      ${renderAccountSettings(accountSession)}
       ${renderSection(
         "Renderer",
         [

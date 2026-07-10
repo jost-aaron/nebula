@@ -14,6 +14,13 @@ surface.
 - Apps
 - GPU Limits
 - Runtime
+- Account
+- Client
+
+Account supports profile editing, password rotation, active-session
+listing/revocation, sign out, and owner-only member creation/disable. Password
+rotation revokes other sessions. Client remains the device-local Server URL and
+optional legacy service-token configuration.
 
 The panel is rendered by `src/settings/renderSettingsPanel.ts`.
 
@@ -78,4 +85,4 @@ the user is scrolling or reading.
 - Add WebGPU device-lost status.
 - Add a copy diagnostics button.
 - Add warnings for unsupported or degraded capabilities.
-- Add persisted user settings once storage is introduced.
+- Add richer account preferences now that per-user persistence exists.

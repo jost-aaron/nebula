@@ -31,7 +31,7 @@ It renders:
 - An explicit Dashboard/close command in the Cinema header.
 - Plex-like category tabs for Movies and TV Shows.
 - A searchable local video grid.
-- A persistent watchlist for saved video titles.
+- A persistent per-account watchlist for saved video titles.
 - A dedicated title details submenu after selecting a title.
 - Lazy video playback with the normal browser video player.
 - A metadata editor for imported video items.
@@ -68,7 +68,7 @@ Category assignment is local and heuristic:
 
 ## Metadata Editing
 
-Editable media properties are stored in:
+Shared editable media properties are stored in:
 
 ```text
 content/.cinema-metadata.json
@@ -94,6 +94,11 @@ Current editable fields:
 - Summary
 - Watchlist state
 
+The legacy `watchlisted` metadata field is imported once into the first owner's
+SQLite watchlist. Account-aware responses then overlay personal state from the
+account database; members start with an independent empty watchlist. The legacy
+field remains readable for rollback compatibility.
+
 The frontend updates these through:
 
 - `PATCH /api/cinema/metadata`
@@ -113,6 +118,10 @@ for range requests. This is required for normal browser video playback behavior,
 especially seeking. It supports one normal, open-ended, or suffix range per
 request. Invalid, multi-range, empty-file range, and unsatisfiable requests
 return `416` with `Content-Range: bytes */<size>`.
+
+Authenticated library responses use expiring media tickets bound to the user,
+video path, and media kind. Tickets authorize only GET/HEAD streaming and are
+revoked with account sessions.
 
 ## Boundaries
 

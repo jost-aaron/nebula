@@ -15,6 +15,13 @@ forged Host headers and localhost policy), bearer tokens, CORS and Capacitor
 preflights, bounded/malformed JSON, resumable upload races and chunk bounds, and
 Cinema/Studio byte ranges.
 
+Account coverage also includes salted scrypt verification, setup exactly once,
+SQLite persistence, generic/throttled login failure, disabled members, cookie
+and native bearer sessions, expiration/logout/revocation/password rotation,
+CSRF, owner/member capabilities, legacy service tokens, protected JSON and
+media ranges, Files streaming/resumable uploads, per-user watchlists, legacy
+watchlist migration, and media-ticket revocation.
+
 ## API Smoke Checks
 
 ```sh
@@ -28,6 +35,10 @@ The Cinema media range request should return `206 Partial Content` when that
 test file is present.
 
 ## Auth Smoke Check
+
+For normal account testing, use a fresh isolated Compose project/volume. The
+first page must show owner setup exactly once; after setup, reload must restore
+the cookie session and sign out must return to sign in.
 
 Start a disposable authenticated instance with the localhost exemption turned
 off so host curl requests exercise bearer validation:
@@ -62,6 +73,12 @@ http://127.0.0.1:5173
 ```
 
 Check:
+
+- A fresh volume shows owner setup before any dashboard content.
+- Failed sign-in is generic; successful sign-in and reload restore identity.
+- The identity menu opens Account Settings and closes cleanly with Escape.
+- Profile, password, member, session revocation, and sign-out controls work.
+- A member can browse Files but receives a clear permission error for writes.
 
 - Dashboard heading is visible.
 - GPU status says either `WebGPU · ...` or `Canvas fallback`.
@@ -106,6 +123,7 @@ Check:
 - Re-selecting the same interrupted large file resumes from uploaded chunks.
 - Settings shows Renderer, Display, Performance, Apps, GPU Limits, and Runtime
   diagnostics.
+- Settings includes Account and Client sections.
 
 ## Keyboard Test
 
@@ -146,6 +164,8 @@ The result should be `0`.
 At a phone-like viewport, for example `390 x 844`:
 
 - No bottom rail is visible.
+- Setup/sign-in uses safe-area padding and has no horizontal overflow.
+- The compact account identity and menu remain on-screen.
 - Detail panel does not reserve bottom-rail space.
 - Full-screen app surface fits within the viewport.
 - Cinema stacks the library and playback panel without overlap.
@@ -182,7 +202,7 @@ the built app:
 
 ```sh
 DEVICE_ID=<simulator-udid>
-APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -path '*/Build/Products/Debug-iphonesimulator/App.app' -type d -print | sort | tail -1)
+APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -path '*/Build/Products/Debug-iphonesimulator/App.app' -type d -exec stat -f '%m %N' {} + | sort -nr | head -1 | cut -d' ' -f2-)
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun simctl boot "$DEVICE_ID" || true
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun simctl bootstatus "$DEVICE_ID" -b
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun simctl install "$DEVICE_ID" "$APP_PATH"

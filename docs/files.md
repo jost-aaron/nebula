@@ -95,6 +95,11 @@ runtime value saved in Settings -> Client -> Server URL.
 When an API token is saved in Settings -> Client -> API Token, Files sends it as
 a bearer token for JSON requests, preview/download fetches, and XHR uploads.
 
+Account authorization uses the same helpers. Owners may browse, download,
+upload, create, rename, and delete in the shared namespace. Members may browse,
+preview, and download but receive `403` for mutations. Version one has no
+per-folder visibility and never duplicates files per account.
+
 ## Notes
 
 This is a local development content browser, not a general host filesystem

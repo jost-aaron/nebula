@@ -1,5 +1,7 @@
 const API_BASE_STORAGE_KEY = "nebula.apiBaseUrl";
 const API_TOKEN_STORAGE_KEY = "nebula.apiToken";
+const ACCOUNT_SESSION_STORAGE_KEY = "nebula.accountSessionToken";
+let csrfToken = "";
 
 const configuredApiBase = () => {
   const stored = window.localStorage.getItem(API_BASE_STORAGE_KEY);
@@ -49,6 +51,13 @@ export const setApiBaseUrl = (url: string) => {
 export const apiUrl = (path: string) => `${configuredApiBase()}${path}`;
 
 export const getApiToken = () => window.localStorage.getItem(API_TOKEN_STORAGE_KEY) ?? "";
+const accountSessionStorageKey = () => `${ACCOUNT_SESSION_STORAGE_KEY}:${configuredApiBase() || window.location.origin}`;
+export const getAccountSessionToken = () => window.localStorage.getItem(accountSessionStorageKey()) ?? "";
+export const setAccountSessionToken = (token: string) => {
+  if (token) window.localStorage.setItem(accountSessionStorageKey(), token);
+  else window.localStorage.removeItem(accountSessionStorageKey());
+};
+export const setCsrfToken = (token: string | null) => { csrfToken = token ?? ""; };
 
 export const setApiToken = (token: string) => {
   const normalized = token.trim();
@@ -61,23 +70,35 @@ export const setApiToken = (token: string) => {
 };
 
 export const apiHeaders = (headers?: HeadersInit) => {
-  const token = getApiToken();
+  const token = getAccountSessionToken() || getApiToken();
   const nextHeaders = new Headers(headers);
 
   if (token && !nextHeaders.has("authorization")) {
     nextHeaders.set("authorization", `Bearer ${token}`);
   }
 
+  if (csrfToken && !nextHeaders.has("x-nebula-csrf")) {
+    nextHeaders.set("x-nebula-csrf", csrfToken);
+  }
+
   return nextHeaders;
 };
 
-export const apiFetch = (path: string, init?: RequestInit) =>
-  fetch(apiUrl(path), {
+export const apiFetch = async (path: string, init?: RequestInit) => {
+  const response = await fetch(apiUrl(path), {
     ...init,
+    credentials: "include",
     headers: apiHeaders(init?.headers)
   });
 
+  if (response.status === 401 && !["/api/auth/status", "/api/auth/login", "/api/auth/setup"].includes(path)) {
+    window.dispatchEvent(new CustomEvent("nebula:session-expired"));
+  }
+  return response;
+};
+
 export const applyApiHeadersToRequest = (request: XMLHttpRequest, headers?: HeadersInit) => {
+  request.withCredentials = true;
   apiHeaders(headers).forEach((value, key) => {
     request.setRequestHeader(key, value);
   });
@@ -93,9 +114,15 @@ export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({ error: response.statusText }))) as { error?: string };
-    throw new Error(body.error ?? `API request failed: ${response.status}`);
+    const body = (await response.json().catch(() => ({ error: response.statusText }))) as { code?: string; error?: string };
+    throw new ApiError(body.error ?? `API request failed: ${response.status}`, response.status, body.code);
   }
 
   return (await response.json()) as T;
+}
+
+export class ApiError extends Error {
+  constructor(message: string, public status: number, public code?: string) {
+    super(message);
+  }
 }

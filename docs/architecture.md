@@ -20,8 +20,10 @@ flowchart TD
   Search["src/search"]
   Library["src/library"]
   Files["src/files"]
+  Account["src/account"]
   Server["server/dev.mjs"]
   Content["content/"]
+  AccountStore["SQLite /app/data/nebula.sqlite"]
   Styles["src/styles.css"]
 
   Browser --> Canvas
@@ -36,9 +38,11 @@ flowchart TD
   Search --> Main
   Library --> Main
   Files --> Main
+  Account --> Main
   Registry --> Search
   Registry --> Library
   Server --> Content
+  Server --> AccountStore
   Files --> Server
   Cinema --> Server
   Studio --> Server
@@ -94,6 +98,14 @@ flowchart TD
   later point at a separate API origin without rewriting app surfaces.
 - Also supports a runtime Server URL saved in local storage for native/mobile
   client shells.
+- Applies cookie credentials, account bearer sessions, CSRF headers, expiration
+  handling, and legacy service-token fallback.
+
+`src/account/`
+
+- Renders the blocking first-run/sign-in stage before shell construction.
+- Owns dashboard identity, Account Settings, member management, password
+  rotation, session revocation, and sign out.
 
 `src/shared/`
 
@@ -161,8 +173,15 @@ flowchart TD
 
 `server/auth.mjs`
 
-- Provides optional bearer-token protection for API routes.
-- Local development remains unauthenticated unless `NEBULA_REQUIRE_AUTH=true`.
+- Resolves account cookies, account bearer sessions, media tickets, legacy
+  service tokens, CSRF, and centralized route capabilities.
+
+`server/accountStore.mjs` and `server/accounts.mjs`
+
+- Use Node's built-in SQLite support for transactional schema versioning,
+  scrypt credentials, throttled login, users, sessions, preferences, personal
+  Cinema watchlists, and path-bound media tickets.
+- Store runtime identity data in `/app/data`, mounted from a Compose volume.
 
 `capacitor.config.json`
 
@@ -184,6 +203,10 @@ let focusedIndex = 0;
 let launchedApp: DashboardApp | null = null;
 let activeApp: DashboardApp | null = null;
 ```
+
+The shell is constructed only after auth status and current-account restoration
+complete. Setup/sign-in is a separate surface, so protected apps never flash
+before authentication resolves.
 
 `focusedIndex` controls the featured app and focused tile.
 

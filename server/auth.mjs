@@ -1,40 +1,153 @@
+import { timingSafeEqual } from "node:crypto";
 import { json } from "./http.mjs";
 
+export const SESSION_COOKIE = "nebula_session";
 const localhostAddresses = new Set(["127.0.0.1", "::1"]);
+const publicAuthRoutes = new Set([
+  "GET /api/auth/status",
+  "POST /api/auth/setup",
+  "POST /api/auth/login"
+]);
 
 const normalizedRemoteAddress = (request) =>
   (request.socket.remoteAddress ?? "").toLowerCase().replace(/^::ffff:/, "").split("%")[0];
 
-export const createAuthGuard = () => {
-  const required = process.env.NEBULA_REQUIRE_AUTH === "true";
-  const token = process.env.NEBULA_API_TOKEN ?? "";
+const decodeCookie = (value) => {
+  try { return decodeURIComponent(value); } catch { return ""; }
+};
+
+const parseCookies = (request) => Object.fromEntries(
+  String(request.headers.cookie ?? "").slice(0, 8192).split(";").map((part) => part.trim()).filter(Boolean).map((part) => {
+    const separator = part.indexOf("=");
+    return separator < 0 ? [part, ""] : [part.slice(0, separator), decodeCookie(part.slice(separator + 1))];
+  })
+);
+
+const bearerToken = (request) => {
+  const match = /^Bearer ([^\s]+)$/.exec(String(request.headers.authorization ?? ""));
+  return match?.[1] ?? "";
+};
+
+const constantTimeTokenMatch = (actual, expected) => {
+  const left = Buffer.from(String(actual));
+  const right = Buffer.from(String(expected));
+  return left.length === right.length && left.length > 0 && timingSafeEqual(left, right);
+};
+
+export const capabilitiesForRole = (role) => new Set(role === "owner"
+  ? ["account.use", "dashboard.use", "files.read", "files.write", "media.manage", "media.read", "server.admin", "watchlist.write"]
+  : ["account.use", "dashboard.use", "files.read", "media.read", "watchlist.write"]);
+
+const capabilityForRoute = (request, url) => {
+  const method = request.method ?? "GET";
+  const path = url.pathname;
+  if (path === "/api/auth/accounts" || path.startsWith("/api/auth/accounts/")) return "server.admin";
+  if (path.startsWith("/api/auth/")) return "account.use";
+  if (path === "/api/server/info") return "dashboard.use";
+  if (path.startsWith("/api/files")) return ["GET", "HEAD"].includes(method) ? "files.read" : "files.write";
+  if (path === "/api/cinema/watchlist") return "watchlist.write";
+  if (path === "/api/cinema/metadata" || path === "/api/cinema/identify") return "media.manage";
+  if (path.startsWith("/api/cinema/") || path.startsWith("/api/music/")) return "media.read";
+  return "dashboard.use";
+};
+
+const isStateChanging = (request) => !["GET", "HEAD", "OPTIONS"].includes(request.method ?? "GET");
+
+export const sessionCookie = (request, token, maxAgeSeconds) => {
+  const secure = Boolean(request.socket.encrypted);
+  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure ? "; Secure" : ""}`;
+};
+
+export const clearSessionCookie = (request) => sessionCookie(request, "", 0);
+
+export const createAuthGuard = (accountStore = {
+  authenticateMediaTicket: () => null,
+  authenticateSession: () => null,
+  countUsers: () => 1
+}) => {
+  const serviceAuthRequired = process.env.NEBULA_REQUIRE_AUTH === "true";
+  const serviceToken = process.env.NEBULA_API_TOKEN ?? "";
+  const allowLocalhost = process.env.NEBULA_AUTH_ALLOW_LOCALHOST !== "false";
+
+  const serviceContext = {
+    capabilities: capabilitiesForRole("owner"),
+    kind: "service",
+    principalId: "service-token",
+    sessionId: null,
+    transport: "bearer",
+    user: null
+  };
+
+  const resolveContext = (request, url) => {
+    if ((url.pathname === "/api/cinema/media" || url.pathname === "/api/music/media") && url.searchParams.has("ticket")) {
+      const contentPath = url.searchParams.get("path") ?? "";
+      const ticket = accountStore.authenticateMediaTicket({
+        contentPath,
+        mediaKind: url.pathname.includes("cinema") ? "video" : "audio",
+        token: url.searchParams.get("ticket")
+      });
+      if (ticket) return { ...serviceContext, kind: "media-ticket", principalId: ticket.principalId };
+      return null;
+    }
+
+    const bearer = bearerToken(request);
+    const cookieToken = parseCookies(request)[SESSION_COOKIE] ?? "";
+    for (const [token, transport] of [[bearer, "bearer"], [cookieToken, "cookie"]]) {
+      const session = accountStore.authenticateSession(token);
+      if (session) {
+        return {
+          capabilities: capabilitiesForRole(session.user.role),
+          csrfToken: session.csrfToken,
+          expiresAt: session.expiresAt,
+          kind: "account",
+          principalId: session.user.id,
+          sessionId: session.sessionId,
+          transport,
+          user: session.user
+        };
+      }
+    }
+
+    if (serviceToken && constantTimeTokenMatch(bearer, serviceToken)) return serviceContext;
+    if (serviceAuthRequired && localhostAddresses.has(normalizedRemoteAddress(request)) && allowLocalhost) return serviceContext;
+    return null;
+  };
 
   return {
-    required,
-    async authorize(request, response) {
-      if (!required) {
-        return true;
-      }
+    required: true,
+    remoteAddress: normalizedRemoteAddress,
+    async authorize(request, response, url = new URL(request.url ?? "/", "http://nebula.local")) {
+      const routeKey = `${request.method ?? "GET"} ${url.pathname}`;
+      const context = resolveContext(request, url);
+      request.nebulaAuth = context;
 
-      const isLocalRequest = localhostAddresses.has(normalizedRemoteAddress(request));
+      if (publicAuthRoutes.has(routeKey)) return true;
 
-      if (isLocalRequest && process.env.NEBULA_AUTH_ALLOW_LOCALHOST !== "false") {
-        return true;
-      }
-
-      if (!token) {
-        json(response, 503, { error: "API auth is enabled but no token is configured." });
+      if (!context) {
+        json(response, 401, {
+          code: accountStore.countUsers() === 0 ? "setup_required" : "unauthorized",
+          error: "Authentication required."
+        });
         return false;
       }
 
-      const authorization = request.headers.authorization ?? "";
+      if (context.kind === "media-ticket") return true;
 
-      if (authorization === `Bearer ${token}`) {
-        return true;
+      if (context.transport === "cookie" && isStateChanging(request)) {
+        const csrf = String(request.headers["x-nebula-csrf"] ?? "");
+        if (!constantTimeTokenMatch(csrf, context.csrfToken)) {
+          json(response, 403, { code: "csrf_required", error: "Request verification failed." });
+          return false;
+        }
       }
 
-      json(response, 401, { error: "Unauthorized." });
-      return false;
+      const capability = capabilityForRoute(request, url);
+      if (!context.capabilities.has(capability)) {
+        json(response, 403, { code: "permission_denied", error: "You do not have permission to perform this action." });
+        return false;
+      }
+
+      return true;
     }
   };
 };

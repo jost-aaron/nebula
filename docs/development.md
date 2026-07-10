@@ -59,6 +59,7 @@ Compose mounts only:
 - `tsconfig.json`
 - `src/`
 - `content/`
+- the `nebula-data` named volume at `/app/data`
 
 This keeps host `node_modules` and `dist` out of the project folder.
 The `content/` folder is mounted for the Files app and is intentionally ignored
@@ -140,13 +141,14 @@ See:
 docs/mobile-clients.md
 ```
 
-## API Auth Scaffold
+## Accounts And Service Authentication
 
-API authentication is off by default for local Docker development.
+Account authentication is active on every server. A new `nebula-data` volume
+starts at first-owner setup; no account or password is generated silently.
+SQLite data persists at `/app/data/nebula.sqlite` and must not be committed.
 
-Compose passes the three authentication settings into the dashboard container.
-To require a bearer token for non-local API clients, set them on the same
-Compose command that creates the container:
+The older service-token path remains available for automation and server
+administration. Compose passes its three settings into the dashboard container:
 
 ```sh
 NEBULA_REQUIRE_AUTH=true \
@@ -180,8 +182,12 @@ request `Host` header.
 JSON API bodies are limited to 1 MiB. Raw `PUT` upload and resumable chunk
 streams are not JSON-parsed and retain their streaming behavior.
 
-Client apps can store the matching token in:
+Client apps may still store the matching service token in:
 
 ```text
 Settings -> Client -> API Token
 ```
+
+Normal users should sign in through the account UI. Same-origin browser
+sessions use HttpOnly cookies and CSRF; native/cross-origin clients receive a
+revocable account bearer token. See `docs/accounts.md`.
