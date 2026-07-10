@@ -113,10 +113,10 @@ const renderTopNav = (view: CinemaView) => `
       </span>
     </button>
     <nav class="cinema-nav-tabs" aria-label="Cinema sections">
-      <button class="${view === "library" || view === "title-detail" || view === "player" ? "active" : ""}" type="button" data-cinema-action="library">Library</button>
-      <button class="${view === "watchlist" ? "active" : ""}" type="button" data-cinema-action="watchlist">Watchlist</button>
-      <button class="${view === "identify" ? "active" : ""}" type="button" data-cinema-action="identify-nav">Identify</button>
-      <button class="${view === "servers" ? "active" : ""}" type="button" data-cinema-action="servers">Servers</button>
+      <button class="${view === "library" || view === "title-detail" || view === "player" ? "active" : ""}" type="button" data-cinema-action="library"${view === "library" || view === "title-detail" || view === "player" ? ' aria-current="page"' : ""}>Library</button>
+      <button class="${view === "watchlist" ? "active" : ""}" type="button" data-cinema-action="watchlist"${view === "watchlist" ? ' aria-current="page"' : ""}>Watchlist</button>
+      <button class="${view === "identify" ? "active" : ""}" type="button" data-cinema-action="identify-nav"${view === "identify" ? ' aria-current="page"' : ""}>Identify</button>
+      <button class="${view === "servers" ? "active" : ""}" type="button" data-cinema-action="servers"${view === "servers" ? ' aria-current="page"' : ""}>Servers</button>
     </nav>
     <label class="cinema-global-search">
       <span>${renderCinemaIcon("Search")} Search</span>
@@ -126,7 +126,7 @@ const renderTopNav = (view: CinemaView) => `
       <button class="cinema-dashboard-command" type="button" data-cinema-action="home">
         ${renderCinemaIcon("ArrowLeft")} Dashboard
       </button>
-      <button class="cinema-icon-command" type="button" data-cinema-action="home" aria-label="Close Cinema" title="Close">${renderCinemaIcon("X")}</button>
+      <button class="cinema-mobile-more" type="button" data-cinema-action="more" aria-label="Title options">${renderCinemaIcon("MoreHorizontal")}</button>
     </div>
   </header>
 `;
@@ -165,11 +165,18 @@ const renderWatchlistButton = (entry: CinemaEntry) => `
 
 const renderPlaybackControls = (entry: CinemaEntry, server: CinemaServerInfo) => `
   <div class="cinema-player-overlay">
+    <div class="cinema-preview-badges">
+      <span><i class="cinema-status-dot ${server.online ? "online" : "offline"}"></i>${escapeHtml(server.mode)}</span>
+      <span class="cinema-quality-badge">Original</span>
+    </div>
     <button class="cinema-play-orb" type="button" data-cinema-action="play" aria-label="Play">${renderCinemaIcon("Play", "cinema-play-icon")}</button>
-    <div class="cinema-overlay-meta">
-      <span>${escapeHtml(entry.title)}</span>
-      <span>${renderCinemaIcon("Server")} ${server.online ? "Server online" : "Server offline"}</span>
-      <span>Original quality</span>
+    <div class="cinema-preview-transport" aria-hidden="true">
+      <span>${renderCinemaIcon("Play")} 0:00</span>
+      <div class="cinema-preview-timeline">
+        <i></i>
+        ${chapterMarkers.map((_, index) => `<b style="--chapter-position: ${(index / (chapterMarkers.length - 1)) * 100}%"></b>`).join("")}
+      </div>
+      <span>${estimateRuntime(entry)}</span>
     </div>
   </div>
 `;
@@ -190,10 +197,13 @@ const renderCinemaCards = (entries: CinemaEntry[], category: CinemaCategory) => 
         <button class="cinema-card" type="button" data-cinema-path="${escapeHtml(entry.path)}">
           <span class="cinema-poster" data-cinema-poster="${escapeHtml(entry.path)}"${posterStyle(entry)}>
             ${entry.posterUrl ? "" : renderPosterFallback(entry)}
+            <span class="cinema-poster-scrim"></span>
+            <span class="cinema-card-badge">${escapeHtml(entry.category === "tv" ? "Series" : "Movie")}</span>
+            <span class="cinema-card-play">${renderCinemaIcon("Play", "cinema-play-icon")}</span>
           </span>
           <span class="cinema-card-copy">
             <strong>${escapeHtml(entry.title)}</strong>
-            <small>${escapeHtml(entry.releaseYear || entry.folder || "Local media")}</small>
+            <small>${escapeHtml([entry.releaseYear, entry.genres[0] || entry.folder || "Local media"].filter(Boolean).join(" · "))}</small>
           </span>
         </button>
       `
@@ -292,23 +302,25 @@ const renderLibrary = (entries: CinemaEntry[], activeCategory: CinemaCategory, q
     <main class="cinema-library browsing" data-cinema-view="library">
       <section class="cinema-library-row">
         <header>
-          <div>
+          <div class="cinema-library-heading">
             <p class="eyebrow">Library</p>
             <h3>${escapeHtml(categoryLabel(activeCategory))}</h3>
+            <span>${visibleEntries.length} ${visibleEntries.length === 1 ? "title" : "titles"}</span>
           </div>
-          <nav class="cinema-category-segments" aria-label="Media categories">
-            ${categories
-              .map(
-                (category) => `
-                  <button class="${category.id === activeCategory ? "active" : ""}" type="button" data-cinema-category="${category.id}">
-                    ${category.label}
-                    <span>${entries.filter((entry) => entry.category === category.id).length}</span>
-                  </button>
-                `
-              )
-              .join("")}
-          </nav>
-          <span>${visibleEntries.length} titles</span>
+          <div class="cinema-library-tools">
+            <nav class="cinema-category-segments" aria-label="Media categories">
+              ${categories
+                .map(
+                  (category) => `
+                    <button class="${category.id === activeCategory ? "active" : ""}" type="button" data-cinema-category="${category.id}">
+                      ${category.label}
+                      <span>${entries.filter((entry) => entry.category === category.id).length}</span>
+                    </button>
+                  `
+                )
+                .join("")}
+            </nav>
+          </div>
         </header>
         <div class="cinema-grid" data-cinema-grid>${renderCinemaCards(visibleEntries, activeCategory)}</div>
       </section>
@@ -391,17 +403,21 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[]) => `
 
 const renderVideoPlayerView = (entry: CinemaEntry) => `
   <main class="cinema-watch-surface" data-cinema-view="player">
-    <header>
-      <button type="button" data-cinema-action="back-title">Details</button>
+    <header class="cinema-player-header">
+      <button type="button" data-cinema-action="back-title">${renderCinemaIcon("ArrowLeft")} Details</button>
       <div>
         <p class="eyebrow">Now Playing</p>
         <h2>${escapeHtml(entry.title)}</h2>
       </div>
+      <span class="cinema-player-quality">Original Quality</span>
       <button type="button" data-cinema-action="player-fullscreen">Fullscreen</button>
     </header>
     <section class="cinema-video-stage">
       <video class="cinema-player" data-cinema-player controls autoplay playsinline preload="metadata" src="${entry.streamUrl}"></video>
-      ${renderPlaybackControls(entry, currentServerInfo())}
+      <div class="cinema-player-statusbar">
+        <span><i class="cinema-status-dot ${currentServerInfo().online ? "online" : "offline"}"></i>${currentServerInfo().online ? "Server Online" : "Server Offline"}</span>
+        <span data-cinema-player-status>Connecting to ${escapeHtml(currentServerInfo().name)}…</span>
+      </div>
     </section>
   </main>
 `;
