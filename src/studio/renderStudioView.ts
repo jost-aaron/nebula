@@ -549,7 +549,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
     const mediaUrl = new URL(audioPlayer.currentSrc || audioPlayer.src, window.location.href);
     const canAnalyseAudio = mediaUrl.origin === window.location.origin && Boolean(window.AudioContext);
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const levels = new Float32Array(96);
+    const levels = new Float32Array(192);
     let audioContext: AudioContext | null = null;
     let source: MediaElementAudioSourceNode | null = null;
     let analyser: AnalyserNode | null = null;
@@ -617,25 +617,35 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
       visualizer.dataset.studioVisualizerMode = mode;
 
       let fftEnergy = 0;
+      const nyquistFrequency = (audioContext?.sampleRate ?? 48_000) / 2;
+      const minimumFrequency = spectrum ? Math.max(20, nyquistFrequency / spectrum.length) : 20;
+      const maximumFrequency = Math.min(20_000, nyquistFrequency * 0.98);
+      const frequencyRatio = maximumFrequency / minimumFrequency;
 
       if (isReactive && analyser && spectrum) {
         analyser.getByteFrequencyData(spectrum);
         let sumOfSquares = 0;
-        const usableBins = Math.max(1, Math.floor(spectrum.length * 0.82));
+        const audibleBinCount = Math.max(
+          1,
+          Math.min(spectrum.length, Math.ceil((maximumFrequency / nyquistFrequency) * spectrum.length))
+        );
 
-        for (let bin = 1; bin < usableBins; bin += 1) {
+        for (let bin = 1; bin < audibleBinCount; bin += 1) {
           sumOfSquares += spectrum[bin] * spectrum[bin];
         }
 
-        fftEnergy = Math.min(1, Math.sqrt(sumOfSquares / usableBins) / 255);
+        fftEnergy = Math.min(1, Math.sqrt(sumOfSquares / audibleBinCount) / 255);
       }
 
       visualizer.dataset.studioVisualizerEnergy = fftEnergy.toFixed(3);
 
       context.clearRect(0, 0, width, height);
-      const barCount = Math.max(32, Math.min(levels.length, Math.floor(width / 6)));
-      const gap = width < 420 ? 2.5 : 3;
-      const barWidth = Math.max(1.5, (width - gap * (barCount - 1)) / barCount);
+      const barCount = Math.max(64, Math.min(levels.length, Math.floor(width / 3)));
+      const gap = width < 420 ? 1.25 : 1.5;
+      const barWidth = Math.max(1, (width - gap * (barCount - 1)) / barCount);
+      visualizer.dataset.studioVisualizerBars = String(barCount);
+      visualizer.dataset.studioVisualizerMinimumFrequency = String(Math.round(minimumFrequency));
+      visualizer.dataset.studioVisualizerMaximumFrequency = String(Math.round(maximumFrequency));
       const center = height / 2;
       const maximumBarHeight = Math.max(16, height - 14);
       const ambientTime = reduceMotion ? 0 : timestamp * (isPlaying ? 0.0026 : 0.00125);
@@ -647,14 +657,15 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
         let target = 0;
 
         if (isReactive && spectrum) {
-          const usableBins = Math.max(2, Math.floor(spectrum.length * 0.82));
+          const lowerFrequency = minimumFrequency * Math.pow(frequencyRatio, index / barCount);
+          const upperFrequency = minimumFrequency * Math.pow(frequencyRatio, (index + 1) / barCount);
           const bucketStart = Math.min(
-            usableBins - 1,
-            Math.max(1, Math.floor(Math.pow(index / barCount, 1.78) * usableBins))
+            spectrum.length - 1,
+            Math.max(1, Math.floor((lowerFrequency / nyquistFrequency) * spectrum.length))
           );
           const bucketEnd = Math.min(
-            usableBins,
-            Math.max(bucketStart + 1, Math.ceil(Math.pow((index + 1) / barCount, 1.78) * usableBins))
+            spectrum.length,
+            Math.max(bucketStart + 1, Math.ceil((upperFrequency / nyquistFrequency) * spectrum.length))
           );
           let bucketSquares = 0;
           let bucketPeak = 0;
@@ -668,7 +679,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
           const bucketSize = Math.max(1, bucketEnd - bucketStart);
           const bucketRms = Math.sqrt(bucketSquares / bucketSize) / 255;
           const bucketPeakLevel = bucketPeak / 255;
-          const lowFrequencyLift = 1 + (1 - position) * 0.22;
+          const lowFrequencyLift = 1 + (1 - position) * 0.12;
           const bandMagnitude = (bucketRms * 0.74 + bucketPeakLevel * 0.26) * lowFrequencyLift;
           target = Math.min(1, Math.pow(bandMagnitude, 0.74));
         } else {
