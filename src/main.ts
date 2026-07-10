@@ -1,5 +1,7 @@
 import { renderAppIcon } from "./appIcons";
-import { apiJson, getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken, setApiBaseUrl, setApiToken } from "./api/http";
+import { getAuthStatus, getCurrentAccount } from "./api/accountApi";
+import { apiJson, getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken, setAccountSessionToken, setApiBaseUrl, setApiToken } from "./api/http";
+import { bindAccountGate, bindAccountIdentity, bindAccountSettings, bindServerConnection, renderAccountGate, renderAccountIdentity, renderAccountLoading, renderServerConnection } from "./account/accountUi";
 import { dashboardApps, type DashboardApp } from "./apps";
 import { bindCinemaView, renderCinemaView } from "./cinema/renderCinemaView";
 import { collectDiagnostics } from "./diagnostics/collectDiagnostics";
@@ -10,6 +12,7 @@ import { filterApps, renderSearchResults, renderSearchView } from "./search/rend
 import { renderSettingsPanel } from "./settings/renderSettingsPanel";
 import { bindStudioView, renderStudioView } from "./studio/renderStudioView";
 import { startRenderer } from "./webgpuRenderer";
+import type { AccountSessionState } from "./shared/accountTypes";
 import "./styles.css";
 
 const root = document.querySelector<HTMLDivElement>("#app");
@@ -19,6 +22,9 @@ if (!root || !canvas) {
   throw new Error("Dashboard root or render canvas is missing.");
 }
 
+root.innerHTML = renderAccountLoading();
+
+const startDashboard = (accountSession: AccountSessionState) => {
 let focusedIndex = 0;
 let launchedApp: DashboardApp | null = null;
 let activeApp: DashboardApp | null = null;
@@ -40,6 +46,7 @@ root.innerHTML = `
         <div class="status-cluster">
           <span id="gpu-status" class="system-pill">Checking GPU</span>
           <span class="system-pill">Controller Ready</span>
+          ${renderAccountIdentity(accountSession.user)}
           <time id="clock" class="clock"></time>
         </div>
       </header>
@@ -205,6 +212,7 @@ const bindSettingsTabs = () => {
 
   const sectionGroups: Record<string, string[]> = {
     all: [],
+    account: ["account"],
     apps: ["apps"],
     display: ["display"],
     performance: ["performance"],
@@ -282,7 +290,8 @@ const createSettingsContent = async () =>
       launchedApp,
       performance: performanceMonitor.snapshot(),
       renderer: rendererState
-    })
+    }),
+    accountSession
   );
 
 const launchApp = async (app: DashboardApp) => {
@@ -358,6 +367,7 @@ const launchApp = async (app: DashboardApp) => {
     document.querySelector<HTMLButtonElement>("#close-panel")?.addEventListener("click", closeActiveApp);
     bindSettingsTabs();
     bindClientSettings(appSurface);
+    bindAccountSettings(appSurface);
   }
 
   if (isFilesApp) {
@@ -476,6 +486,8 @@ const launchFocusedApp = () => {
   const app = dashboardApps[focusedIndex];
   void launchApp(app);
 };
+
+let closeAccountMenu: (() => boolean) | undefined;
 
 let isDraggingGrid = false;
 let gridDragStartX = 0;
@@ -628,8 +640,36 @@ grid.addEventListener(
 grid.addEventListener("dblclick", launchFocusedApp);
 launchButton.addEventListener("click", launchFocusedApp);
 detailsButton.addEventListener("click", openFocusedApp);
+closeAccountMenu = bindAccountIdentity(root, {
+  onOpenSettings: () => {
+    const settingsApp = dashboardApps.find((candidate) => candidate.id === "settings");
+    if (settingsApp) {
+      void launchApp(settingsApp).then(() => {
+        appSurface.querySelector<HTMLButtonElement>("[data-diagnostic-tab='account']")?.click();
+      });
+    }
+  }
+});
 
 window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    if (closeAccountMenu?.()) {
+      return;
+    }
+
+    if (activeApp) {
+      closeActiveApp();
+      return;
+    }
+
+    closeShellPanel();
+    return;
+  }
+
+  if (activeApp || (event.target as HTMLElement | null)?.closest("input, textarea, select, button")) {
+    return;
+  }
+
   if (event.key === "ArrowRight" || event.key === "ArrowDown") {
     event.preventDefault();
     pointerSelectionSuppressedUntil = window.performance.now() + pointerSelectionSuppressMs;
@@ -646,14 +686,6 @@ window.addEventListener("keydown", (event) => {
     launchFocusedApp();
   }
 
-  if (event.key === "Escape") {
-    if (activeApp) {
-      closeActiveApp();
-      return;
-    }
-
-    closeShellPanel();
-  }
 });
 
 const updateClock = () => {
@@ -689,3 +721,38 @@ startRenderer(canvas)
     gpuStatus.textContent = "Canvas fallback";
     gpuStatus.classList.add("fallback");
   });
+};
+
+const bootAccount = async () => {
+  root.innerHTML = renderAccountLoading();
+  if (!getEffectiveApiBaseUrl()) {
+    root.innerHTML = renderServerConnection();
+    bindServerConnection(root);
+    return;
+  }
+
+  try {
+    const status = await getAuthStatus();
+    if (status.setupRequired) {
+      root.innerHTML = renderAccountGate(true);
+      bindAccountGate(root);
+      return;
+    }
+    if (status.authenticated && status.user) {
+      startDashboard(await getCurrentAccount());
+      return;
+    }
+    root.innerHTML = renderAccountGate(false);
+    bindAccountGate(root);
+  } catch {
+    root.innerHTML = renderServerConnection("The configured server could not be reached. Check its address and try again.");
+    bindServerConnection(root);
+  }
+};
+
+window.addEventListener("nebula:session-expired", () => {
+  setAccountSessionToken("");
+  window.location.reload();
+}, { once: true });
+
+void bootAccount();

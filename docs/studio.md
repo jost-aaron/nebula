@@ -69,6 +69,11 @@ The media endpoint supports HTTP byte ranges and returns `206 Partial Content`
 for one valid normal, open-ended, or suffix range. Invalid, multi-range,
 empty-file range, and unsatisfiable requests return `416`.
 
+The library is server-shared. Queue/history remain in client memory in v1.
+Authenticated library responses issue expiring, audio-path-bound media tickets
+so browser and Capacitor `<audio>` playback can use byte ranges without exposing
+an account session token.
+
 ## Boundary With Cinema
 
 Cinema is video-only. Movies and TV Shows remain in Cinema through

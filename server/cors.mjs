@@ -1,5 +1,5 @@
 const apiMethods = "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS";
-const apiHeaders = "authorization,content-type,range";
+const apiHeaders = "authorization,content-type,range,x-nebula-csrf";
 const defaultAllowedOrigins = [
   "capacitor://localhost",
   "http://localhost:5173",
@@ -19,6 +19,7 @@ export const applyApiCorsHeaders = (request, response) => {
   }
 
   response.setHeader("access-control-allow-origin", origin);
+  response.setHeader("access-control-allow-credentials", "true");
   response.setHeader("access-control-allow-methods", apiMethods);
   response.setHeader("access-control-allow-headers", apiHeaders);
   response.setHeader("access-control-expose-headers", "content-length,content-range,content-type");

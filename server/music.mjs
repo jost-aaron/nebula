@@ -5,10 +5,22 @@ import { readMetadata, scanMediaLibrary } from "./mediaLibrary.mjs";
 import { isAudioFile, mimeType } from "./storage.mjs";
 import { parseByteRange } from "./ranges.mjs";
 
-export const createMusicRoutes = (storage) => {
+export const createMusicRoutes = (storage, accountStore) => {
   const listMusicLibrary = async (request, response) => {
     const metadata = await readMetadata(storage.cinemaMetadataPath);
     const entries = await scanMediaLibrary(storage, metadata, { mediaKind: "audio" });
+    const context = request.nebulaAuth;
+    if (context) {
+      entries.forEach((entry) => {
+        const ticket = accountStore.issueMediaTicket({
+          contentPath: entry.path,
+          mediaKind: "audio",
+          principalId: context.user?.id ?? context.principalId,
+          principalType: context.user ? "user" : "service"
+        });
+        entry.streamUrl = `/api/music/media?path=${encodeURIComponent(entry.path)}&ticket=${encodeURIComponent(ticket)}`;
+      });
+    }
     entries.sort((a, b) => (a.sortTitle || a.title).localeCompare(b.sortTitle || b.title));
     json(response, 200, { entries });
   };

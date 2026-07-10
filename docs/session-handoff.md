@@ -25,6 +25,9 @@ The current app includes:
   title details, watchlist, chapters, next-up rails, and lazy playback.
 - Studio app with a dedicated full-screen music surface, searchable audio
   library, queue, selected-track summary, and native audio playback.
+- Local-first accounts with first-owner setup, owner/member roles, profile and
+  password settings, revocable sessions/devices, member administration,
+  centralized API authorization, and personal Cinema watchlists.
 
 The latest user direction is to keep building toward a modern console/Plex-like
 media dashboard.
@@ -35,6 +38,8 @@ media dashboard.
 - Use Docker Compose for running and checking.
 - Keep uploaded content/media in ignored `content/`.
 - Do not commit media files.
+- Do not commit `/app/data` account databases, WAL/SHM files, credentials,
+  session tokens, or exported user data.
 
 ## Run And Verify
 
@@ -62,6 +67,18 @@ South Park The Streaming Wars.mp4
 Cinema categorizes it as a Movie. It is intentionally not tracked by Git.
 
 ## Key Feature Notes
+
+Accounts:
+
+- A fresh `nebula-data` volume deliberately enters owner setup; there is no
+  default password.
+- Browser sessions use HttpOnly cookies plus CSRF. Capacitor/cross-origin
+  sessions use bearer auth, with an acknowledged local-storage limitation.
+- Account SQLite data is separate from `content/` at `/app/data/nebula.sqlite`.
+- Owners can add/disable members. Members have shared media and Files read
+  access but not Files mutations or shared Cinema metadata editing.
+- Legacy `NEBULA_API_TOKEN` remains an owner-capability service path.
+- See `docs/accounts.md` and `docs/account-design/README.md`.
 
 Files:
 
@@ -150,4 +167,6 @@ At handoff time:
 - Cinema metadata is local and heuristic, not scraped.
 - Cinema thumbnails are generated client-side, not persisted.
 - Watch progress is not persisted.
+- No password reset, MFA/passkeys, account deletion/role changes, second owner,
+  folder-level Files ACLs, or Keychain-backed native token storage yet.
 - `src/main.ts` is growing and should eventually be split into shell modules.

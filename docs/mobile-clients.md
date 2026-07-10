@@ -52,6 +52,10 @@ Settings -> Client -> API Token
 
 That token is sent as a bearer token by frontend API clients when configured.
 
+This remains the legacy administrator/service token. Normal Capacitor sign-in
+uses a separate revocable account bearer session. The framework-free v1 client
+stores it in WebView local storage; Keychain-backed storage is a follow-up.
+
 For localhost development, leave it blank. For a mobile client, set it to a
 reachable server address such as:
 
@@ -188,7 +192,11 @@ Cross-origin `/api/*` requests from the iOS web view are supported through
 minimal API-only CORS handling. The default explicit origin allowlist is
 `capacitor://localhost`, `http://localhost:5173`, and
 `http://127.0.0.1:5173`. It includes `PATCH` for Cinema metadata and watchlist
-updates. Arbitrary origins are not reflected.
+updates. Arbitrary origins are not reflected. The allowlist advertises
+credentials and `X-Nebula-CSRF`; native bearer requests do not depend on
+cross-origin cookies. Cinema and Studio receive expiring, path-bound media
+tickets so HTML media elements retain byte-range playback without putting a
+session token in the URL.
 
 Add a trusted non-default browser or native origin as a comma-separated value
 when starting Compose:
@@ -211,7 +219,8 @@ docker compose up --build
 
 ## Next Steps
 
-1. Add device pairing/auth before exposing personal media APIs beyond localhost.
+1. Move native account bearer storage into an iOS Keychain bridge and add
+   device pairing.
 2. Add an automated iOS smoke path that launches the simulator and verifies
    Settings -> Client plus Files listing against a local server.
 3. Split the Docker server into API, static client, and storage/database

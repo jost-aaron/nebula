@@ -11,6 +11,11 @@ Studio apps: Files manages local ignored content with resumable uploads and iOS
 client support, Cinema scans video into a Plex-like Movies/TV Shows library, and
 Studio scans local audio into a dedicated music player.
 
+Nebula starts with deliberate local owner setup and requires an account for the
+dashboard. Browser sessions use cookies and CSRF protection; Capacitor uses
+revocable bearer sessions. Owners can add or disable members, and Cinema
+watchlists are personal while the media library stays server-shared.
+
 ## Run
 
 ```sh
@@ -53,8 +58,13 @@ files needed for local development, so the host project should not need a local
 - `src/studio/` - local music library and native audio player.
 - `src/files/` - local content file browser UI.
 - `src/api/` - shared API base URL, token, fetch, and XHR helpers.
+- `src/account/` - account gate, identity menu, profile, security, member, and
+  device/session UI.
 - `server/dev.mjs` - Vite dev server plus Files, Cinema, and Music APIs.
 - `server/cors.mjs` - API-only CORS handling for Capacitor/mobile clients.
+- `server/accountStore.mjs` - SQLite accounts, credentials, sessions,
+  throttling, watchlists, and media tickets.
+- `server/accounts.mjs` - account and session API routes.
 - `content/` - ignored local content root for Files and Cinema.
 - `ios/` - Capacitor iOS shell.
 - `scripts/ios-sync*.sh` - Docker-first Capacitor web asset sync helpers.
@@ -73,6 +83,7 @@ Start with:
 - [AGENTS.md](AGENTS.md)
 - [docs/session-handoff.md](docs/session-handoff.md)
 - [docs/architecture.md](docs/architecture.md)
+- [docs/accounts.md](docs/accounts.md)
 - [docs/cinema.md](docs/cinema.md)
 - [docs/studio.md](docs/studio.md)
 - [docs/arcade-moonlight.md](docs/arcade-moonlight.md)

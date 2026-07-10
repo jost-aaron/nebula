@@ -73,10 +73,30 @@ const googleVisionWebDetection = async (frames) => {
   };
 };
 
-export const createCinemaRoutes = (storage) => {
+export const createCinemaRoutes = (storage, accountStore) => {
   const listCinemaLibrary = async (request, response) => {
     const metadata = await readMetadata(storage.cinemaMetadataPath);
     const entries = await scanMediaLibrary(storage, metadata, { mediaKind: "video" });
+    const context = request.nebulaAuth;
+
+    if (context?.user) {
+      const legacyPaths = Object.entries(metadata).filter(([, value]) => Boolean(value?.watchlisted)).map(([contentPath]) => contentPath);
+      accountStore.migrateLegacyWatchlist(context.user.id, context.user.role === "owner" ? legacyPaths : []);
+      const watchlist = accountStore.getWatchlist(context.user.id);
+      entries.forEach((entry) => { entry.watchlisted = watchlist.has(entry.path); });
+    }
+
+    if (context) {
+      entries.forEach((entry) => {
+        const ticket = accountStore.issueMediaTicket({
+          contentPath: entry.path,
+          mediaKind: "video",
+          principalId: context.user?.id ?? context.principalId,
+          principalType: context.user ? "user" : "service"
+        });
+        entry.streamUrl = `/api/cinema/media?path=${encodeURIComponent(entry.path)}&ticket=${encodeURIComponent(ticket)}`;
+      });
+    }
     entries.sort((a, b) => (a.sortTitle || a.title).localeCompare(b.sortTitle || b.title));
     json(response, 200, { entries });
   };
@@ -137,6 +157,12 @@ export const createCinemaRoutes = (storage) => {
     const metadata = await readMetadata(storage.cinemaMetadataPath);
     const current = metadataForEntry(metadata, contentPath, fallbackTitle);
     const watchlisted = Boolean(body.watchlisted);
+
+    if (request.nebulaAuth?.user) {
+      accountStore.setWatchlisted(request.nebulaAuth.user.id, contentPath, watchlisted);
+      json(response, 200, { metadata: current, ok: true, path: contentPath, watchlisted });
+      return;
+    }
 
     metadata[contentPath] = {
       ...current,

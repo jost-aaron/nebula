@@ -91,6 +91,8 @@ The app has nine main layers:
 8. `src/library/` owns the installed-app Library grid.
 9. `src/files/` owns the local content file browser UI.
 10. `src/studio/` owns the local music library and native audio playback UI.
+11. `src/account/` and `server/accountStore.mjs` own local accounts, sessions,
+    authorization, personal watchlists, and the account gate.
 
 The UI is currently framework-free TypeScript. DOM is rendered with template
 strings and event listeners. If you introduce a framework later, document why and
@@ -141,6 +143,8 @@ Mouse behavior:
   progress, cancel, resumable 64 MB chunks for files larger than 64 MB, and
   iOS-compatible Server URL/API token routing.
 - `Settings` and `Search` are ready shell/system apps.
+- First-run owner setup, sign-in, identity, Account Settings, member
+  creation/disable, password changes, and session revocation are ready.
 - `Arcade` and `Party` are still planned placeholders.
 
 ## Content And Media
@@ -181,10 +185,11 @@ docker compose run --rm dashboard npm test
 test ! -d node_modules && test ! -d dist && echo "host clean"
 ```
 
-The local API is unauthenticated by default. To test real bearer authentication,
-pass all auth variables to Compose on the command that creates the container;
-set `NEBULA_AUTH_ALLOW_LOCALHOST=false` when testing from the host so localhost
-does not bypass the token requirement.
+The account gate is always active: a new data volume requires deliberate owner
+setup. `NEBULA_API_TOKEN` remains a service/admin path. To test it without the
+localhost exemption, set `NEBULA_REQUIRE_AUTH=true`, provide the token, and set
+`NEBULA_AUTH_ALLOW_LOCALHOST=false` when Compose creates the container. Account
+data lives in the `nebula-data` volume, never `content/`.
 
 Browser checks:
 
@@ -198,6 +203,8 @@ Browser checks:
   and uses a gated scroll threshold so the selected app does not race through
   the row.
 - Arrow keys, Enter, and Escape work.
+- Reload restores the account; Account Settings can update profile/password,
+  manage members/devices, and sign out.
 - Mobile viewport does not reserve space for a bottom rail.
 - iOS safe-area checks should confirm `viewport-fit=cover` and
   `env(safe-area-inset-*)` padding keep content clear of the status/Dynamic

@@ -1,4 +1,4 @@
-import { apiJson } from "./http";
+import { apiJson, apiUrl } from "./http";
 import type {
   CinemaIdentifyRequest,
   CinemaIdentifyResponse,
@@ -9,7 +9,9 @@ import type {
   CinemaWatchlistUpdateResponse
 } from "../shared/cinemaTypes";
 
-export const listCinemaLibrary = () => apiJson<CinemaLibraryResponse>("/api/cinema/library");
+export const listCinemaLibrary = () => apiJson<CinemaLibraryResponse>("/api/cinema/library").then((library) => ({
+  entries: library.entries.map((entry) => ({ ...entry, streamUrl: apiUrl(entry.streamUrl) }))
+}));
 
 export const identifyCinemaFrames = (body: CinemaIdentifyRequest) =>
   apiJson<CinemaIdentifyResponse>("/api/cinema/identify", {

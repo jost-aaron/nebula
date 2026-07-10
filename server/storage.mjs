@@ -1,12 +1,13 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
-export const createStorage = async ({ contentRoot }) => {
+export const createStorage = async ({ contentRoot, dataRoot = path.join(path.dirname(contentRoot), "data") }) => {
   const uploadRoot = path.join(contentRoot, ".uploads");
   const uploadReservationRoot = path.join(uploadRoot, ".reservations");
   const cinemaMetadataPath = path.join(contentRoot, ".cinema-metadata.json");
 
   await mkdir(contentRoot, { recursive: true });
+  await mkdir(dataRoot, { recursive: true });
   await mkdir(uploadRoot, { recursive: true });
   await mkdir(uploadReservationRoot, { recursive: true });
 
@@ -30,6 +31,8 @@ export const createStorage = async ({ contentRoot }) => {
   return {
     cinemaMetadataPath,
     contentRoot,
+    dataRoot,
+    accountDatabasePath: path.join(dataRoot, "nebula.sqlite"),
     relativePath,
     resolveContentPath,
     toContentPath,

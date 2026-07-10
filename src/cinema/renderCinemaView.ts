@@ -413,7 +413,7 @@ const renderVideoPlayerView = (entry: CinemaEntry) => `
       <button type="button" data-cinema-action="player-fullscreen">Fullscreen</button>
     </header>
     <section class="cinema-video-stage">
-      <video class="cinema-player" data-cinema-player controls autoplay playsinline preload="metadata" src="${entry.streamUrl}"></video>
+      <video class="cinema-player" data-cinema-player controls autoplay playsinline preload="metadata" crossorigin="anonymous" src="${entry.streamUrl}"></video>
       <div class="cinema-player-statusbar">
         <span><i class="cinema-status-dot ${currentServerInfo().online ? "online" : "offline"}"></i>${currentServerInfo().online ? "Server Online" : "Server Offline"}</span>
         <span data-cinema-player-status>Connecting to ${escapeHtml(currentServerInfo().name)}…</span>
@@ -683,6 +683,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
 
     const thumbnail = (async () => {
       const video = document.createElement("video");
+      video.crossOrigin = "anonymous";
       video.muted = true;
       video.playsInline = true;
       video.preload = "metadata";
@@ -897,6 +898,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
 
   const captureIdentificationFrames = async (entry: CinemaEntry): Promise<CinemaIdentificationFrame[]> => {
     const video = document.createElement("video");
+    video.crossOrigin = "anonymous";
     video.muted = true;
     video.playsInline = true;
     video.preload = "metadata";

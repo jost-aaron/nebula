@@ -1,6 +1,8 @@
 dist
 node_modules
 content
+data
+*.sqlite*
 .git
 .DS_Store
 npm-debug.log*
