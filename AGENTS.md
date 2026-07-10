@@ -227,15 +227,19 @@ systems than a web landing page. Future work should preserve:
 
 ## Where We Are Going
 
-Near-term Arcade work should harden the large PR rather than jumping straight
-to real Moonlight streaming:
+The large Arcade PR has completed its first post-rebase hardening pass:
 
 - Keep Arcade honest about mock/dev state and sidecar unavailability.
-- Finish visual/browser smoke checks across Dashboard, Arcade, Studio, Cinema,
-  Files, Settings, Search, and mobile Arcade.
-- Update docs when implementation catches up with previously planned items.
-- Prepare a clear PR summary that separates real functionality from mock-only
-  scaffolding.
+- Dashboard, Arcade, Studio, Cinema, Files, Settings, and Search launched in the
+  in-app browser.
+- Arcade Pair, Stream, Disconnect, Dashboard, close, Search-to-Arcade, and
+  Escape close paths passed against the mock API.
+- Arcade had no horizontal overflow at a 390 x 844 viewport.
+- Docker type checking and host-tree cleanliness passed.
+
+Remaining PR work is presentation and review: prepare a clear PR summary that
+separates real functionality from mock-only scaffolding, address review
+findings, and keep docs synchronized with any resulting implementation changes.
 
 The next technical milestone after this PR is a native Moonlight sidecar spike:
 

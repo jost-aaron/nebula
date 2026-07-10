@@ -98,10 +98,10 @@ Expected:
 - Host cards expose product-shaped states such as unpaired, paired, online,
   connecting, streaming, poor connection, disconnected, and offline without
   claiming a real Moonlight stream is active.
-- Add Host, Pair, Test Connection, and Start/Stop Session controls are visible
-  or intentionally disabled based on the mock state.
-- Stream settings are visible for resolution, FPS, bitrate, codec, HDR, and
-  audio mode, and the UI makes clear these are preferences for a future
+- Add Host, Pair, Connect, Stream, and Disconnect controls are visible and
+  update the mock lifecycle state.
+- Stream settings are visible for resolution, FPS, bitrate, codec, input, and
+  transport, and the UI makes clear these are preferences for a future
   Moonlight session.
 - The sidecar unavailable state is friendly and explicit when no native
   Moonlight sidecar/plugin is connected.
@@ -113,14 +113,14 @@ Expected:
 - WebGPU/WebCodecs capability messaging is informational only; Arcade remains
   usable as a setup/control surface when those capabilities are missing.
 
-Future backend checks after `server/arcade.mjs` exists:
+Current mock backend checks:
 
 - `GET /api/arcade/capabilities` reports whether the Moonlight sidecar is
   unavailable, mock-only, or connected.
 - `GET /api/arcade/hosts` returns mock/dev hosts before real pairing support
   exists.
-- Session APIs return clear unavailable/not-implemented responses when the
-  sidecar is absent.
+- Pairing and session APIs return explicit mock notes when the sidecar is
+  absent, and lifecycle actions appear in `/api/arcade/events`.
 - No API response implies that live Moonlight streaming exists before the
   bridge is implemented.
 

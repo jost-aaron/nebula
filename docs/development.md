@@ -120,10 +120,14 @@ Follow `docs/arcade-moonlight.md` for the intended split:
 
 - Browser frontend: host cards, pairing flow, settings, diagnostics, overlays,
   and future WebGPU presentation.
-- Backend facade: future `/api/arcade/*` host, capability, pairing, session, and
-  event routes.
+- Backend facade: current mock `/api/arcade/*` host, capability, pairing,
+  session, and event routes in `server/arcade.mjs`.
 - Native sidecar/plugin: future Moonlight Core integration, sockets, decode or
   frame forwarding, audio, and input forwarding.
+
+Keep the current boundary explicit: the mock facade is useful for frontend and
+lifecycle work, but it does not discover hosts, create pairing credentials, or
+open a Moonlight media session.
 
 Keep Moonlight Core experiments isolated from the normal Docker-first frontend
 workflow. Do not add host-installed native dependencies or generated build

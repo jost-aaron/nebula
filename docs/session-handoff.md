@@ -25,6 +25,12 @@ The current app includes:
   title details, watchlist, chapters, next-up rails, and lazy playback.
 - Studio app with a dedicated full-screen music surface, searchable audio
   library, queue, selected-track summary, and native audio playback.
+- Arcade app with a full-screen Moonlight-oriented host/session prototype,
+  mock `/api/arcade/*` lifecycle facade, controller diagnostics, and a
+  WebGPU/WebCodecs capability probe.
+
+The active large-PR branch is `codex/archade-moonlight`. It is rebased onto
+current `main` and pushed to `origin/codex/archade-moonlight`.
 
 The latest user direction is to keep building toward a modern console/Plex-like
 media dashboard.
@@ -96,6 +102,18 @@ Studio:
   policy.
 - Shows local audio in Studio, not Cinema.
 
+Arcade:
+
+- Uses `/api/arcade/hosts`, `/api/arcade/capabilities`,
+  `/api/arcade/sessions`, pairing routes, and `/api/arcade/events`.
+- The API and UI are intentionally mock-only. Pair, Connect, Stream, and
+  Disconnect exercise product-shaped state but do not contact Sunshine.
+- Reports the native sidecar as unavailable and does not claim a real stream.
+- Feature-detects WebGPU, WebCodecs, `VideoFrame`, and external texture import
+  for the future stream compositor path.
+- The next technical milestone is the isolated native sidecar spike documented
+  in `docs/arcade-sidecar-spike.md`, after this PR is reviewed and hardened.
+
 iOS:
 
 - Capacitor iOS scaffold is present under `ios/`.
@@ -129,6 +147,15 @@ Read these in order:
 At handoff time:
 
 - `docker compose run --rm dashboard npm run check` passed.
+- The large Arcade branch was clean and synchronized with its remote before the
+  final documentation hardening commit.
+- Dashboard, Arcade, Studio, Cinema, Files, Settings, and Search all launched in
+  the in-app browser after the branch rebase.
+- Arcade loaded its mock host and capabilities, reported the sidecar as
+  unavailable, and emitted pairing, session-created, and session-deleted events.
+- Arcade Pair, Stream, Disconnect, Dashboard, close, Search-to-Arcade, and
+  Escape close paths passed.
+- Arcade had no horizontal overflow at a 390 x 844 viewport.
 - `./scripts/ios-sync-dev-server.sh` passed.
 - `./scripts/ios-build-simulator.sh` passed.
 - iPhone 17 Pro simulator launch/screenshot passed for the dashboard safe-area
@@ -144,6 +171,8 @@ At handoff time:
 ## Known Gaps
 
 - No automated browser test suite yet.
+- Arcade has no real Moonlight sidecar, Sunshine pairing, media transport,
+  decoder pipeline, audio output, or host input forwarding yet.
 - Command-line simulator testing currently screenshots the launched dashboard,
   but tap-through Cinema/Files safe-area checks still need a manual simulator
   pass.
