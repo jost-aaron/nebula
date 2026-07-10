@@ -1,6 +1,9 @@
 import { json } from "./http.mjs";
 
-const localhostHosts = new Set(["127.0.0.1", "localhost", "::1"]);
+const localhostAddresses = new Set(["127.0.0.1", "::1"]);
+
+const normalizedRemoteAddress = (request) =>
+  (request.socket.remoteAddress ?? "").toLowerCase().replace(/^::ffff:/, "").split("%")[0];
 
 export const createAuthGuard = () => {
   const required = process.env.NEBULA_REQUIRE_AUTH === "true";
@@ -13,9 +16,7 @@ export const createAuthGuard = () => {
         return true;
       }
 
-      const host = request.headers.host?.split(":")[0] ?? "";
-      const remoteAddress = request.socket.remoteAddress?.replace(/^::ffff:/, "") ?? "";
-      const isLocalRequest = localhostHosts.has(host) || localhostHosts.has(remoteAddress);
+      const isLocalRequest = localhostAddresses.has(normalizedRemoteAddress(request));
 
       if (isLocalRequest && process.env.NEBULA_AUTH_ALLOW_LOCALHOST !== "false") {
         return true;

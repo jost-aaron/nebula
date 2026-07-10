@@ -110,7 +110,9 @@ The frontend updates these through:
 
 The media endpoint supports HTTP byte ranges and returns `206 Partial Content`
 for range requests. This is required for normal browser video playback behavior,
-especially seeking.
+especially seeking. It supports one normal, open-ended, or suffix range per
+request. Invalid, multi-range, empty-file range, and unsatisfiable requests
+return `416` with `Content-Range: bytes */<size>`.
 
 ## Boundaries
 

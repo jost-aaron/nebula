@@ -55,7 +55,8 @@ Studio groups music with these rules:
 - `HEAD /api/music/media?path=<path>` - return audio metadata headers.
 
 The media endpoint supports HTTP byte ranges and returns `206 Partial Content`
-for range requests.
+for one valid normal, open-ended, or suffix range. Invalid, multi-range,
+empty-file range, and unsatisfiable requests return `416`.
 
 ## Boundary With Cinema
 

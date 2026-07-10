@@ -1,10 +1,20 @@
-const apiMethods = "GET,POST,PUT,DELETE,OPTIONS";
+const apiMethods = "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS";
 const apiHeaders = "authorization,content-type,range";
+const defaultAllowedOrigins = [
+  "capacitor://localhost",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173"
+];
+
+const allowedOrigins = () => new Set([
+  ...defaultAllowedOrigins,
+  ...(process.env.NEBULA_CORS_ALLOWED_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean)
+]);
 
 export const applyApiCorsHeaders = (request, response) => {
   const origin = request.headers.origin;
 
-  if (!origin) {
+  if (!origin || !allowedOrigins().has(origin)) {
     return;
   }
 

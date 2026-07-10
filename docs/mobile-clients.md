@@ -185,8 +185,29 @@ Production deployments should prefer HTTPS when the server is reachable through
 a stable private DNS name or tunnel.
 
 Cross-origin `/api/*` requests from the iOS web view are supported through
-minimal API-only CORS handling. If `NEBULA_REQUIRE_AUTH=true`, configure the
-same token in Settings -> Client -> API Token.
+minimal API-only CORS handling. The default explicit origin allowlist is
+`capacitor://localhost`, `http://localhost:5173`, and
+`http://127.0.0.1:5173`. It includes `PATCH` for Cinema metadata and watchlist
+updates. Arbitrary origins are not reflected.
+
+Add a trusted non-default browser or native origin as a comma-separated value
+when starting Compose:
+
+```sh
+NEBULA_CORS_ALLOWED_ORIGINS='https://nebula-client.example.internal' \
+docker compose up --build
+```
+
+If `NEBULA_REQUIRE_AUTH=true`, configure the same token in Settings -> Client
+-> API Token. For an authentication check that cannot be bypassed by a local
+connection, start the server with:
+
+```sh
+NEBULA_REQUIRE_AUTH=true \
+NEBULA_API_TOKEN='<long-random-token>' \
+NEBULA_AUTH_ALLOW_LOCALHOST=false \
+docker compose up --build
+```
 
 ## Next Steps
 

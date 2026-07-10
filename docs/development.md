@@ -35,6 +35,12 @@ docker compose up -d --build
 docker compose run --rm dashboard npm run check
 ```
 
+## Backend Tests
+
+```sh
+docker compose run --rm dashboard npm test
+```
+
 ## Stop
 
 ```sh
@@ -138,19 +144,41 @@ docs/mobile-clients.md
 
 API authentication is off by default for local Docker development.
 
-To require a bearer token for non-local API clients:
+Compose passes the three authentication settings into the dashboard container.
+To require a bearer token for non-local API clients, set them on the same
+Compose command that creates the container:
 
 ```sh
-NEBULA_REQUIRE_AUTH=true
-NEBULA_API_TOKEN=<long-random-token>
+NEBULA_REQUIRE_AUTH=true \
+NEBULA_API_TOKEN='<long-random-token>' \
+docker compose up --build
 ```
 
 By default, localhost requests are still allowed when auth is enabled. To require
 the token even for localhost:
 
 ```sh
-NEBULA_AUTH_ALLOW_LOCALHOST=false
+NEBULA_REQUIRE_AUTH=true \
+NEBULA_API_TOKEN='<long-random-token>' \
+NEBULA_AUTH_ALLOW_LOCALHOST=false \
+docker compose up --build
 ```
+
+With the localhost exemption disabled, verify the container actually requires
+the token:
+
+```sh
+curl -i http://127.0.0.1:5173/api/server/info
+curl -i -H 'Authorization: Bearer <long-random-token>' \
+  http://127.0.0.1:5173/api/server/info
+```
+
+The first request should return `401`; the second should return `200`. The
+localhost decision uses only the connection's socket address and never the
+request `Host` header.
+
+JSON API bodies are limited to 1 MiB. Raw `PUT` upload and resumable chunk
+streams are not JSON-parsed and retain their streaming behavior.
 
 Client apps can store the matching token in:
 

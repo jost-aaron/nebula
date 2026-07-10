@@ -12,7 +12,8 @@ For a fresh session:
    `docs/cinema.md`, `docs/files.md`, and `docs/testing.md`.
 3. Run the app with `docker compose up --build`.
 4. Verify with `docker compose run --rm dashboard npm run check`.
-5. Keep user media in ignored `content/`.
+5. Run backend tests with `docker compose run --rm dashboard npm test`.
+6. Keep user media in ignored `content/`.
 
 ## Prime Directive
 
@@ -176,8 +177,14 @@ Before handing off changes:
 
 ```sh
 docker compose run --rm dashboard npm run check
+docker compose run --rm dashboard npm test
 test ! -d node_modules && test ! -d dist && echo "host clean"
 ```
+
+The local API is unauthenticated by default. To test real bearer authentication,
+pass all auth variables to Compose on the command that creates the container;
+set `NEBULA_AUTH_ALLOW_LOCALHOST=false` when testing from the host so localhost
+does not bypass the token requirement.
 
 Browser checks:
 

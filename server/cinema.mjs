@@ -4,6 +4,7 @@ import path from "node:path";
 import { json, readBody } from "./http.mjs";
 import { defaultTitle, metadataForEntry, readMetadata, scanMediaLibrary, writeMetadata } from "./mediaLibrary.mjs";
 import { isVideoFile, mimeType } from "./storage.mjs";
+import { parseByteRange } from "./ranges.mjs";
 
 const candidateWords = (value = "") =>
   value
@@ -212,29 +213,17 @@ export const createCinemaRoutes = (storage) => {
       return;
     }
 
-    const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+    const parsedRange = parseByteRange(range, stats.size);
 
-    if (!match) {
+    if (!parsedRange.ok) {
       response.writeHead(416, {
-        "content-range": `bytes */${stats.size}`
+        ...headers,
+        "content-range": parsedRange.contentRange
       });
       response.end();
       return;
     }
-
-    const suffixLength = !match[1] && match[2] ? Number(match[2]) : null;
-    const requestedStart = suffixLength === null ? Number(match[1]) : Math.max(stats.size - suffixLength, 0);
-    const requestedEnd = suffixLength === null && match[2] ? Number(match[2]) : stats.size - 1;
-    const start = Math.min(requestedStart, stats.size - 1);
-    const end = Math.min(requestedEnd, stats.size - 1);
-
-    if (start > end) {
-      response.writeHead(416, {
-        "content-range": `bytes */${stats.size}`
-      });
-      response.end();
-      return;
-    }
+    const { start, end } = parsedRange;
 
     response.writeHead(206, {
       ...headers,

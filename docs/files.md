@@ -115,9 +115,12 @@ content/.uploads/
 ```
 
 That folder is hidden from the Files listing. Each upload session stores
-metadata plus completed chunks. Completing the session assembles the chunks into
-the target file and removes the session folder. Canceling the upload removes
-the session folder and any partial chunks.
+metadata plus completed chunks. One active session reserves each destination,
+and chunk indexes must fall within the calculated part count. Completion uses
+no-clobber behavior: if another process creates the target first, the API
+returns `409`, leaves that file untouched, and removes assembly temporaries.
+Successful completion removes the session and reservation. Canceling the upload
+removes the session, reservation, and partial chunks.
 
 The server streams upload requests with Node streams. If a browser cancels or
 disconnects mid-chunk, the temporary chunk file is removed.

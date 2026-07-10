@@ -8,9 +8,14 @@ services:
       - ./index.html:/app/index.html
       - ./package.json:/app/package.json
       - ./server:/app/server
+      - ./tests:/app/tests
       - ./tsconfig.json:/app/tsconfig.json
       - ./src:/app/src
       - ./content:/app/content
     environment:
       - CHOKIDAR_USEPOLLING=true
       - GOOGLE_VISION_API_KEY=${GOOGLE_VISION_API_KEY:-}
+      - NEBULA_REQUIRE_AUTH=${NEBULA_REQUIRE_AUTH:-false}
+      - NEBULA_API_TOKEN=${NEBULA_API_TOKEN:-}
+      - NEBULA_AUTH_ALLOW_LOCALHOST=${NEBULA_AUTH_ALLOW_LOCALHOST:-true}
+      - NEBULA_CORS_ALLOWED_ORIGINS=${NEBULA_CORS_ALLOWED_ORIGINS:-}

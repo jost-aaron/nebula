@@ -23,6 +23,7 @@ Open http://127.0.0.1:5173.
 
 ```sh
 docker compose run --rm dashboard npm run check
+docker compose run --rm dashboard npm test
 ```
 
 Dependencies are installed inside the Docker image. Compose mounts only the source

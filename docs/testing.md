@@ -7,7 +7,13 @@ TypeScript checking and manual/in-browser QA.
 
 ```sh
 docker compose run --rm dashboard npm run check
+docker compose run --rm dashboard npm test
 ```
+
+The Node test suite runs inside Docker and covers authentication (including
+forged Host headers and localhost policy), bearer tokens, CORS and Capacitor
+preflights, bounded/malformed JSON, resumable upload races and chunk bounds, and
+Cinema/Studio byte ranges.
 
 ## API Smoke Checks
 
@@ -20,6 +26,26 @@ curl -s -I -H "Range: bytes=0-1023" "http://127.0.0.1:5173/api/cinema/media?path
 
 The Cinema media range request should return `206 Partial Content` when that
 test file is present.
+
+## Auth Smoke Check
+
+Start a disposable authenticated instance with the localhost exemption turned
+off so host curl requests exercise bearer validation:
+
+```sh
+NEBULA_REQUIRE_AUTH=true \
+NEBULA_API_TOKEN='replace-with-a-long-random-token' \
+NEBULA_AUTH_ALLOW_LOCALHOST=false \
+docker compose up --build
+```
+
+Then verify `401` without the token and `200` with it:
+
+```sh
+curl -i http://127.0.0.1:5173/api/server/info
+curl -i -H 'Authorization: Bearer replace-with-a-long-random-token' \
+  http://127.0.0.1:5173/api/server/info
+```
 
 ## Host Clean Check
 

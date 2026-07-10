@@ -1,12 +1,16 @@
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { json, readBody } from "./http.mjs";
 import { isMediaFile, mimeType, safeFileName } from "./storage.mjs";
 
 export const createFilesRoutes = (storage) => {
+  const reservationPathFor = (targetPath) =>
+    path.join(storage.uploadReservationRoot, createHash("sha256").update(targetPath).digest("hex"));
+
   const uploadSessionPath = (id) => {
     if (!/^[a-f0-9-]{36}$/i.test(id)) {
       throw Object.assign(new Error("Upload session not found."), { status: 404 });
@@ -212,6 +216,7 @@ export const createFilesRoutes = (storage) => {
 
     const id = randomUUID();
     const sessionPath = uploadSessionPath(id);
+    const reservationPath = reservationPathFor(targetPath);
     const now = new Date().toISOString();
     const metadata = {
       chunkSize,
@@ -219,14 +224,32 @@ export const createFilesRoutes = (storage) => {
       id,
       name,
       path: storage.relativePath(requestedPath),
+      reservation: path.basename(reservationPath),
       size,
       target: storage.toContentPath(targetPath),
       type: body.type ?? "",
       updatedAt: now
     };
 
-    await mkdir(path.join(sessionPath, "chunks"), { recursive: true });
-    await writeFile(path.join(sessionPath, "metadata.json"), JSON.stringify(metadata, null, 2));
+    try {
+      await mkdir(reservationPath);
+    } catch (error) {
+      if (error.code === "EEXIST") {
+        json(response, 409, { error: "An upload for that destination is already in progress." });
+        return;
+      }
+      throw error;
+    }
+
+    try {
+      await writeFile(path.join(reservationPath, "session-id"), id, { flag: "wx" });
+      await mkdir(path.join(sessionPath, "chunks"), { recursive: true });
+      await writeFile(path.join(sessionPath, "metadata.json"), JSON.stringify(metadata, null, 2));
+    } catch (error) {
+      await rm(sessionPath, { force: true, recursive: true }).catch(() => {});
+      await rm(reservationPath, { force: true, recursive: true }).catch(() => {});
+      throw error;
+    }
     json(response, 201, { ...metadata, uploadedParts: [] });
   };
 
@@ -244,6 +267,13 @@ export const createFilesRoutes = (storage) => {
     }
 
     const { metadata, sessionPath } = await readUploadSession(id);
+    const partCount = Math.ceil(metadata.size / metadata.chunkSize);
+
+    if (index >= partCount) {
+      json(response, 400, { error: `Chunk index must be less than ${partCount}.` });
+      return;
+    }
+
     const chunksPath = path.join(sessionPath, "chunks");
     const partPath = path.join(chunksPath, `part-${String(index).padStart(8, "0")}`);
     const tempPath = `${partPath}.tmp-${randomUUID()}`;
@@ -329,8 +359,18 @@ export const createFilesRoutes = (storage) => {
         throw Object.assign(new Error("Completed file size does not match upload metadata."), { status: 409 });
       }
 
-      await rename(tempTarget, targetPath);
+      try {
+        await copyFile(tempTarget, targetPath, constants.COPYFILE_EXCL);
+      } catch (error) {
+        if (error.code === "EEXIST") {
+          throw Object.assign(new Error("A file with that name now exists."), { status: 409 });
+        }
+        throw error;
+      }
+
+      await rm(tempTarget, { force: true });
       await rm(sessionPath, { force: true, recursive: true });
+      await rm(path.join(storage.uploadReservationRoot, metadata.reservation), { force: true, recursive: true });
       json(response, 201, { ok: true, path: storage.toContentPath(targetPath) });
     } catch (error) {
       output?.destroy();
@@ -340,7 +380,11 @@ export const createFilesRoutes = (storage) => {
   };
 
   const cancelUploadSession = async (request, response, id) => {
-    await rm(uploadSessionPath(id), { force: true, recursive: true });
+    const { metadata, sessionPath } = await readUploadSession(id);
+    await rm(sessionPath, { force: true, recursive: true });
+    if (metadata.reservation) {
+      await rm(path.join(storage.uploadReservationRoot, metadata.reservation), { force: true, recursive: true });
+    }
     json(response, 200, { ok: true });
   };
 

@@ -3,10 +3,12 @@ import path from "node:path";
 
 export const createStorage = async ({ contentRoot }) => {
   const uploadRoot = path.join(contentRoot, ".uploads");
+  const uploadReservationRoot = path.join(uploadRoot, ".reservations");
   const cinemaMetadataPath = path.join(contentRoot, ".cinema-metadata.json");
 
   await mkdir(contentRoot, { recursive: true });
   await mkdir(uploadRoot, { recursive: true });
+  await mkdir(uploadReservationRoot, { recursive: true });
 
   const relativePath = (value = "") => {
     const normalized = path.normalize(value).replace(/^(\.\.(\/|\\|$))+/, "");
@@ -31,7 +33,8 @@ export const createStorage = async ({ contentRoot }) => {
     relativePath,
     resolveContentPath,
     toContentPath,
-    uploadRoot
+    uploadRoot,
+    uploadReservationRoot
   };
 };
 
