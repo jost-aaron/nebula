@@ -9,7 +9,8 @@ For a fresh session:
 
 1. Confirm you are in `work/nebula-dashboard`.
 2. Read this file, then `docs/session-handoff.md`, `README.md`, `docs/architecture.md`,
-   `docs/cinema.md`, `docs/files.md`, and `docs/testing.md`.
+   `docs/cinema.md`, `docs/studio.md`, `docs/arcade-moonlight.md`,
+   `docs/files.md`, and `docs/testing.md`.
 3. Run the app with `docker compose up --build`.
 4. Verify with `docker compose run --rm dashboard npm run check`.
 5. Keep user media in ignored `content/`.
@@ -76,20 +77,49 @@ The host tree should not contain `node_modules` or `dist`.
 - WebGPU renderer is active when `navigator.gpu` and a compatible adapter exist.
 - Canvas 2D fallback is used when WebGPU is unavailable.
 
+## Current Development State
+
+Active branch:
+
+```text
+codex/archade-moonlight
+```
+
+This branch is the large Arcade/Moonlight PR. It has been rebased onto current
+`main` after the Studio music move and pushed to `origin/codex/archade-moonlight`.
+
+Arcade is now a mock/prototype app surface, not just a placeholder:
+
+- `src/arcade/renderArcadeView.ts` renders the full-screen Arcade surface.
+- `server/arcade.mjs` exposes the mock `/api/arcade/*` facade.
+- `src/api/arcadeApi.ts` and `src/shared/arcadeTypes.ts` define the frontend
+  Arcade API client and contracts.
+- `src/arcade/inputDiagnostics.ts` reads browser Gamepad API diagnostics.
+- `src/arcade/streamRenderer.ts` feature-detects the future
+  WebGPU/WebCodecs stream-compositor path.
+- `docs/arcade-moonlight.md` and `docs/arcade-sidecar-spike.md` document the
+  Moonlight Core sidecar direction.
+
+The current Arcade implementation is intentionally mock-only. It does not pair
+with Sunshine, link Moonlight Core, open a native sidecar, decode stream frames,
+or forward real controller input to a host yet.
+
 ## Mental Model
 
-The app has nine main layers:
+The app has these main layers:
 
 1. `src/webgpuRenderer.ts` owns the full-screen GPU/canvas background.
 2. `src/main.ts` owns shell state and DOM rendering.
 3. `src/apps.ts` owns the list of app entries shown in the dashboard.
 4. `src/diagnostics/` owns runtime diagnostic data collection.
-5. `src/cinema/` owns the local video library and lazy playback UI.
-6. `src/settings/` owns the Settings panel renderer.
-7. `src/search/` owns the shared Search UI.
-8. `src/library/` owns the installed-app Library grid.
-9. `src/files/` owns the local content file browser UI.
-10. `src/studio/` owns the local music library and native audio playback UI.
+5. `src/arcade/` owns the mock game-streaming host/session surface.
+6. `src/cinema/` owns the local video library and lazy playback UI.
+7. `src/settings/` owns the Settings panel renderer.
+8. `src/search/` owns the shared Search UI.
+9. `src/library/` owns the installed-app Library grid.
+10. `src/files/` owns the local content file browser UI.
+11. `src/studio/` owns the local music library and native audio playback UI.
+12. `server/arcade.mjs` owns the mock Arcade API facade.
 
 The UI is currently framework-free TypeScript. DOM is rendered with template
 strings and event listeners. If you introduce a framework later, document why and
@@ -136,11 +166,15 @@ Mouse behavior:
   watchlist state.
 - `Studio` is a dedicated local music browser and player surface. It uses
   `/api/music/library` and `/api/music/media`.
+- `Arcade` is a prototype Moonlight/Sunshine-oriented game streaming shell. It
+  uses `/api/arcade/hosts`, `/api/arcade/capabilities`,
+  `/api/arcade/sessions`, pairing routes, and `/api/arcade/events` for mock
+  host/session lifecycle state.
 - `Files` is a ready local content browser. It supports drag/drop uploads,
   progress, cancel, resumable 64 MB chunks for files larger than 64 MB, and
   iOS-compatible Server URL/API token routing.
 - `Settings` and `Search` are ready shell/system apps.
-- `Arcade` and `Party` are still planned placeholders.
+- `Party` is still a planned placeholder.
 
 ## Content And Media
 
@@ -164,6 +198,28 @@ systems than a web landing page. Future work should preserve:
 - A capable rendering layer.
 - A path toward a native-style video player.
 
+## Where We Are Going
+
+Near-term Arcade work should harden the large PR rather than jumping straight
+to real Moonlight streaming:
+
+- Keep Arcade honest about mock/dev state and sidecar unavailability.
+- Finish visual/browser smoke checks across Dashboard, Arcade, Studio, Cinema,
+  Files, Settings, Search, and mobile Arcade.
+- Update docs when implementation catches up with previously planned items.
+- Prepare a clear PR summary that separates real functionality from mock-only
+  scaffolding.
+
+The next technical milestone after this PR is a native Moonlight sidecar spike:
+
+- Build a separate local process around `moonlight-common-c`.
+- Prove pairing/session startup against a known Sunshine host.
+- Translate Moonlight callbacks into product-shaped Arcade events.
+- Keep media frame transport separate from the sidecar control channel at first.
+- Do not add native dependencies, vendored Moonlight code, generated binaries,
+  or host-installed tooling to this Docker-first frontend workflow without a
+  deliberate follow-up plan.
+
 ## Recent Bug Context
 
 The old Home/Search/Library/Settings rail has been removed. Keep navigation
@@ -185,6 +241,10 @@ Browser checks:
 - GPU status shows either `WebGPU · ...` or `Canvas fallback`.
 - Search, Settings, Files, and Cinema are available from the Applications strip.
 - Studio is available from the Applications strip as the music app.
+- Arcade is available from the Applications strip as a prototype app.
+- Arcade loads mock hosts from `/api/arcade/hosts`, shows sidecar unavailable
+  status from `/api/arcade/capabilities`, and updates lifecycle events after
+  Pair, Stream, and Disconnect actions.
 - The Applications strip scrolls horizontally, including when focus moves to an
   off-screen app tile.
 - App selection follows hover, clamps at both ends for arrow/scroll navigation,
