@@ -4,6 +4,7 @@ export type PlaybackEventKind = "start" | "progress" | "pause" | "stop" | "compl
 
 export interface PlaybackState {
   completed: boolean;
+  durationSeconds: number | null;
   itemId: CatalogId;
   lastPlayedAt: IsoDateTime | null;
   playCount: number;
@@ -50,4 +51,10 @@ export interface ContinueWatchingEntry {
 
 export interface ContinueWatchingResponse {
   entries: ContinueWatchingEntry[];
+}
+
+export interface PlaybackWatchedRequest {
+  itemId: CatalogId;
+  sourceId: CatalogId;
+  watched: boolean;
 }

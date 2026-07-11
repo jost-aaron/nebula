@@ -9,6 +9,7 @@ import {
   reportCinemaPlayback,
   scanCinemaCatalog,
   updateCinemaMetadata,
+  updateCinemaWatched,
   updateCinemaWatchlist
 } from "../api/cinemaApi";
 import { createCinemaTmdbController, renderTmdbPanel } from "./tmdbUi";
@@ -1434,23 +1435,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
     if ((action === "played" || action === "unplayed") && active?.id && active.sourceId) {
       const markPlayed = action === "played";
       actionButton.disabled = true;
-      const session = crypto.randomUUID();
-      const start = {
-        durationSeconds: markPlayed ? 1 : null,
-        event: "start" as const,
-        eventId: crypto.randomUUID(),
-        itemId: active.id,
-        positionSeconds: 0,
-        sessionId: session,
-        sourceId: active.sourceId
-      };
-      void reportCinemaPlayback(start).then(() => reportCinemaPlayback({
-        ...start,
-        durationSeconds: markPlayed ? 1 : null,
-        event: markPlayed ? "complete" : "stop",
-        eventId: crypto.randomUUID(),
-        positionSeconds: markPlayed ? 1 : 0
-      })).then(() => {
+      void updateCinemaWatched({ itemId: active.id, sourceId: active.sourceId, watched: markPlayed }).then(() => {
         playback.delete(active.id!);
         render();
       }).catch(() => {

@@ -119,5 +119,18 @@ export const createPlaybackRepository = ({ db, migrate = false } = {}) => {
     }
   };
 
-  return { getSession, getState, listContinueWatching, recordEvent };
+  const setWatched = ({ itemId, sourceId, userId, watched, recordedAt }) => {
+    const previous = getState(userId, itemId);
+    const playCount = (previous?.playCount ?? 0) + (watched && !previous?.completed ? 1 : 0);
+    db.prepare(`INSERT INTO playback_states
+      (user_id, item_id, source_id, position_seconds, duration_seconds, completed, play_count, last_played_at, updated_at)
+      VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, item_id) DO UPDATE SET source_id=excluded.source_id, position_seconds=0,
+        completed=excluded.completed, play_count=excluded.play_count,
+        last_played_at=excluded.last_played_at, updated_at=excluded.updated_at`)
+      .run(userId, itemId, sourceId, previous?.durationSeconds ?? null, watched ? 1 : 0, playCount, recordedAt, recordedAt);
+    return getState(userId, itemId);
+  };
+
+  return { getSession, getState, listContinueWatching, recordEvent, setWatched };
 };

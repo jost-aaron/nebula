@@ -172,3 +172,15 @@ test("direct stable IDs can be validated against the catalog boundary", async (t
   await start(service, allowed);
   await assert.rejects(() => start(service, ids()), { status: 404 });
 });
+
+test("manual watched state does not create synthetic playback sessions", async (t) => {
+  const { db, repository, service } = fixture();
+  t.after(() => db.close());
+  const identity = ids();
+  const watched = await service.setWatched({ ...identity, watched: true }, principal());
+  assert.equal(watched.completed, true);
+  assert.equal(watched.playCount, 1);
+  const unplayed = await service.setWatched({ ...identity, watched: false }, principal());
+  assert.equal(unplayed.completed, false);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM playback_sessions").get().count, 0);
+});

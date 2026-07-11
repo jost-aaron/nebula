@@ -19,5 +19,10 @@ export const createPlaybackRoutes = (service) => async (request, response, url) 
     return true;
   }
 
+  if (request.method === "PATCH" && url.pathname === "/api/playback/watched") {
+    json(response, 200, { state: await service.setWatched(await readBody(request), principal) });
+    return true;
+  }
+
   return false;
 };

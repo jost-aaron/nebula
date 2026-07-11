@@ -11,6 +11,7 @@ import type {
 import type { CinemaTmdbSearchResponse, CinemaTmdbStatusResponse } from "../shared/cinemaTmdbTypes";
 import type { MediaChapter } from "../shared/catalogTypes";
 import type { ContinueWatchingResponse, PlaybackEventRequest, PlaybackEventResponse } from "../shared/playbackTypes";
+import type { PlaybackWatchedRequest, PlaybackState } from "../shared/playbackTypes";
 
 export interface CinemaCatalogEntry {
   availability?: string;
@@ -53,6 +54,11 @@ export const reportCinemaPlayback = (body: PlaybackEventRequest) =>
     body: JSON.stringify({ ...body, clientLabel: "Nebula Cinema" }),
     headers: { "content-type": "application/json" },
     method: "POST"
+  });
+
+export const updateCinemaWatched = (body: PlaybackWatchedRequest) =>
+  apiJson<{ state: PlaybackState }>("/api/playback/watched", {
+    body: JSON.stringify(body), headers: { "content-type": "application/json" }, method: "PATCH"
   });
 
 export const identifyCinemaFrames = (body: CinemaIdentifyRequest) =>

@@ -26,6 +26,7 @@ export const createPlaybackService = ({
   uuid = randomUUID
 } = {}) => {
   requireMediaContract("playbackRepository", repository, PLAYBACK_REPOSITORY_METHODS);
+  if (typeof repository.setWatched !== "function") throw new TypeError("playbackRepository.setWatched must be a function.");
   if (compatibilityResolver && typeof compatibilityResolver.resolveValidatedContentPath !== "function") {
     throw new TypeError("compatibilityResolver.resolveValidatedContentPath must be a function.");
   }
@@ -92,5 +93,15 @@ export const createPlaybackService = ({
     return repository.listContinueWatching(userId, numericLimit);
   };
 
-  return { getSession, getState, listContinueWatching, recordEvent };
+  const setWatched = async (request, principal) => {
+    const userId = requireUser(principal);
+    if (typeof request?.watched !== "boolean") throw badRequest("watched must be a boolean.");
+    const identity = await resolveIdentity(request, principal);
+    if (identityValidator && !(await identityValidator(identity, principal))) {
+      throw Object.assign(new Error("Media item was not found."), { status: 404 });
+    }
+    return repository.setWatched({ ...identity, userId, watched: request.watched, recordedAt: new Date(now()).toISOString() });
+  };
+
+  return { getSession, getState, listContinueWatching, recordEvent, setWatched };
 };
