@@ -12,6 +12,8 @@ import { openNebulaDatabase, applyDomainMigrations } from "./database.mjs";
 import { createPlaybackRepository } from "./playback/repository.mjs";
 import { createPlaybackService } from "./playback/service.mjs";
 import { PLAYBACK_MIGRATION } from "./playback/schema.mjs";
+import { createJobsRepository, createJobsService, createJobsWorker, createMediaJobHandlers, jobsMigration } from "./jobs/index.mjs";
+import { createProbeCatalogWriter, createProbeService, probeMigration } from "./probe/index.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const contentRoot = path.join(root, "content");
@@ -22,7 +24,7 @@ const host = process.env.HOST ?? "0.0.0.0";
 const storage = await createStorage({ contentRoot, dataRoot });
 const database = await openNebulaDatabase(storage.accountDatabasePath);
 const accountStore = await createAccountStore({ database });
-applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION]);
+applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration]);
 const catalogRepository = createCatalogRepository(database);
 const { root: catalogRoot } = bootstrapSharedContentRoot(catalogRepository, { contentRoot: storage.contentRoot });
 const scanCatalog = async () => {
@@ -38,12 +40,37 @@ const playbackService = createPlaybackService({
   },
   repository: playbackRepository
 });
+const probeService = createProbeService({
+  catalogWriter: createProbeCatalogWriter(database),
+  contentRoot: storage.contentRoot,
+  resolveSource: (sourceId) => catalogRepository.getSource(sourceId)
+});
+const jobsRepository = createJobsRepository({ db: database });
+const jobsService = createJobsService({ repository: jobsRepository });
+const jobsWorker = createJobsWorker({
+  handlers: createMediaJobHandlers({
+    scanLibrary: async (_payload, context) => {
+      const scan = await scanCatalog();
+      for (const item of catalogRepository.listItems({ availability: "available" })) {
+        context.enqueue({ type: "probe", payload: { sourceId: item.source.id }, dedupeKey: `${item.source.id}:${item.source.contentRevision}` });
+      }
+      return scan;
+    },
+    probeSource: ({ sourceId }) => probeService.probeSource(sourceId),
+    refreshMetadata: async () => ({ skipped: "metadata orchestration pending" }),
+    cacheArtwork: async () => ({ skipped: "artwork cache pending" }),
+    cleanup: async () => ({ candidates: catalogRepository.listCleanupCandidates().length })
+  }),
+  repository: jobsRepository
+});
 const authGuard = createAuthGuard(accountStore);
 const handleApi = createApiHandler(storage, accountStore, authGuard, {
   catalog: { repository: catalogRepository, scan: scanCatalog },
+  jobs: jobsService,
   playback: playbackService
 });
-scanCatalog().catch((error) => console.error("Initial catalog scan failed:", error));
+jobsWorker.start();
+jobsService.enqueue({ type: "scan", payload: { rootId: catalogRoot.id }, dedupeKey: `startup:${catalogRoot.id}` });
 
 const vite = await createViteServer({
   server: {
