@@ -1,0 +1,6 @@
+{
+  "format": { "format_name": "flac", "duration": "42.25", "size": "12345", "bit_rate": "800000" },
+  "streams": [
+    { "index": 0, "codec_type": "audio", "codec_name": "flac", "channels": 2, "channel_layout": "stereo", "sample_rate": "96000", "bits_per_raw_sample": "24", "tags": { "language": "und" }, "disposition": { "default": 1 } }
+  ]
+}
