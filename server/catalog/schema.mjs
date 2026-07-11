@@ -1,4 +1,16 @@
-export const CATALOG_SCHEMA_VERSION = 1;
+export const CATALOG_SCHEMA_VERSION = 2;
+
+const externalIdsTableSql = `
+  CREATE TABLE media_external_ids (
+    media_item_id TEXT NOT NULL REFERENCES media_items(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    provider_item_id TEXT NOT NULL,
+    media_type TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (media_item_id, provider)
+  ) STRICT;
+`;
 
 const catalogSchemaSql = `
   CREATE TABLE IF NOT EXISTS media_libraries (
@@ -68,16 +80,7 @@ const catalogSchemaSql = `
     WHERE file_key IS NOT NULL AND availability != 'superseded';
   CREATE INDEX IF NOT EXISTS media_sources_item ON media_sources(item_id);
 
-  CREATE TABLE IF NOT EXISTS media_external_ids (
-    media_item_id TEXT NOT NULL REFERENCES media_items(id) ON DELETE CASCADE,
-    provider TEXT NOT NULL,
-    provider_item_id TEXT NOT NULL,
-    media_type TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    PRIMARY KEY (media_item_id, provider),
-    UNIQUE (provider, provider_item_id, media_type)
-  ) STRICT;
+  ${externalIdsTableSql.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS")}
 
   CREATE TABLE IF NOT EXISTS media_artwork (
     id TEXT PRIMARY KEY,
@@ -116,6 +119,16 @@ export const catalogMigration = Object.freeze({
   version: CATALOG_SCHEMA_VERSION,
   apply(database) {
     database.exec(catalogSchemaSql);
+    const externalIdsDefinition = database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'media_external_ids'").get()?.sql ?? "";
+    if (/UNIQUE\s*\(\s*provider\s*,\s*provider_item_id\s*,\s*media_type\s*\)/i.test(externalIdsDefinition)) {
+      database.exec(`
+        ALTER TABLE media_external_ids RENAME TO media_external_ids_v1;
+        ${externalIdsTableSql}
+        INSERT INTO media_external_ids (media_item_id, provider, provider_item_id, media_type, created_at, updated_at)
+          SELECT media_item_id, provider, provider_item_id, media_type, created_at, updated_at FROM media_external_ids_v1;
+        DROP TABLE media_external_ids_v1;
+      `);
+    }
   }
 });
 

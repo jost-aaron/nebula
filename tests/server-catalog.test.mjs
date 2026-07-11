@@ -43,11 +43,26 @@ test("catalog migration creates a fresh schema without owning PRAGMA user_versio
 
 test("catalog migration upgrades an existing application database idempotently", () => {
   const database = new DatabaseSync(":memory:");
-  database.exec("CREATE TABLE users (id TEXT PRIMARY KEY) STRICT; INSERT INTO users VALUES ('kept');");
+  database.exec(`
+    CREATE TABLE users (id TEXT PRIMARY KEY) STRICT;
+    INSERT INTO users VALUES ('kept');
+    CREATE TABLE media_external_ids (
+      media_item_id TEXT NOT NULL REFERENCES media_items(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      provider_item_id TEXT NOT NULL,
+      media_type TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (media_item_id, provider),
+      UNIQUE (provider, provider_item_id, media_type)
+    ) STRICT;
+  `);
   applyCatalogMigration(database);
   applyCatalogMigration(database);
   assert.equal(database.prepare("SELECT id FROM users").get().id, "kept");
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM media_libraries").get().count, 0);
+  const externalIdsSql = database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'media_external_ids'").get().sql;
+  assert.doesNotMatch(externalIdsSql, /UNIQUE\s*\(\s*provider\s*,\s*provider_item_id\s*,\s*media_type\s*\)/i);
   database.close();
 });
 
@@ -171,6 +186,26 @@ test("legacy metadata imports through catalog APIs, stays idempotent, and locks 
   assert.ok(item.lockedFields.includes("title"));
   assert.deepEqual(repository.listExternalIds(item.id), [{ id: "42", mediaType: "movie", provider: "tmdb" }]);
   assert.equal(repository.listArtwork(item.id).length, 2);
+});
+
+test("episode items can share a provider series external ID", async (t) => {
+  const { contentRoot, repository, root } = await setup(t);
+  await mkdir(path.join(contentRoot, "TV", "Series"), { recursive: true });
+  await writeFile(path.join(contentRoot, "TV", "Series", "Series.S01E01.mp4"), "episode one");
+  await writeFile(path.join(contentRoot, "TV", "Series", "Series.S01E02.mp4"), "episode two");
+  await scanLocalRoot({ absoluteRoot: contentRoot, repository, rootId: root.id });
+  const episodes = repository.listItems({ mediaKind: "video" });
+  assert.equal(episodes.length, 2);
+  assert.ok(episodes.every((episode) => episode.itemType === "episode"));
+  for (const episode of episodes) {
+    repository.putExternalMetadata(episode.id, {
+      externalIds: [{ id: "98765", mediaType: "tv", provider: "tmdb" }]
+    });
+  }
+  assert.deepEqual(episodes.map((episode) => repository.listExternalIds(episode.id)), [
+    [{ id: "98765", mediaType: "tv", provider: "tmdb" }],
+    [{ id: "98765", mediaType: "tv", provider: "tmdb" }]
+  ]);
 });
 
 test("compatibility projection preserves Cinema and Studio fields while adding catalog IDs", async (t) => {

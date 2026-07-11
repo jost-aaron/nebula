@@ -12,12 +12,12 @@
 - `projectCompatibilityEntry` and `projectRepositoryItems`.
 
 Production catalog code does not open a database, set `PRAGMA user_version`, or
-own the shared database lifecycle. `catalogMigration` is version 1 and applies
-idempotent DDL only.
+own the shared database lifecycle. `catalogMigration` is version 2 and applies
+an idempotent schema migration.
 
 ## Schema
 
-Catalog schema version 1 creates:
+Catalog schema version 2 creates:
 
 - `media_libraries`
 - `media_library_roots`
@@ -32,6 +32,12 @@ An active-path partial unique index allows same-path replacements to retain a
 superseded source history while exposing only the replacement. External IDs are
 provider-neutral, descriptive metadata is JSON on items, and manual locks are
 stored separately in `locked_fields_json`.
+
+Version 2 removes the version-1 global uniqueness constraint on provider IDs so
+multiple episode items can map to the same provider series ID. The primary key
+still permits only one mapping per `(media_item_id, provider)`. Applying the
+version-2 migration rebuilds an existing version-1 `media_external_ids` table
+in place while preserving its rows.
 
 ## Integration Requests
 
