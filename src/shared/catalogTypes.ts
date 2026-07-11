@@ -112,8 +112,13 @@ export interface Artwork {
 }
 
 export interface CatalogItemResponse {
+  artwork: Artwork[];
+  chapters: MediaChapter[];
+  format: { bitrate: number | null; durationSeconds: number | null; name: string | null; probedAt: IsoDateTime; sizeBytes: number | null } | null;
   item: MediaItem;
+  probeState: EnrichmentState;
   sources: MediaSource[];
+  streams: MediaStream[];
 }
 
 /**

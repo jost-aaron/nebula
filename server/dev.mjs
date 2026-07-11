@@ -13,7 +13,7 @@ import { createPlaybackRepository } from "./playback/repository.mjs";
 import { createPlaybackService } from "./playback/service.mjs";
 import { PLAYBACK_MIGRATION } from "./playback/schema.mjs";
 import { createJobsRepository, createJobsService, createJobsWorker, createMediaJobHandlers, jobsMigration } from "./jobs/index.mjs";
-import { createProbeCatalogWriter, createProbeService, probeMigration } from "./probe/index.mjs";
+import { createProbeCatalogReader, createProbeCatalogWriter, createProbeService, probeMigration } from "./probe/index.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const contentRoot = path.join(root, "content");
@@ -65,7 +65,7 @@ const jobsWorker = createJobsWorker({
 });
 const authGuard = createAuthGuard(accountStore);
 const handleApi = createApiHandler(storage, accountStore, authGuard, {
-  catalog: { repository: catalogRepository, scan: scanCatalog },
+  catalog: { probeReader: createProbeCatalogReader(database), repository: catalogRepository, scan: scanCatalog },
   jobs: jobsService,
   playback: playbackService
 });

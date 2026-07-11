@@ -82,3 +82,19 @@ export const createProbeCatalogWriter = (database, { now = () => new Date().toIS
     });
   }
 });
+
+export const createProbeCatalogReader = (database) => ({
+  get(sourceId) {
+    const format = database.prepare("SELECT * FROM media_probe_results WHERE source_id = ?").get(sourceId) ?? null;
+    const streams = database.prepare("SELECT * FROM media_streams WHERE source_id = ? ORDER BY stream_index").all(sourceId).map((row) => ({
+      bitrate: row.bitrate, bitDepth: row.bit_depth, channelLayout: row.channel_layout, channels: row.channels,
+      codec: row.codec, default: Boolean(row.default_flag), forced: Boolean(row.forced_flag), frameRate: row.frame_rate,
+      hdrFormat: row.hdr_format, height: row.height, id: row.id, index: row.stream_index, language: row.language,
+      sampleRate: row.sample_rate, title: row.title, type: row.stream_type, width: row.width
+    }));
+    const chapters = database.prepare("SELECT * FROM media_chapters WHERE source_id = ? ORDER BY chapter_index").all(sourceId).map((row) => ({
+      endSeconds: row.end_seconds, id: row.id, sourceId, startSeconds: row.start_seconds, title: row.title ?? `Chapter ${row.chapter_index + 1}`
+    }));
+    return { chapters, format: format ? { bitrate: format.bitrate, durationSeconds: format.duration_seconds, name: format.format_name, probedAt: format.probed_at, sizeBytes: format.size_bytes } : null, probeState: format ? "ready" : "pending", streams };
+  }
+});

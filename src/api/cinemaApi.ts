@@ -9,7 +9,7 @@ import type {
   CinemaWatchlistUpdateResponse
 } from "../shared/cinemaTypes";
 import type { CinemaTmdbSearchResponse, CinemaTmdbStatusResponse } from "../shared/cinemaTmdbTypes";
-import type { MediaChapter } from "../shared/catalogTypes";
+import type { CatalogItemResponse, MediaChapter } from "../shared/catalogTypes";
 import type { ContinueWatchingResponse, PlaybackEventRequest, PlaybackEventResponse } from "../shared/playbackTypes";
 import type { PlaybackWatchedRequest, PlaybackState } from "../shared/playbackTypes";
 
@@ -42,7 +42,7 @@ export const listCinemaCatalog = () =>
   apiJson<{ items: CinemaCatalogEntry[] }>("/api/catalog/items?mediaKind=video");
 
 export const getCinemaCatalogItem = (itemId: string) =>
-  apiJson<{ item: CinemaCatalogEntry }>(`/api/catalog/items/${encodeURIComponent(itemId)}`);
+  apiJson<CatalogItemResponse>(`/api/catalog/items/${encodeURIComponent(itemId)}`);
 
 export const scanCinemaCatalog = () => apiJson<CinemaCatalogScanResponse>("/api/catalog/scan", { method: "POST" });
 

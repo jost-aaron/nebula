@@ -877,11 +877,10 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
   const loadCatalogDetail = async (entry: CinemaEntry) => {
     if (!entry.id || catalogState.has(entry.id)) return;
     try {
-      const detail = (await getCinemaCatalogItem(entry.id)).item;
-      const candidate = detail as typeof detail & { chapters?: unknown; probeState?: unknown; source?: { chapters?: unknown; probeState?: unknown } };
-      const rawChapters = Array.isArray(candidate.chapters) ? candidate.chapters : Array.isArray(candidate.source?.chapters) ? candidate.source.chapters : [];
+      const candidate = await getCinemaCatalogItem(entry.id);
+      const rawChapters = candidate.chapters;
       const chapters = rawChapters.filter((chapter): chapter is MediaChapter => Boolean(chapter && typeof chapter === "object" && Number.isFinite((chapter as MediaChapter).startSeconds)));
-      catalogState.set(entry.id, { chapters, probeState: String(candidate.probeState ?? candidate.source?.probeState ?? (chapters.length ? "Ready" : "Pending")) });
+      catalogState.set(entry.id, { chapters, probeState: String(candidate.probeState ?? (chapters.length ? "Ready" : "Pending")) });
       if (selected?.id === entry.id && view === "title-detail") render();
     } catch {
       catalogState.set(entry.id, { chapters: [], probeState: "Local fallback" });
