@@ -57,7 +57,7 @@ export const createJobsRepository = ({ db, migrate = false, now = () => Date.now
     db.exec("BEGIN IMMEDIATE");
     try {
       const row = db.prepare(`SELECT id FROM background_jobs
-        WHERE state = 'queued' AND available_at <= ? ORDER BY available_at, created_at, id LIMIT 1`).get(claimedAt);
+        WHERE state = 'queued' AND available_at <= ? ORDER BY available_at, created_at, rowid LIMIT 1`).get(claimedAt);
       if (!row) {
         db.exec("COMMIT");
         return null;

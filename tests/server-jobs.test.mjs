@@ -127,6 +127,15 @@ test("startup recovery requeues interrupted attempts, fails exhausted jobs, and 
   assert.equal(repository.get(cancelled.id).state, "cancelled");
 });
 
+test("jobs with identical timestamps are claimed in enqueue order", (t) => {
+  const { db, repository } = fixture({ now: () => Date.parse("2026-07-11T00:00:00.000Z") });
+  t.after(() => db.close());
+  const first = repository.enqueue({ type: "probe" }).job;
+  const second = repository.enqueue({ type: "probe" }).job;
+  assert.equal(repository.claimNext().id, first.id);
+  assert.equal(repository.claimNext().id, second.id);
+});
+
 test("media orchestration contracts inject domain operations and can fan out idempotently", async (t) => {
   const { db, repository } = fixture();
   t.after(() => db.close());
