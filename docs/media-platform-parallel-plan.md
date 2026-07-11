@@ -305,6 +305,9 @@ with a broad `src/main.ts` refactor.
 
 Start only after catalog records contain trustworthy technical stream data.
 
+Wave 2 is complete. The shared Wave 3 request/response contract is defined in
+`src/shared/playbackPlanTypes.ts` and `docs/playback-planning.md`.
+
 ### Playback planner
 
 Implement in this order:
