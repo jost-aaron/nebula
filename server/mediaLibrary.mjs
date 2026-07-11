@@ -23,8 +23,10 @@ export const writeMetadata = async (metadataPath, metadata) => {
 export const metadataForEntry = (metadata, contentPath, fallbackTitle) => ({
   album: "",
   artist: "",
+  backdropUrl: "",
   cast: "",
   collection: "",
+  episode: null,
   genres: [],
   posterUrl: "",
   rating: "",
@@ -33,6 +35,9 @@ export const metadataForEntry = (metadata, contentPath, fallbackTitle) => ({
   studio: "",
   summary: "",
   tagline: "",
+  tmdbId: null,
+  tmdbImportedAt: "",
+  tmdbMediaType: "",
   title: fallbackTitle,
   watchlisted: false,
   ...metadata[contentPath]
@@ -88,9 +93,11 @@ export const scanMediaLibrary = async (storage, metadata, { mediaKind }, folder 
     entries.push({
       album: mediaMetadata.album || mediaMetadata.collection,
       artist: mediaMetadata.artist || mediaMetadata.studio,
+      backdropUrl: mediaMetadata.backdropUrl,
       category: isVideo ? videoCategory(contentPath) : "music",
       cast: mediaMetadata.cast,
       collection: mediaMetadata.collection,
+      episode: mediaMetadata.episode && typeof mediaMetadata.episode === "object" ? mediaMetadata.episode : null,
       folder: folderPath,
       genres: Array.isArray(mediaMetadata.genres) ? mediaMetadata.genres : [],
       mediaKind: isAudio ? "audio" : "video",
@@ -107,6 +114,9 @@ export const scanMediaLibrary = async (storage, metadata, { mediaKind }, folder 
       summary: mediaMetadata.summary,
       tagline: mediaMetadata.tagline,
       title: mediaMetadata.title || fallbackTitle,
+      tmdbId: mediaMetadata.tmdbId,
+      tmdbImportedAt: mediaMetadata.tmdbImportedAt,
+      tmdbMediaType: mediaMetadata.tmdbMediaType,
       watchlisted: Boolean(mediaMetadata.watchlisted)
     });
   }

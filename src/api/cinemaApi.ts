@@ -8,6 +8,7 @@ import type {
   CinemaWatchlistUpdateRequest,
   CinemaWatchlistUpdateResponse
 } from "../shared/cinemaTypes";
+import type { CinemaTmdbSearchResponse, CinemaTmdbStatusResponse } from "../shared/cinemaTmdbTypes";
 
 export const listCinemaLibrary = () => apiJson<CinemaLibraryResponse>("/api/cinema/library").then((library) => ({
   entries: library.entries.map((entry) => ({ ...entry, streamUrl: apiUrl(entry.streamUrl) }))
@@ -32,4 +33,21 @@ export const updateCinemaWatchlist = (body: CinemaWatchlistUpdateRequest) =>
     body: JSON.stringify(body),
     headers: { "content-type": "application/json" },
     method: "PATCH"
+  });
+
+export const getCinemaTmdbStatus = () => apiJson<CinemaTmdbStatusResponse>("/api/cinema/tmdb/status");
+
+export const searchCinemaTmdb = (body: { category: "movies" | "tv"; path: string; query: string; year?: string }) =>
+  apiJson<CinemaTmdbSearchResponse>("/api/cinema/tmdb/search", {
+    body: JSON.stringify(body), headers: { "content-type": "application/json" }, method: "POST"
+  });
+
+export const applyCinemaTmdbMatch = (body: { episodeNumber?: number | null; mediaType: "movie" | "tv"; path: string; seasonNumber?: number | null; tmdbId: number }) =>
+  apiJson<CinemaMetadataUpdateResponse>("/api/cinema/tmdb/apply", {
+    body: JSON.stringify(body), headers: { "content-type": "application/json" }, method: "POST"
+  });
+
+export const refreshCinemaTmdbMetadata = (path: string) =>
+  apiJson<CinemaMetadataUpdateResponse>("/api/cinema/tmdb/refresh", {
+    body: JSON.stringify({ path }), headers: { "content-type": "application/json" }, method: "POST"
   });

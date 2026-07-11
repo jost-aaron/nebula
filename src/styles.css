@@ -6081,6 +6081,7 @@ h1 {
 .account-menu > div > span { display: grid; place-items: center; aspect-ratio: 1; border-radius: 7px; color: #061019; background: linear-gradient(145deg, #62d5e6, #a7f1e7); font-size: 0.72rem; font-weight: 900; }
 .account-identity-button small { color: #9aa8b7; text-transform: capitalize; }
 .account-menu { position: absolute; z-index: 20; top: calc(100% + 10px); right: 0; width: min(300px, calc(100vw - 28px)); display: grid; gap: 5px; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 10px; padding: 9px; background: rgba(7, 10, 17, 0.96); box-shadow: 0 22px 70px rgba(0, 0, 0, 0.5); backdrop-filter: blur(24px); }
+
 .account-menu[hidden] { display: none; }
 .account-menu > div { display: grid; grid-template-columns: 42px 1fr; align-items: center; gap: 10px; padding: 8px; }
 .account-menu p { display: grid; gap: 2px; margin: 0; }
@@ -6102,6 +6103,12 @@ h1 {
 .account-detail { margin: 0; color: #91a0af; text-transform: capitalize; }
 .account-sessions-panel { grid-column: 1 / -1; }
 .account-members-panel { grid-column: 1 / -1; display: grid; gap: 11px; border-radius: 8px; padding: 16px; background: rgba(0, 0, 0, 0.18); }
+.account-provider-panel { grid-column: 1 / -1; display: grid; gap: 11px; border-radius: 8px; padding: 16px; background: rgba(0, 0, 0, 0.18); }
+.account-provider-panel h4, .account-provider-panel p { margin: 0; }
+.account-provider-panel > p { color: #9aa8b7; }
+.account-provider-panel form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; }
+.account-provider-panel form > div { display: flex; gap: 8px; }
+.account-provider-panel form > span { grid-column: 1 / -1; min-height: 18px; color: #9dcdd5; font-size: .86rem; }
 .account-members-panel h4 { margin: 0; }
 .account-members-panel form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; align-items: end; gap: 10px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 14px; }
 .account-members-panel form > span { grid-column: 1 / -1; color: #9dcdd5; }
@@ -6124,5 +6131,7 @@ h1 {
   .account-menu { position: fixed; top: calc(74px + var(--safe-area-top)); right: calc(14px + var(--safe-area-right)); }
   .account-settings-grid { grid-template-columns: 1fr; }
   .account-members-panel form { grid-template-columns: 1fr; }
+  .account-provider-panel form { grid-template-columns: 1fr; }
+  .account-provider-panel form > div { flex-wrap: wrap; }
   .account-signout-panel { grid-template-columns: 1fr; }
 }

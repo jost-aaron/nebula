@@ -1,11 +1,15 @@
+import type { CinemaEpisodeMetadata } from "./cinemaTmdbTypes";
+
 export type CinemaCategory = "movies" | "tv";
 
 export type CinemaMediaKind = "video";
 
 export interface CinemaEntry {
+  backdropUrl: string;
   cast: string;
   category: CinemaCategory;
   collection: string;
+  episode: CinemaEpisodeMetadata | null;
   folder: string;
   genres: string[];
   mediaKind: CinemaMediaKind;
@@ -22,6 +26,9 @@ export interface CinemaEntry {
   summary: string;
   tagline: string;
   title: string;
+  tmdbId: number | null;
+  tmdbImportedAt: string;
+  tmdbMediaType: "movie" | "tv" | "";
   watchlisted: boolean;
 }
 

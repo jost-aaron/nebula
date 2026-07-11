@@ -1,6 +1,7 @@
 import { createElement, icons } from "lucide";
 import { getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken } from "../api/http";
 import { identifyCinemaFrames, listCinemaLibrary, updateCinemaMetadata, updateCinemaWatchlist } from "../api/cinemaApi";
+import { createCinemaTmdbController, renderTmdbPanel } from "./tmdbUi";
 import type {
   CinemaCategory,
   CinemaEntry,
@@ -9,6 +10,7 @@ import type {
   CinemaMetadataUpdateRequest,
   CinemaWatchlistUpdateRequest
 } from "../shared/cinemaTypes";
+import type { CinemaTmdbCandidate, CinemaTmdbStatusResponse } from "../shared/cinemaTmdbTypes";
 
 type CinemaView = "library" | "watchlist" | "title-detail" | "player" | "metadata-editor" | "servers" | "identify";
 
@@ -71,7 +73,11 @@ const categoryLabel = (category: CinemaCategory) =>
 const searchUrl = (query: string) => `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 
 const metadataLine = (entry: CinemaEntry) =>
-  [entry.releaseYear, entry.rating, entry.genres.slice(0, 3).join(", "), estimateRuntime(entry)].filter(Boolean).join(" / ");
+  [entry.episode ? `S${entry.episode.seasonNumber} E${entry.episode.episodeNumber}` : "", entry.releaseYear, entry.rating, entry.genres.slice(0, 3).join(", "), estimateRuntime(entry)].filter(Boolean).join(" / ");
+
+const displayTitle = (entry: CinemaEntry) => entry.episode
+  ? `${entry.episode.seriesTitle} · S${String(entry.episode.seasonNumber).padStart(2, "0")}E${String(entry.episode.episodeNumber).padStart(2, "0")} · ${entry.title}`
+  : entry.title;
 
 const currentServerInfo = (): CinemaServerInfo => ({
   address: getEffectiveApiBaseUrl() || "No server URL",
@@ -89,6 +95,9 @@ const renderPosterFallback = (entry: CinemaEntry) => `
 
 const posterStyle = (entry: CinemaEntry) =>
   entry.posterUrl ? ` style="background-image: url('${escapeHtml(entry.posterUrl)}')"` : "";
+
+const backdropStyle = (entry: CinemaEntry) =>
+  entry.backdropUrl || entry.posterUrl ? ` style="background-image: url('${escapeHtml(entry.backdropUrl || entry.posterUrl)}')"` : "";
 
 const renderCinemaIcon = (iconName: keyof typeof icons, className = "cinema-ui-icon") => {
   const node = createElement(icons[iconName] ?? icons.Circle);
@@ -202,7 +211,7 @@ const renderCinemaCards = (entries: CinemaEntry[], category: CinemaCategory) => 
             <span class="cinema-card-play">${renderCinemaIcon("Play", "cinema-play-icon")}</span>
           </span>
           <span class="cinema-card-copy">
-            <strong>${escapeHtml(entry.title)}</strong>
+            <strong>${escapeHtml(displayTitle(entry))}</strong>
             <small>${escapeHtml([entry.releaseYear, entry.genres[0] || entry.folder || "Local media"].filter(Boolean).join(" · "))}</small>
           </span>
         </button>
@@ -366,12 +375,12 @@ const renderWatchlistView = (entries: CinemaEntry[], query: string) => {
 const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[]) => `
   <main class="cinema-title-detail" data-cinema-view="title-detail">
     <section class="cinema-player-layout">
-      <div class="cinema-player-frame" data-cinema-backdrop="${escapeHtml(entry.path)}"${posterStyle(entry)}>
+      <div class="cinema-player-frame" data-cinema-backdrop="${escapeHtml(entry.path)}"${backdropStyle(entry)}>
         ${renderPlaybackControls(entry, currentServerInfo())}
       </div>
       <aside class="cinema-title-panel">
         <button class="cinema-back-command" type="button" data-cinema-action="library">${renderCinemaIcon("ArrowLeft")} Back to Library</button>
-        <p class="eyebrow">${escapeHtml(categoryLabel(entry.category))}</p>
+        <p class="eyebrow">${escapeHtml(entry.episode?.seriesTitle || categoryLabel(entry.category))}</p>
         <h2>${escapeHtml(entry.title)}</h2>
         ${entry.tagline ? `<p class="cinema-tagline">${escapeHtml(entry.tagline)}</p>` : ""}
         <p class="cinema-title-meta">${escapeHtml(metadataLine(entry) || `${entry.folder || "Content"} / ${formatSize(entry.size)}`)}</p>
@@ -382,15 +391,19 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[]) => `
           <button type="button" data-cinema-action="more">${renderCinemaIcon("MoreHorizontal")} More</button>
         </div>
         <button class="cinema-edit-command" type="button" data-cinema-action="edit">${renderCinemaIcon("Pencil")} Edit Details</button>
+        <button class="cinema-edit-command" type="button" data-cinema-action="tmdb">${renderCinemaIcon("Database")} Match with TMDB</button>
+        ${entry.tmdbId ? `<button class="cinema-edit-command" type="button" data-cinema-action="tmdb-refresh">${renderCinemaIcon("RefreshCw")} Refresh TMDB Metadata</button>` : ""}
         ${renderServerCard(currentServerInfo(), true)}
         ${renderPlaybackSettings(entry)}
         <div class="cinema-meta-list">
           <span>Type <strong>Video</strong></span>
+          ${entry.episode ? `<span>Episode <strong>S${entry.episode.seasonNumber} E${entry.episode.episodeNumber}</strong></span><span>Air date <strong>${escapeHtml(entry.episode.airDate || "Not set")}</strong></span>` : ""}
           <span>Year <strong>${escapeHtml(entry.releaseYear || "Not set")}</strong></span>
           <span>Rating <strong>${escapeHtml(entry.rating || "Not set")}</strong></span>
           <span>Genres <strong>${escapeHtml(entry.genres.join(", ") || "Not set")}</strong></span>
           <span>Studio <strong>${escapeHtml(entry.studio || "Not set")}</strong></span>
           <span>File <strong>${escapeHtml(entry.name)}</strong></span>
+          <span>Metadata <strong>${entry.tmdbId ? `TMDB ${escapeHtml(entry.tmdbMediaType)} #${entry.tmdbId}` : "Local"}</strong></span>
         </div>
       </aside>
     </section>
@@ -518,6 +531,9 @@ const renderCinemaSheet = (title: string, eyebrow: string, body: string) => `
   </section>
 `;
 
+const renderTmdbSheet = (entry: CinemaEntry, status: CinemaTmdbStatusResponse | null, candidates: CinemaTmdbCandidate[] = [], message = "") =>
+  renderCinemaSheet("Match with TMDB", entry.episode?.seriesTitle || entry.title, renderTmdbPanel(entry, status, candidates, message));
+
 const renderMoreSheet = (entry: CinemaEntry) =>
   renderCinemaSheet(
     "Title Options",
@@ -528,6 +544,7 @@ const renderMoreSheet = (entry: CinemaEntry) =>
         <button type="button" data-cinema-action="view-chapters">${renderCinemaIcon("ListVideo")} View Chapters</button>
         <button type="button" data-cinema-action="view-queue">${renderCinemaIcon("ListOrdered")} View Queue</button>
         <button type="button" data-cinema-action="identify-nav">${renderCinemaIcon("ScanSearch")} Identify Title</button>
+        <button type="button" data-cinema-action="tmdb">${renderCinemaIcon("Database")} Match with TMDB</button>
       </div>
       <div class="cinema-expanded-meta">
         <span>File <strong>${escapeHtml(entry.name)}</strong></span>
@@ -737,8 +754,20 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
   const hydratePoster = async (entry: CinemaEntry, poster: HTMLElement) => {
     const explicitTime = Number(poster.dataset.cinemaFrameTime);
 
-    if ((entry.posterUrl && !Number.isFinite(explicitTime)) || entry.mediaKind !== "video") {
+    if (entry.mediaKind !== "video") {
       return;
+    }
+
+    const remoteUrl = poster.dataset.cinemaBackdrop ? entry.backdropUrl || entry.posterUrl : entry.posterUrl;
+    if (remoteUrl && !Number.isFinite(explicitTime)) {
+      const loaded = await new Promise<boolean>((resolve) => {
+        const image = new Image();
+        image.onload = () => resolve(true);
+        image.onerror = () => resolve(false);
+        image.src = remoteUrl;
+      });
+      if (loaded) return;
+      poster.style.backgroundImage = "";
     }
 
     const isWideThumbnail = Boolean(poster.dataset.cinemaBackdrop);
@@ -1009,6 +1038,12 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
     hydratePosters();
   };
 
+  const updateEntryFromMetadata = (entry: CinemaEntry, metadata: Record<string, unknown>): CinemaEntry => ({
+    ...entry,
+    ...metadata,
+    genres: Array.isArray(metadata.genres) ? metadata.genres.filter((genre): genre is string => typeof genre === "string") : entry.genres
+  } as CinemaEntry);
+
   const closeSheet = () => {
     editorHost.hidden = true;
     editorHost.innerHTML = "";
@@ -1019,6 +1054,20 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
     closeSheet();
     render();
   };
+
+  const tmdbController = createCinemaTmdbController({
+    closeSheet,
+    getSelected: () => selected,
+    openSheet,
+    render,
+    renderSheet: renderTmdbSheet,
+    updateEntry: (entry, metadata) => {
+      const updated = updateEntryFromMetadata(entry, metadata);
+      entries = entries.map((candidate) => candidate.path === updated.path ? updated : candidate);
+      selected = updated;
+      return updated;
+    }
+  });
 
   const saveMetadata = async (form: HTMLFormElement) => {
     if (!selected) {
@@ -1199,6 +1248,20 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
       openEditor();
     }
 
+    if (action === "tmdb" && active) {
+      selected = active;
+      void tmdbController.open();
+    }
+
+    if (action === "tmdb-apply" && selected) {
+      void tmdbController.apply(actionButton).then((updated) => { if (updated) render(); });
+    }
+
+    if (action === "tmdb-refresh" && active) {
+      selected = active;
+      void tmdbController.refresh(active, actionButton).then((updated) => { if (updated) render(); });
+    }
+
     if (action === "more" && active) {
       selected = active;
       openSheet(renderMoreSheet(active));
@@ -1264,6 +1327,14 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
   });
 
   editorHost.addEventListener("submit", (event) => {
+    const tmdbForm = (event.target as HTMLElement).closest<HTMLFormElement>("[data-cinema-tmdb-search]");
+
+    if (tmdbForm && selected) {
+      event.preventDefault();
+      void tmdbController.submitSearch(tmdbForm);
+      return;
+    }
+
     const form = (event.target as HTMLElement).closest<HTMLFormElement>("[data-cinema-editor-form]");
 
     if (!form) {

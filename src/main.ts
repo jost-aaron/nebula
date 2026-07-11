@@ -14,6 +14,7 @@ import { bindStudioView, renderStudioView } from "./studio/renderStudioView";
 import { startRenderer } from "./webgpuRenderer";
 import type { AccountSessionState } from "./shared/accountTypes";
 import "./styles.css";
+import "./cinema/tmdb.css";
 
 const root = document.querySelector<HTMLDivElement>("#app");
 const canvas = document.querySelector<HTMLCanvasElement>("#gpu-scene");

@@ -5,6 +5,7 @@ import { json, readBody } from "./http.mjs";
 import { defaultTitle, metadataForEntry, readMetadata, scanMediaLibrary, writeMetadata } from "./mediaLibrary.mjs";
 import { isVideoFile, mimeType } from "./storage.mjs";
 import { parseByteRange } from "./ranges.mjs";
+import { createCinemaTmdbRoutes } from "./cinemaTmdb.mjs";
 
 const candidateWords = (value = "") =>
   value
@@ -73,7 +74,8 @@ const googleVisionWebDetection = async (frames) => {
   };
 };
 
-export const createCinemaRoutes = (storage, accountStore) => {
+export const createCinemaRoutes = (storage, accountStore, options = {}) => {
+  const handleTmdb = createCinemaTmdbRoutes(storage, accountStore, options);
   const listCinemaLibrary = async (request, response) => {
     const metadata = await readMetadata(storage.cinemaMetadataPath);
     const entries = await scanMediaLibrary(storage, metadata, { mediaKind: "video" });
@@ -173,6 +175,7 @@ export const createCinemaRoutes = (storage, accountStore) => {
     await writeMetadata(storage.cinemaMetadataPath, metadata);
     json(response, 200, { metadata: metadata[contentPath], ok: true, path: contentPath, watchlisted });
   };
+
 
   const identifyCinemaFrames = async (request, response) => {
     const body = await readBody(request);
@@ -279,6 +282,8 @@ export const createCinemaRoutes = (storage, accountStore) => {
       await identifyCinemaFrames(request, response);
       return true;
     }
+
+    if (await handleTmdb(request, response, url)) return true;
 
     if (request.method === "PATCH" && url.pathname === "/api/cinema/metadata") {
       await updateCinemaMetadata(request, response);
