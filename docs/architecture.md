@@ -164,6 +164,18 @@ flowchart TD
 
 - Provides shared local media scan and metadata helpers for Cinema and Studio.
 
+`src/shared/catalogTypes.ts`, `src/shared/playbackTypes.ts`, and
+`server/mediaContracts.mjs`
+
+- Freeze the provider-neutral Wave 0 media identities and structural service
+  boundaries used by parallel Catalog and Playback work.
+- Keep stable item/source UUIDs canonical while current path-based Cinema and
+  Studio responses remain available through additive compatibility fields.
+- Define interfaces only. Catalog tables, playback persistence, probing, and
+  background jobs remain separate implementation tracks.
+- See `docs/media-contracts.md` for identity, compatibility, migration, and
+  shared-file ownership rules.
+
 `server/files.mjs`
 
 - Owns local file browsing, creation, upload, resumable upload, rename, and

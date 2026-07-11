@@ -28,6 +28,10 @@ The current app includes:
 - Local-first accounts with first-owner setup, owner/member roles, profile and
   password settings, revocable sessions/devices, member administration,
   centralized API authorization, and personal Cinema watchlists.
+- Optional owner-configured TMDB movie, series, and episode matching with
+  explicit candidate selection and local-metadata fallback.
+- Wave 0 provider-neutral catalog and playback contracts. Runtime catalog and
+  playback persistence are the next parallel implementation tracks.
 
 The latest user direction is to keep building toward a modern console/Plex-like
 media dashboard.
@@ -104,6 +108,19 @@ Cinema:
   hidden until the user selects a title.
 - Title detail includes preview, Play, watchlist toggle, metadata, server rows,
   chapters, next-up, and modal sheets for More, chapters, and queue.
+- Owners can configure a server-side TMDB token in Settings / Account. TMDB
+  failures or missing configuration do not block local scanning or playback.
+
+Media platform contracts:
+
+- Read `docs/media-contracts.md` and `docs/media-platform-parallel-plan.md`
+  before starting Catalog or Playback work.
+- Stable UUID item/source IDs are canonical; content-relative paths remain
+  server-controlled compatibility attributes.
+- During Wave 1, the main integration agent exclusively owns shared routing,
+  migration registration, shared contracts, and compatibility response files.
+- Catalog workers own `server/catalog/`; Playback workers own
+  `server/playback/`. Workers report shared-file requirements in handoffs.
 
 Studio:
 
@@ -140,6 +157,8 @@ Read these in order:
 8. `docs/mobile-clients.md`
 9. `docs/testing.md`
 10. `docs/development.md`
+11. `docs/media-contracts.md`
+12. `docs/media-platform-parallel-plan.md`
 
 ## Recent Verification
 
@@ -164,7 +183,8 @@ At handoff time:
 - Command-line simulator testing currently screenshots the launched dashboard,
   but tap-through Cinema/Files safe-area checks still need a manual simulator
   pass.
-- Cinema metadata is local and heuristic, not scraped.
+- TMDB matching is explicit and optional; automatic enrichment and artwork
+  caching are not yet orchestrated in background jobs.
 - Cinema thumbnails are generated client-side, not persisted.
 - Watch progress is not persisted.
 - No password reset, MFA/passkeys, account deletion/role changes, second owner,

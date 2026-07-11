@@ -1,10 +1,11 @@
 import type { CinemaEpisodeMetadata } from "./cinemaTmdbTypes";
+import type { CatalogCompatibilityIdentity } from "./catalogTypes";
 
 export type CinemaCategory = "movies" | "tv";
 
 export type CinemaMediaKind = "video";
 
-export interface CinemaEntry {
+export interface CinemaEntry extends CatalogCompatibilityIdentity {
   backdropUrl: string;
   cast: string;
   category: CinemaCategory;

@@ -1,4 +1,6 @@
-export interface MusicEntry {
+import type { CatalogCompatibilityIdentity } from "./catalogTypes";
+
+export interface MusicEntry extends CatalogCompatibilityIdentity {
   album: string;
   artist: string;
   collection: string;
