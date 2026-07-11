@@ -22,12 +22,20 @@ CSRF, owner/member capabilities, legacy service tokens, protected JSON and
 media ranges, Files streaming/resumable uploads, per-user watchlists, legacy
 watchlist migration, and media-ticket revocation.
 
+Media-platform coverage includes centrally composed migrations, stable catalog
+UUIDs, duplicate/change/rename/missing/restore reconciliation, legacy metadata
+import, shared episode provider IDs, playback lifecycle validation, idempotent
+events, progress coalescing, Continue Watching, cross-user isolation, and
+catalog validation of playback item/source pairs.
+
 ## API Smoke Checks
 
 ```sh
 curl -s http://127.0.0.1:5173/api/files
 curl -s http://127.0.0.1:5173/api/cinema/library
 curl -s http://127.0.0.1:5173/api/music/library
+curl -s http://127.0.0.1:5173/api/catalog/items
+curl -s http://127.0.0.1:5173/api/playback/continue-watching
 curl -s -I -H "Range: bytes=0-1023" "http://127.0.0.1:5173/api/cinema/media?path=South%20Park%20The%20Streaming%20Wars.mp4"
 ```
 

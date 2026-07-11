@@ -7,6 +7,11 @@ import { createAuthGuard } from "./auth.mjs";
 import { applyApiCorsHeaders, handleApiPreflight } from "./cors.mjs";
 import { createStorage } from "./storage.mjs";
 import { createAccountStore } from "./accountStore.mjs";
+import { catalogMigration, bootstrapSharedContentRoot, createCatalogRepository, importLegacyCinemaMetadata, scanLocalRoot } from "./catalog/index.mjs";
+import { openNebulaDatabase, applyDomainMigrations } from "./database.mjs";
+import { createPlaybackRepository } from "./playback/repository.mjs";
+import { createPlaybackService } from "./playback/service.mjs";
+import { PLAYBACK_MIGRATION } from "./playback/schema.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const contentRoot = path.join(root, "content");
@@ -15,9 +20,30 @@ const port = Number(process.env.PORT ?? 5173);
 const host = process.env.HOST ?? "0.0.0.0";
 
 const storage = await createStorage({ contentRoot, dataRoot });
-const accountStore = await createAccountStore({ databasePath: storage.accountDatabasePath });
+const database = await openNebulaDatabase(storage.accountDatabasePath);
+const accountStore = await createAccountStore({ database });
+applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION]);
+const catalogRepository = createCatalogRepository(database);
+const { root: catalogRoot } = bootstrapSharedContentRoot(catalogRepository, { contentRoot: storage.contentRoot });
+const scanCatalog = async () => {
+  const scan = await scanLocalRoot({ absoluteRoot: storage.contentRoot, repository: catalogRepository, rootId: catalogRoot.id });
+  await importLegacyCinemaMetadata({ metadataPath: storage.cinemaMetadataPath, repository: catalogRepository, rootId: catalogRoot.id });
+  return scan;
+};
+const playbackRepository = createPlaybackRepository({ db: database });
+const playbackService = createPlaybackService({
+  identityValidator: ({ itemId, sourceId }) => {
+    const source = catalogRepository.getSource(sourceId);
+    return source?.itemId === itemId && source.availability === "available";
+  },
+  repository: playbackRepository
+});
 const authGuard = createAuthGuard(accountStore);
-const handleApi = createApiHandler(storage, accountStore, authGuard);
+const handleApi = createApiHandler(storage, accountStore, authGuard, {
+  catalog: { repository: catalogRepository, scan: scanCatalog },
+  playback: playbackService
+});
+scanCatalog().catch((error) => console.error("Initial catalog scan failed:", error));
 
 const vite = await createViteServer({
   server: {

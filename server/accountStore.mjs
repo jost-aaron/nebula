@@ -91,7 +91,7 @@ export const verifyPassword = async (password, credential) => {
   }
 };
 
-const migrate = (db) => {
+export const migrateAccountSchema = (db) => {
   db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;");
   const version = db.prepare("PRAGMA user_version").get().user_version;
   if (version > 2) throw new Error(`Account database schema ${version} is newer than this server supports.`);
@@ -168,10 +168,11 @@ const migrate = (db) => {
   `);
 };
 
-export const createAccountStore = async ({ databasePath, now = () => Date.now() }) => {
-  await mkdir(path.dirname(databasePath), { recursive: true });
-  const db = new DatabaseSync(databasePath);
-  migrate(db);
+export const createAccountStore = async ({ database, databasePath, now = () => Date.now() }) => {
+  const ownsDatabase = !database;
+  if (ownsDatabase) await mkdir(path.dirname(databasePath), { recursive: true });
+  const db = database ?? new DatabaseSync(databasePath);
+  migrateAccountSchema(db);
   const dummyCredential = await hashPassword("nebula-dummy-password-only");
 
   const createSessionRecord = (userId, clientLabel) => {
@@ -410,7 +411,7 @@ export const createAccountStore = async ({ databasePath, now = () => Date.now() 
     authenticateMediaTicket,
     authenticateSession,
     changePassword,
-    close: () => db.close(),
+    close: () => { if (ownsDatabase) db.close(); },
     countUsers: () => db.prepare("SELECT COUNT(*) AS count FROM users").get().count,
     createMember,
     deleteServerSetting,

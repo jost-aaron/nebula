@@ -176,6 +176,15 @@ flowchart TD
 - See `docs/media-contracts.md` for identity, compatibility, migration, and
   shared-file ownership rules.
 
+`server/database.mjs`, `server/catalog/`, and `server/playback/`
+
+- Share the existing `/app/data/nebula.sqlite` connection while keeping domain
+  migrations centrally ordered and independently testable.
+- Catalog indexes the shared content root into stable item/source UUIDs and
+  exposes additive catalog APIs without replacing current path-based clients.
+- Playback records idempotent per-user lifecycle events and exposes Continue
+  Watching independently of Cinema UI integration.
+
 `server/files.mjs`
 
 - Owns local file browsing, creation, upload, resumable upload, rename, and

@@ -3,10 +3,14 @@ import { createCinemaRoutes } from "./cinema.mjs";
 import { createFilesRoutes } from "./files.mjs";
 import { createMusicRoutes } from "./music.mjs";
 import { createAccountRoutes } from "./accounts.mjs";
+import { createCatalogRoutes } from "./catalog/routes.mjs";
+import { createPlaybackRoutes } from "./playback/routes.mjs";
 
 export const createApiHandler = (storage, accountStore, authGuard, options = {}) => {
   const routeHandlers = [
     createAccountRoutes(accountStore, authGuard),
+    ...(options.catalog ? [createCatalogRoutes(options.catalog)] : []),
+    ...(options.playback ? [createPlaybackRoutes(options.playback)] : []),
     createCinemaRoutes(storage, accountStore, options.cinema),
     createMusicRoutes(storage, accountStore),
     createFilesRoutes(storage)
@@ -21,7 +25,7 @@ export const createApiHandler = (storage, accountStore, authGuard, options = {})
           name: "Nebula Server",
           status: "online",
           serverTime: new Date().toISOString(),
-          capabilities: ["cinema-library", "cinema-identify", "files", "metadata-editing", "music-library"]
+          capabilities: ["catalog", "cinema-library", "cinema-identify", "files", "metadata-editing", "music-library", "playback-state"]
         });
         return true;
       }

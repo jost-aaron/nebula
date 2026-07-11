@@ -160,3 +160,15 @@ test("compatibility resolver validates paths before translating to canonical IDs
   }, principal()), { status: 404 });
   assert.deepEqual(calls, ["Movies/valid.mp4", "../secret.mp4"]);
 });
+
+test("direct stable IDs can be validated against the catalog boundary", async (t) => {
+  const allowed = ids();
+  const { db, repository } = fixture();
+  t.after(() => db.close());
+  const service = createPlaybackService({
+    identityValidator: ({ itemId, sourceId }) => itemId === allowed.itemId && sourceId === allowed.sourceId,
+    repository
+  });
+  await start(service, allowed);
+  await assert.rejects(() => start(service, ids()), { status: 404 });
+});

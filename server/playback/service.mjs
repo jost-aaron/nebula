@@ -18,6 +18,7 @@ const requireUser = (principal) => {
 export const createPlaybackService = ({
   compatibilityResolver = null,
   completionThreshold = 0.9,
+  identityValidator = null,
   now = () => Date.now(),
   progressIntervalMs = 10_000,
   progressPositionDelta = 10,
@@ -27,6 +28,9 @@ export const createPlaybackService = ({
   requireMediaContract("playbackRepository", repository, PLAYBACK_REPOSITORY_METHODS);
   if (compatibilityResolver && typeof compatibilityResolver.resolveValidatedContentPath !== "function") {
     throw new TypeError("compatibilityResolver.resolveValidatedContentPath must be a function.");
+  }
+  if (identityValidator && typeof identityValidator !== "function") {
+    throw new TypeError("identityValidator must be a function.");
   }
 
   const resolveIdentity = async (request, principal) => {
@@ -44,6 +48,9 @@ export const createPlaybackService = ({
     if (!request || !EVENTS.has(request.event)) throw badRequest("event is invalid.");
     const eventId = requireUuid(request.eventId, "eventId");
     const identity = await resolveIdentity(request, principal);
+    if (identityValidator && !(await identityValidator(identity, principal))) {
+      throw Object.assign(new Error("Media item was not found."), { status: 404 });
+    }
     const positionSeconds = Number(request.positionSeconds);
     const durationSeconds = request.durationSeconds == null ? null : Number(request.durationSeconds);
     if (!Number.isFinite(positionSeconds) || positionSeconds < 0) throw badRequest("positionSeconds must be a finite non-negative number.");

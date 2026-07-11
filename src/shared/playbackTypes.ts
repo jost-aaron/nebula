@@ -27,6 +27,8 @@ export interface PlaybackSession {
 export interface PlaybackEventRequest {
   durationSeconds: number | null;
   event: PlaybackEventKind;
+  /** Client-generated retry/idempotency key. */
+  eventId: CatalogId;
   itemId: CatalogId;
   positionSeconds: number;
   sessionId: CatalogId | null;

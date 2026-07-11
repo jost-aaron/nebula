@@ -93,6 +93,10 @@ The app has nine main layers:
 10. `src/studio/` owns the local music library and native audio playback UI.
 11. `src/account/` and `server/accountStore.mjs` own local accounts, sessions,
     authorization, personal watchlists, and the account gate.
+12. `server/catalog/` owns stable media identities, indexed sources, metadata
+    records, scan reconciliation, and compatibility projections.
+13. `server/playback/` owns per-user playback state, sessions, idempotent events,
+    and Continue Watching queries.
 
 The UI is currently framework-free TypeScript. DOM is rendered with template
 strings and event listeners. If you introduce a framework later, document why and
@@ -145,6 +149,9 @@ Mouse behavior:
 - `Settings` and `Search` are ready shell/system apps.
 - First-run owner setup, sign-in, identity, Account Settings, member
   creation/disable, password changes, and session revocation are ready.
+- The Wave 1 media backend indexes the shared content root into stable catalog
+  UUIDs and persists authenticated playback progress. Cinema/Studio lifecycle
+  reporting and Continue Watching UI remain the next integration step.
 - `Arcade` and `Party` are still planned placeholders.
 
 ## Content And Media
@@ -209,6 +216,14 @@ Browser checks:
 - iOS safe-area checks should confirm `viewport-fit=cover` and
   `env(safe-area-inset-*)` padding keep content clear of the status/Dynamic
   Island and home-indicator regions.
+
+Media platform changes must also preserve:
+
+- centrally ordered domain migrations in the shared `nebula.sqlite` database;
+- stable catalog IDs across duplicate scans, safe renames, and restoration;
+- per-user playback isolation and catalog validation of item/source IDs;
+- current path-based Cinema and Studio APIs until their catalog projections are
+  explicitly migrated and browser-verified.
 
 ## Read Next
 

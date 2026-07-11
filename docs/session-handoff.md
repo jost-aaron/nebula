@@ -30,8 +30,8 @@ The current app includes:
   centralized API authorization, and personal Cinema watchlists.
 - Optional owner-configured TMDB movie, series, and episode matching with
   explicit candidate selection and local-metadata fallback.
-- Wave 0 provider-neutral catalog and playback contracts. Runtime catalog and
-  playback persistence are the next parallel implementation tracks.
+- Provider-neutral catalog and playback contracts plus the first Wave 1
+  persistent backend implementations.
 
 The latest user direction is to keep building toward a modern console/Plex-like
 media dashboard.
@@ -121,6 +121,12 @@ Media platform contracts:
   migration registration, shared contracts, and compatibility response files.
 - Catalog workers own `server/catalog/`; Playback workers own
   `server/playback/`. Workers report shared-file requirements in handoffs.
+- The server now applies centrally tracked Catalog and Playback migrations to
+  the existing account database, starts an asynchronous shared-content scan,
+  and exposes `/api/catalog/*` and `/api/playback/*` foundations.
+- Cinema and Studio still use their compatibility path APIs. Catalog-backed UI,
+  playback lifecycle reporting, and Continue Watching presentation are the next
+  integration track.
 
 Studio:
 
@@ -186,7 +192,8 @@ At handoff time:
 - TMDB matching is explicit and optional; automatic enrichment and artwork
   caching are not yet orchestrated in background jobs.
 - Cinema thumbnails are generated client-side, not persisted.
-- Watch progress is not persisted.
+- Playback progress persistence exists behind the new API, but Cinema and
+  Studio do not report playback events yet.
 - No password reset, MFA/passkeys, account deletion/role changes, second owner,
   folder-level Files ACLs, or Keychain-backed native token storage yet.
 - `src/main.ts` is growing and should eventually be split into shell modules.
