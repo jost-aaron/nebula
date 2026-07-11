@@ -14,6 +14,7 @@ import { createPlaybackService } from "./playback/service.mjs";
 import { PLAYBACK_MIGRATION } from "./playback/schema.mjs";
 import { createJobsRepository, createJobsService, createJobsWorker, createMediaJobHandlers, jobsMigration } from "./jobs/index.mjs";
 import { createProbeCatalogReader, createProbeCatalogWriter, createProbeService, probeMigration } from "./probe/index.mjs";
+import { createPlaybackPlanner } from "./playback-planner/index.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const contentRoot = path.join(root, "content");
@@ -26,6 +27,7 @@ const database = await openNebulaDatabase(storage.accountDatabasePath);
 const accountStore = await createAccountStore({ database });
 applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration]);
 const catalogRepository = createCatalogRepository(database);
+const probeReader = createProbeCatalogReader(database);
 const { root: catalogRoot } = bootstrapSharedContentRoot(catalogRepository, { contentRoot: storage.contentRoot });
 const scanCatalog = async () => {
   const scan = await scanLocalRoot({ absoluteRoot: storage.contentRoot, repository: catalogRepository, rootId: catalogRoot.id });
@@ -39,6 +41,15 @@ const playbackService = createPlaybackService({
     return source?.itemId === itemId && source.availability === "available";
   },
   repository: playbackRepository
+});
+const playbackPlanner = createPlaybackPlanner({
+  resolveMedia: ({ itemId, sourceId }, principal) => {
+    if (principal?.type !== "user") throw Object.assign(new Error("Account playback access is required."), { status: 403 });
+    const item = catalogRepository.getItem(itemId);
+    const source = catalogRepository.getSource(sourceId);
+    if (!item || !source || source.itemId !== itemId || source.availability !== "available") return null;
+    return { item, probe: probeReader.get(sourceId), source };
+  }
 });
 const probeService = createProbeService({
   catalogWriter: createProbeCatalogWriter(database),
@@ -65,9 +76,10 @@ const jobsWorker = createJobsWorker({
 });
 const authGuard = createAuthGuard(accountStore);
 const handleApi = createApiHandler(storage, accountStore, authGuard, {
-  catalog: { probeReader: createProbeCatalogReader(database), repository: catalogRepository, scan: scanCatalog },
+  catalog: { probeReader, repository: catalogRepository, scan: scanCatalog },
   jobs: jobsService,
-  playback: playbackService
+  playback: playbackService,
+  playbackPlanner
 });
 jobsWorker.start();
 jobsService.enqueue({ type: "scan", payload: { rootId: catalogRoot.id }, dedupeKey: `startup:${catalogRoot.id}` });

@@ -11,7 +11,7 @@ export const createApiHandler = (storage, accountStore, authGuard, options = {})
   const routeHandlers = [
     createAccountRoutes(accountStore, authGuard),
     ...(options.catalog ? [createCatalogRoutes(options.catalog)] : []),
-    ...(options.playback ? [createPlaybackRoutes(options.playback)] : []),
+    ...(options.playback ? [createPlaybackRoutes(options.playback, options.playbackPlanner)] : []),
     ...(options.jobs ? [createJobsRoutes(options.jobs)] : []),
     createCinemaRoutes(storage, accountStore, options.cinema),
     createMusicRoutes(storage, accountStore),

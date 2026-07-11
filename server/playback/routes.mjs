@@ -4,11 +4,16 @@ const principalFor = (request) => request.nebulaAuth?.user
   ? { type: "user", userId: request.nebulaAuth.user.id }
   : { type: "service", userId: null };
 
-export const createPlaybackRoutes = (service) => async (request, response, url) => {
+export const createPlaybackRoutes = (service, planner = null) => async (request, response, url) => {
   const principal = principalFor(request);
 
   if (request.method === "POST" && url.pathname === "/api/playback/events") {
     json(response, 200, await service.recordEvent(await readBody(request), principal));
+    return true;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/playback/plan" && planner) {
+    json(response, 200, await planner.plan(await readBody(request), principal));
     return true;
   }
 
