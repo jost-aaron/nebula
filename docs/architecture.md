@@ -185,6 +185,14 @@ flowchart TD
 - Playback records idempotent per-user lifecycle events and exposes Continue
   Watching independently of Cinema UI integration.
 
+`server/jobs/` and `server/probe/`
+
+- Persist bounded background work with retries, cancellation, deduplication,
+  startup recovery, and owner-managed operational APIs.
+- Run FFprobe with fixed arguments, path containment, time/output limits, and
+  catalog-backed format, stream, HDR, subtitle, and chapter persistence.
+- Startup scan jobs fan out revision-keyed probe jobs without blocking Cinema.
+
 `server/files.mjs`
 
 - Owns local file browsing, creation, upload, resumable upload, rename, and

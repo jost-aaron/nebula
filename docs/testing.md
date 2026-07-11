@@ -27,6 +27,10 @@ UUIDs, duplicate/change/rename/missing/restore reconciliation, legacy metadata
 import, shared episode provider IDs, playback lifecycle validation, idempotent
 events, progress coalescing, Continue Watching, cross-user isolation, and
 catalog validation of playback item/source pairs.
+Wave 2 coverage also includes persistent job recovery and FIFO claiming,
+container FFprobe availability, bounded subprocess failures, path/symlink
+safety, normalized stream metadata, enriched catalog responses, and explicit
+watched-state updates without synthetic sessions.
 
 ## API Smoke Checks
 

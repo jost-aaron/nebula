@@ -32,6 +32,9 @@ The current app includes:
   explicit candidate selection and local-metadata fallback.
 - Provider-neutral catalog and playback contracts plus the first Wave 1
   persistent backend implementations.
+- Wave 2 media processing with persistent background jobs, containerized
+  FFprobe, enriched catalog details, Cinema resume/Continue Watching, and
+  explicit per-user watched state.
 
 The latest user direction is to keep building toward a modern console/Plex-like
 media dashboard.
@@ -125,8 +128,8 @@ Media platform contracts:
   the existing account database, starts an asynchronous shared-content scan,
   and exposes `/api/catalog/*` and `/api/playback/*` foundations.
 - Cinema and Studio still use their compatibility path APIs. Catalog-backed UI,
-  playback lifecycle reporting, and Continue Watching presentation are the next
-  integration track.
+  playback lifecycle reporting, and Continue Watching presentation are active
+  in Cinema while path playback remains as a compatibility fallback.
 
 Studio:
 
