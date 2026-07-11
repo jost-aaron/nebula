@@ -26,6 +26,12 @@ release/codec suffixes. The year is sent as `primary_release_year` for movies or
 `first_air_date_year` for TV. Cinema's existing category selects `/search/movie`
 or `/search/tv`; the UI can also let the user choose either kind.
 
+For TV filenames containing `S02E03` or `2x03`, Nebula retains the coordinates
+while searching for the series. After the user selects the series, the server
+fetches both `/tv/{series_id}` and
+`/tv/{series_id}/season/{season}/episode/{episode}`. Files without recognizable
+coordinates continue to import series-level metadata.
+
 Nebula does not silently apply search results. It displays candidates with type,
 year, overview, rating, and artwork, and requires the user to select one. This
 explicit confirmation is the ambiguity boundary; popularity or title similarity
@@ -36,6 +42,8 @@ alone is not treated as proof.
 After selection, Nebula fetches `/movie/{id}` or `/tv/{id}` with credits and
 imports title, sort title, release year, rating, genres, studio/network,
 collection (movies), poster, backdrop, tagline, summary, and a bounded cast list.
+Episode imports additionally store series title, season/episode numbers, air
+date, episode title/summary/rating/credits, series poster, and episode still.
 It stores the TMDB ID, media type, and import timestamp beside these fields in
 the existing ignored `content/.cinema-metadata.json`. Watchlists remain per-user
 in SQLite and are not touched.
@@ -61,6 +69,14 @@ network failure, `429`, missing titles, and malformed payloads become concise,
 credential-free errors. `Retry-After` is not exposed as a secret and callers are
 told to retry later. No failed request changes local metadata. Cinema scanning,
 manual editing, playback, and watchlists continue offline.
+
+## Integration boundaries
+
+Provider routes, UI/controller, types, and styles are isolated in
+`server/cinemaTmdb.mjs`, `src/cinema/tmdbUi.ts`,
+`src/shared/cinemaTmdbTypes.ts`, and `src/cinema/tmdb.css`. Core Cinema files
+contain only narrow registration and display hooks, reducing conflicts with
+parallel Cinema feature work.
 
 ## Attribution and terms
 

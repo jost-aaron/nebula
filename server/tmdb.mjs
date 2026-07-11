@@ -11,15 +11,17 @@ const imageUrl = (filePath, size) => safeText(filePath) ? `${IMAGE_BASE_URL}/${s
 export const normalizeMediaQuery = (value = "") => {
   const withoutExtension = String(value).replace(/\.[a-z0-9]{2,5}$/i, "");
   const year = /(?:^|[. _\-(])((?:19|20)\d{2})(?=$|[. _\-)])/i.exec(withoutExtension)?.[1] ?? "";
-  const seasonEpisode = /(?:^|[. _-])(?:s\d{1,2}e\d{1,3}|\d{1,2}x\d{1,3})(?=$|[. _-])/i;
+  const episodeMatch = /(?:^|[. _-])(?:s(\d{1,2})e(\d{1,3})|(\d{1,2})x(\d{1,3}))(?=$|[. _-])/i.exec(withoutExtension);
+  const seasonNumber = Number(episodeMatch?.[1] ?? episodeMatch?.[3] ?? 0) || null;
+  const episodeNumber = Number(episodeMatch?.[2] ?? episodeMatch?.[4] ?? 0) || null;
   const title = withoutExtension
-    .replace(seasonEpisode, " ")
+    .replace(episodeMatch?.[0] ?? /$^/, " ")
     .replace(/(?:^|[. _\-(])(?:19|20)\d{2}(?=$|[. _\-)])/i, " ")
     .replace(/(?:^|[. _-])(?:2160p|1080p|720p|480p|uhd|hdr10?|dv|bluray|brrip|web[ ._-]?dl|webrip|hdtv|x26[45]|h26[45]|hevc|aac|dts|remux)(?=$|[. _-]).*$/i, " ")
     .replace(/[._]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return { query: title || withoutExtension.trim(), year };
+  return { episodeNumber, query: title || withoutExtension.trim(), seasonNumber, year };
 };
 
 const tmdbError = (status, message, retryAfter = "") => Object.assign(new Error(message), { expose: true, retryAfter, status });
@@ -74,22 +76,28 @@ export const createTmdbClient = ({
 
   const candidate = (item, mediaType) => ({
     backdropUrl: imageUrl(item.backdrop_path, "w780"),
+    episodeNumber: null,
     id: validId(item.id),
     mediaType,
     overview: safeText(item.overview),
     posterUrl: imageUrl(item.poster_path, "w342"),
     rating: Number.isFinite(item.vote_average) ? item.vote_average.toFixed(1) : "",
+    seasonNumber: null,
     title: safeText(mediaType === "movie" ? item.title : item.name),
     year: yearFromDate(mediaType === "movie" ? item.release_date : item.first_air_date)
   });
 
-  const search = async ({ category, query, year }) => {
+  const search = async ({ category, episodeNumber = null, query, seasonNumber = null, year }) => {
     const mediaTypes = category === "movies" ? ["movie"] : category === "tv" ? ["tv"] : ["movie", "tv"];
     const groups = await Promise.all(mediaTypes.map(async (mediaType) => {
       const yearKey = mediaType === "movie" ? "primary_release_year" : "first_air_date_year";
       const body = await request(`/search/${mediaType}`, { include_adult: false, language: "en-US", query, [yearKey]: year });
       if (!Array.isArray(body?.results)) throw tmdbError(502, "TMDB returned an invalid search response.");
-      return body.results.slice(0, 10).map((item) => candidate(item, mediaType)).filter((item) => item.id && item.title);
+      return body.results.slice(0, 10).map((item) => ({
+        ...candidate(item, mediaType),
+        episodeNumber: mediaType === "tv" ? episodeNumber : null,
+        seasonNumber: mediaType === "tv" ? seasonNumber : null
+      })).filter((item) => item.id && item.title);
     }));
     return groups.flat().slice(0, 12);
   };
@@ -124,5 +132,42 @@ export const createTmdbClient = ({
     };
   };
 
-  return { get configured() { return Boolean(currentToken()); }, details, search };
+  const episodeDetails = async (seriesIdValue, seasonNumberValue, episodeNumberValue) => {
+    const seriesId = validId(seriesIdValue);
+    const seasonNumber = Number(seasonNumberValue);
+    const episodeNumber = Number(episodeNumberValue);
+    if (!seriesId || !Number.isInteger(seasonNumber) || seasonNumber < 0 || !Number.isInteger(episodeNumber) || episodeNumber < 1) {
+      throw tmdbError(400, "Valid TMDB series, season, and episode identifiers are required.");
+    }
+    const [series, episode] = await Promise.all([
+      request(`/tv/${seriesId}`, { append_to_response: "credits", language: "en-US" }),
+      request(`/tv/${seriesId}/season/${seasonNumber}/episode/${episodeNumber}`, { append_to_response: "credits", language: "en-US" })
+    ]);
+    const seriesTitle = safeText(series?.name);
+    const episodeTitle = safeText(episode?.name);
+    if (!seriesTitle || !episodeTitle || validId(series?.id) !== seriesId) throw tmdbError(502, "TMDB returned invalid episode details.");
+    const companies = Array.isArray(series.production_companies) ? series.production_companies : [];
+    const networks = Array.isArray(series.networks) ? series.networks : [];
+    const episodeCast = Array.isArray(episode.credits?.cast) ? episode.credits.cast : Array.isArray(episode.guest_stars) ? episode.guest_stars : [];
+    return {
+      backdropUrl: imageUrl(episode.still_path, "w1280") || imageUrl(series.backdrop_path, "w1280"),
+      cast: episodeCast.slice(0, 12).map((person) => safeText(person.name)).filter(Boolean).join(", "),
+      collection: seriesTitle,
+      episode: { airDate: safeText(episode.air_date), episodeNumber, seasonNumber, seriesTitle },
+      genres: Array.isArray(series.genres) ? series.genres.map((genre) => safeText(genre.name)).filter(Boolean) : [],
+      posterUrl: imageUrl(series.poster_path, "w500"),
+      rating: Number.isFinite(episode.vote_average) ? episode.vote_average.toFixed(1) : "",
+      releaseYear: yearFromDate(episode.air_date),
+      sortTitle: `${seriesTitle} S${String(seasonNumber).padStart(2, "0")}E${String(episodeNumber).padStart(2, "0")}`,
+      studio: safeText(companies[0]?.name || networks[0]?.name),
+      summary: safeText(episode.overview),
+      tagline: "",
+      title: episodeTitle,
+      tmdbId: seriesId,
+      tmdbImportedAt: new Date().toISOString(),
+      tmdbMediaType: "tv"
+    };
+  };
+
+  return { get configured() { return Boolean(currentToken()); }, details, episodeDetails, search };
 };

@@ -78,6 +78,11 @@ does not affect scanning, playback, watchlists, or manual editing. The credentia
 is never embedded in browser bundles or returned by API responses. See
 [`docs/tmdb-metadata-design.md`](tmdb-metadata-design.md) for the full design.
 
+TV files named with `SxxExxx` or `NxN` coordinates retain season and episode
+numbers during series search. Applying a confirmed series match imports the
+specific episode title, air date, synopsis, rating, credits, still, and series
+poster. Other TV files continue to use series-level metadata.
+
 Shared editable media properties are stored in:
 
 ```text

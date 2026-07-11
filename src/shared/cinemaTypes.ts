@@ -1,3 +1,5 @@
+import type { CinemaEpisodeMetadata } from "./cinemaTmdbTypes";
+
 export type CinemaCategory = "movies" | "tv";
 
 export type CinemaMediaKind = "video";
@@ -7,6 +9,7 @@ export interface CinemaEntry {
   cast: string;
   category: CinemaCategory;
   collection: string;
+  episode: CinemaEpisodeMetadata | null;
   folder: string;
   genres: string[];
   mediaKind: CinemaMediaKind;
@@ -27,29 +30,6 @@ export interface CinemaEntry {
   tmdbImportedAt: string;
   tmdbMediaType: "movie" | "tv" | "";
   watchlisted: boolean;
-}
-
-export interface CinemaTmdbCandidate {
-  backdropUrl: string;
-  id: number;
-  mediaType: "movie" | "tv";
-  overview: string;
-  posterUrl: string;
-  rating: string;
-  title: string;
-  year: string;
-}
-
-export interface CinemaTmdbStatusResponse {
-  attribution: string;
-  configured: boolean;
-  provider: "TMDB";
-}
-
-export interface CinemaTmdbSearchResponse {
-  candidates: CinemaTmdbCandidate[];
-  normalizedQuery: string;
-  provider: "TMDB";
 }
 
 export interface CinemaLibraryResponse {

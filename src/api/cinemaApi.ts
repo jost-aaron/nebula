@@ -5,11 +5,10 @@ import type {
   CinemaLibraryResponse,
   CinemaMetadataUpdateRequest,
   CinemaMetadataUpdateResponse,
-  CinemaTmdbSearchResponse,
-  CinemaTmdbStatusResponse,
   CinemaWatchlistUpdateRequest,
   CinemaWatchlistUpdateResponse
 } from "../shared/cinemaTypes";
+import type { CinemaTmdbSearchResponse, CinemaTmdbStatusResponse } from "../shared/cinemaTmdbTypes";
 
 export const listCinemaLibrary = () => apiJson<CinemaLibraryResponse>("/api/cinema/library").then((library) => ({
   entries: library.entries.map((entry) => ({ ...entry, streamUrl: apiUrl(entry.streamUrl) }))
@@ -43,7 +42,7 @@ export const searchCinemaTmdb = (body: { category: "movies" | "tv"; path: string
     body: JSON.stringify(body), headers: { "content-type": "application/json" }, method: "POST"
   });
 
-export const applyCinemaTmdbMatch = (body: { mediaType: "movie" | "tv"; path: string; tmdbId: number }) =>
+export const applyCinemaTmdbMatch = (body: { episodeNumber?: number | null; mediaType: "movie" | "tv"; path: string; seasonNumber?: number | null; tmdbId: number }) =>
   apiJson<CinemaMetadataUpdateResponse>("/api/cinema/tmdb/apply", {
     body: JSON.stringify(body), headers: { "content-type": "application/json" }, method: "POST"
   });

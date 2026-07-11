@@ -84,6 +84,8 @@ flowchart TD
 - Renders and binds the Cinema video browser and web player.
 - Talks to the backend through `src/api/cinemaApi.ts`.
 - Generates browser-side preview thumbnails from local video files.
+- Keeps optional TMDB rendering/controller logic and styles isolated in
+  `tmdbUi.ts` and `tmdb.css`.
 
 `src/studio/`
 
@@ -148,6 +150,11 @@ flowchart TD
 
 - Owns Cinema video library scanning, metadata updates, visual identification,
   and range-enabled video streaming.
+
+`server/cinemaTmdb.mjs`
+
+- Owns optional TMDB status, search, explicit apply, refresh, and episode-aware
+  persistence routes without expanding the core Cinema route module.
 
 `server/music.mjs`
 

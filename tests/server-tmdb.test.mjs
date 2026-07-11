@@ -11,8 +11,9 @@ import { createTmdbClient, normalizeMediaQuery } from "../server/tmdb.mjs";
 const jsonResponse = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), { headers: { "content-type": "application/json", ...headers }, status });
 
 test("TMDB filename normalization extracts titles, years, and episode markers", () => {
-  assert.deepEqual(normalizeMediaQuery("South.Park.The.Streaming.Wars.2022.1080p.WEB-DL.x264.mp4"), { query: "South Park The Streaming Wars", year: "2022" });
-  assert.deepEqual(normalizeMediaQuery("Severance.S02E03.2160p.WEB-DL.mkv"), { query: "Severance", year: "" });
+  assert.deepEqual(normalizeMediaQuery("South.Park.The.Streaming.Wars.2022.1080p.WEB-DL.x264.mp4"), { episodeNumber: null, query: "South Park The Streaming Wars", seasonNumber: null, year: "2022" });
+  assert.deepEqual(normalizeMediaQuery("Severance.S02E03.2160p.WEB-DL.mkv"), { episodeNumber: 3, query: "Severance", seasonNumber: 2, year: "" });
+  assert.deepEqual(normalizeMediaQuery("The.Bear.3x07.1080p.mkv"), { episodeNumber: 7, query: "The Bear", seasonNumber: 3, year: "" });
 });
 
 test("TMDB search uses bearer auth and maps candidates without exposing credentials", async () => {
@@ -25,7 +26,7 @@ test("TMDB search uses bearer auth and maps candidates without exposing credenti
   assert.equal(calls[0].options.headers.authorization, "Bearer test-secret-token");
   assert.match(calls[0].url, /search\/movie/);
   assert.match(calls[0].url, /primary_release_year=2024/);
-  assert.deepEqual(results[0], { backdropUrl: "", id: 42, mediaType: "movie", overview: "Plot", posterUrl: "https://image.tmdb.org/t/p/w342/poster.jpg", rating: "7.3", title: "Example", year: "2024" });
+  assert.deepEqual(results[0], { backdropUrl: "", episodeNumber: null, id: 42, mediaType: "movie", overview: "Plot", posterUrl: "https://image.tmdb.org/t/p/w342/poster.jpg", rating: "7.3", seasonNumber: null, title: "Example", year: "2024" });
   assert.equal(JSON.stringify(results).includes("test-secret-token"), false);
 });
 
@@ -41,6 +42,21 @@ test("TMDB details maps bounded TV metadata", async () => {
   assert.equal(result.studio, "Network");
   assert.equal(result.cast.split(", ").length, 12);
   assert.equal(result.backdropUrl, "https://image.tmdb.org/t/p/w1280/b.jpg");
+});
+
+test("TMDB episode details combine series and episode metadata", async () => {
+  const requests = [];
+  const client = createTmdbClient({ token: "token", fetchImpl: async (url) => {
+    requests.push(String(url));
+    return String(url).includes("/season/2/episode/3")
+      ? jsonResponse({ id: 203, name: "The Episode", air_date: "2025-02-03", overview: "Episode plot", still_path: "/still.jpg", vote_average: 8.4, credits: { cast: [{ name: "Guest" }] } })
+      : jsonResponse({ id: 7, name: "The Series", backdrop_path: "/series-bg.jpg", poster_path: "/series.jpg", genres: [{ name: "Drama" }], networks: [{ name: "Network" }], production_companies: [] });
+  }});
+  const result = await client.episodeDetails(7, 2, 3);
+  assert.equal(requests.some((url) => url.includes("/tv/7/season/2/episode/3")), true);
+  assert.equal(result.title, "The Episode");
+  assert.deepEqual(result.episode, { airDate: "2025-02-03", episodeNumber: 3, seasonNumber: 2, seriesTitle: "The Series" });
+  assert.equal(result.backdropUrl, "https://image.tmdb.org/t/p/w1280/still.jpg");
 });
 
 test("TMDB safely maps missing configuration and upstream failures", async () => {
@@ -70,10 +86,12 @@ test("Cinema TMDB routes require explicit apply before writing matched metadata"
   const root = await mkdtemp(path.join(os.tmpdir(), "nebula-tmdb-route-"));
   const storage = await createStorage({ contentRoot: root });
   await writeFile(path.join(root, "Example.2024.mp4"), "video");
+  await writeFile(path.join(root, "Example.Show.S02E03.mp4"), "episode");
   const tmdbClient = {
     configured: true,
-    search: async ({ query, year }) => [{ id: 42, mediaType: "movie", title: query, year, overview: "Candidate", posterUrl: "", backdropUrl: "", rating: "7.0" }],
-    details: async (mediaType, id) => ({ title: "Matched Example", sortTitle: "Matched Example", releaseYear: "2024", rating: "7.0", genres: ["Drama"], studio: "Studio", collection: "", posterUrl: "", backdropUrl: "", tagline: "", cast: "Actor", summary: "Imported", tmdbId: id, tmdbMediaType: mediaType, tmdbImportedAt: "2026-01-01T00:00:00.000Z" })
+    search: async ({ category, episodeNumber, query, seasonNumber, year }) => [{ id: 42, mediaType: category === "tv" ? "tv" : "movie", title: query, year, overview: "Candidate", posterUrl: "", backdropUrl: "", rating: "7.0", episodeNumber, seasonNumber }],
+    details: async (mediaType, id) => ({ title: "Matched Example", sortTitle: "Matched Example", releaseYear: "2024", rating: "7.0", genres: ["Drama"], studio: "Studio", collection: "", posterUrl: "", backdropUrl: "", tagline: "", cast: "Actor", summary: "Imported", tmdbId: id, tmdbMediaType: mediaType, tmdbImportedAt: "2026-01-01T00:00:00.000Z" }),
+    episodeDetails: async (id, seasonNumber, episodeNumber) => ({ title: "Episode Three", sortTitle: "Example Show S02E03", releaseYear: "2025", rating: "8.0", genres: ["Drama"], studio: "Studio", collection: "Example Show", posterUrl: "", backdropUrl: "", tagline: "", cast: "Guest", summary: "Episode import", episode: { airDate: "2025-02-03", episodeNumber, seasonNumber, seriesTitle: "Example Show" }, tmdbId: id, tmdbMediaType: "tv", tmdbImportedAt: "2026-01-01T00:00:00.000Z" })
   };
   const handler = createApiHandler(storage, undefined, undefined, { cinema: { tmdbClient } });
   const server = createServer(async (request, response) => { if (!(await handler(request, response))) response.writeHead(404).end(); });
@@ -92,4 +110,14 @@ test("Cinema TMDB routes require explicit apply before writing matched metadata"
   const saved = JSON.parse(await readFile(storage.cinemaMetadataPath, "utf8"));
   assert.equal(saved["Example.2024.mp4"].title, "Matched Example");
   assert.equal(saved["Example.2024.mp4"].tmdbId, 42);
+
+  const episodeSearch = await post("/api/cinema/tmdb/search", { category: "tv", path: "Example.Show.S02E03.mp4", query: "Example.Show.S02E03.mp4" });
+  const episodeCandidate = (await episodeSearch.json()).candidates[0];
+  assert.equal(episodeCandidate.seasonNumber, 2);
+  assert.equal(episodeCandidate.episodeNumber, 3);
+  const episodeApply = await post("/api/cinema/tmdb/apply", { episodeNumber: 3, mediaType: "tv", path: "Example.Show.S02E03.mp4", seasonNumber: 2, tmdbId: 42 });
+  assert.equal(episodeApply.status, 200);
+  const episodeSaved = JSON.parse(await readFile(storage.cinemaMetadataPath, "utf8"));
+  assert.equal(episodeSaved["Example.Show.S02E03.mp4"].title, "Episode Three");
+  assert.deepEqual(episodeSaved["Example.Show.S02E03.mp4"].episode, { airDate: "2025-02-03", episodeNumber: 3, seasonNumber: 2, seriesTitle: "Example Show" });
 });
