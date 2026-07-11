@@ -68,6 +68,15 @@ Category assignment is local and heuristic:
 
 ## Metadata Editing
 
+### Optional TMDB metadata
+
+Set `TMDB_API_TOKEN` to a TMDB API Read Access Token to enable server-side
+movie and TV search. A selected title can be matched from explicit candidates
+and refreshed later by its stored TMDB media type and ID. Missing configuration
+does not affect scanning, playback, watchlists, or manual editing. The credential
+never enters browser code or API responses. See
+[`docs/tmdb-metadata-design.md`](tmdb-metadata-design.md) for the full design.
+
 Shared editable media properties are stored in:
 
 ```text
@@ -112,6 +121,10 @@ The frontend updates these through:
 - `POST /api/cinema/identify` - search sampled video frames for candidate titles.
 - `PATCH /api/cinema/metadata` - save editable metadata for a video file.
 - `PATCH /api/cinema/watchlist` - add or remove a video file from the watchlist.
+- `GET /api/cinema/tmdb/status` - report provider availability without secrets.
+- `POST /api/cinema/tmdb/search` - return movie or TV match candidates.
+- `POST /api/cinema/tmdb/apply` - explicitly apply a selected candidate.
+- `POST /api/cinema/tmdb/refresh` - explicitly refresh a stored TMDB match.
 
 The media endpoint supports HTTP byte ranges and returns `206 Partial Content`
 for range requests. This is required for normal browser video playback behavior,

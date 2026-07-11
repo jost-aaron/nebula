@@ -5,6 +5,7 @@ import { json, readBody } from "./http.mjs";
 import { defaultTitle, metadataForEntry, readMetadata, scanMediaLibrary, writeMetadata } from "./mediaLibrary.mjs";
 import { isVideoFile, mimeType } from "./storage.mjs";
 import { parseByteRange } from "./ranges.mjs";
+import { createTmdbClient, normalizeMediaQuery } from "./tmdb.mjs";
 
 const candidateWords = (value = "") =>
   value
@@ -73,7 +74,15 @@ const googleVisionWebDetection = async (frames) => {
   };
 };
 
-export const createCinemaRoutes = (storage, accountStore) => {
+export const createCinemaRoutes = (storage, accountStore, options = {}) => {
+  const tmdb = options.tmdbClient ?? createTmdbClient(options.tmdb);
+  const requireVideo = async (requestedPath) => {
+    const contentPath = storage.relativePath(requestedPath ?? "");
+    const absolutePath = storage.resolveContentPath(contentPath);
+    const stats = await stat(absolutePath).catch(() => null);
+    if (!stats || !stats.isFile() || !isVideoFile(absolutePath)) return null;
+    return { contentPath };
+  };
   const listCinemaLibrary = async (request, response) => {
     const metadata = await readMetadata(storage.cinemaMetadataPath);
     const entries = await scanMediaLibrary(storage, metadata, { mediaKind: "video" });
@@ -172,6 +181,47 @@ export const createCinemaRoutes = (storage, accountStore) => {
 
     await writeMetadata(storage.cinemaMetadataPath, metadata);
     json(response, 200, { metadata: metadata[contentPath], ok: true, path: contentPath, watchlisted });
+  };
+
+  const tmdbStatus = (_request, response) => {
+    json(response, 200, {
+      attribution: "This product uses the TMDB API but is not endorsed or certified by TMDB.",
+      configured: tmdb.configured,
+      provider: "TMDB"
+    });
+  };
+
+  const searchTmdb = async (request, response) => {
+    const body = await readBody(request);
+    const file = await requireVideo(body.path);
+    if (!file) return json(response, 404, { error: "Media file not found." });
+    const metadata = await readMetadata(storage.cinemaMetadataPath);
+    const fallbackTitle = defaultTitle(path.basename(file.contentPath));
+    const current = metadataForEntry(metadata, file.contentPath, fallbackTitle);
+    const normalized = normalizeMediaQuery(String(body.query ?? current.title ?? fallbackTitle));
+    const query = normalized.query.slice(0, 160);
+    if (!query) return json(response, 400, { error: "Enter a title to search TMDB." });
+    const candidates = await tmdb.search({
+      category: body.category === "movies" || body.category === "tv" ? body.category : undefined,
+      query,
+      year: /^\d{4}$/.test(String(body.year ?? "")) ? String(body.year) : normalized.year
+    });
+    json(response, 200, { candidates, normalizedQuery: query, provider: "TMDB" });
+  };
+
+  const persistTmdbDetails = async (body, response, { refresh = false } = {}) => {
+    const file = await requireVideo(body.path);
+    if (!file) return json(response, 404, { error: "Media file not found." });
+    const metadata = await readMetadata(storage.cinemaMetadataPath);
+    const fallbackTitle = defaultTitle(path.basename(file.contentPath));
+    const current = metadataForEntry(metadata, file.contentPath, fallbackTitle);
+    const mediaType = refresh ? current.tmdbMediaType : body.mediaType;
+    const tmdbId = refresh ? current.tmdbId : body.tmdbId;
+    if (refresh && (!mediaType || !tmdbId)) return json(response, 409, { error: "This title has not been matched with TMDB yet." });
+    const imported = await tmdb.details(mediaType, tmdbId);
+    metadata[file.contentPath] = { ...current, ...imported, updatedAt: new Date().toISOString() };
+    await writeMetadata(storage.cinemaMetadataPath, metadata);
+    json(response, 200, { metadata: metadata[file.contentPath], ok: true, path: file.contentPath });
   };
 
   const identifyCinemaFrames = async (request, response) => {
@@ -277,6 +327,26 @@ export const createCinemaRoutes = (storage, accountStore) => {
 
     if (request.method === "POST" && url.pathname === "/api/cinema/identify") {
       await identifyCinemaFrames(request, response);
+      return true;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/cinema/tmdb/status") {
+      tmdbStatus(request, response);
+      return true;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/cinema/tmdb/search") {
+      await searchTmdb(request, response);
+      return true;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/cinema/tmdb/apply") {
+      await persistTmdbDetails(await readBody(request), response);
+      return true;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/cinema/tmdb/refresh") {
+      await persistTmdbDetails(await readBody(request), response, { refresh: true });
       return true;
     }
 

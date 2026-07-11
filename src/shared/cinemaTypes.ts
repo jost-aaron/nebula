@@ -3,6 +3,7 @@ export type CinemaCategory = "movies" | "tv";
 export type CinemaMediaKind = "video";
 
 export interface CinemaEntry {
+  backdropUrl: string;
   cast: string;
   category: CinemaCategory;
   collection: string;
@@ -22,7 +23,33 @@ export interface CinemaEntry {
   summary: string;
   tagline: string;
   title: string;
+  tmdbId: number | null;
+  tmdbImportedAt: string;
+  tmdbMediaType: "movie" | "tv" | "";
   watchlisted: boolean;
+}
+
+export interface CinemaTmdbCandidate {
+  backdropUrl: string;
+  id: number;
+  mediaType: "movie" | "tv";
+  overview: string;
+  posterUrl: string;
+  rating: string;
+  title: string;
+  year: string;
+}
+
+export interface CinemaTmdbStatusResponse {
+  attribution: string;
+  configured: boolean;
+  provider: "TMDB";
+}
+
+export interface CinemaTmdbSearchResponse {
+  candidates: CinemaTmdbCandidate[];
+  normalizedQuery: string;
+  provider: "TMDB";
 }
 
 export interface CinemaLibraryResponse {

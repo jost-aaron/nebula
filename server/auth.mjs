@@ -46,7 +46,7 @@ const capabilityForRoute = (request, url) => {
   if (path === "/api/server/info") return "dashboard.use";
   if (path.startsWith("/api/files")) return ["GET", "HEAD"].includes(method) ? "files.read" : "files.write";
   if (path === "/api/cinema/watchlist") return "watchlist.write";
-  if (path === "/api/cinema/metadata" || path === "/api/cinema/identify") return "media.manage";
+  if (path === "/api/cinema/metadata" || path === "/api/cinema/identify" || path.startsWith("/api/cinema/tmdb/")) return "media.manage";
   if (path.startsWith("/api/cinema/") || path.startsWith("/api/music/")) return "media.read";
   return "dashboard.use";
 };

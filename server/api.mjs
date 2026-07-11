@@ -4,10 +4,10 @@ import { createFilesRoutes } from "./files.mjs";
 import { createMusicRoutes } from "./music.mjs";
 import { createAccountRoutes } from "./accounts.mjs";
 
-export const createApiHandler = (storage, accountStore, authGuard) => {
+export const createApiHandler = (storage, accountStore, authGuard, options = {}) => {
   const routeHandlers = [
     createAccountRoutes(accountStore, authGuard),
-    createCinemaRoutes(storage, accountStore),
+    createCinemaRoutes(storage, accountStore, options.cinema),
     createMusicRoutes(storage, accountStore),
     createFilesRoutes(storage)
   ];
@@ -36,7 +36,7 @@ export const createApiHandler = (storage, accountStore, authGuard) => {
     } catch (error) {
       const status = error.status ?? 500;
       json(response, status, {
-        error: status >= 500 ? "Server operation failed." : error.message
+        error: status >= 500 && !error.expose ? "Server operation failed." : error.message
       });
       return true;
     }

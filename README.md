@@ -35,6 +35,12 @@ Dependencies are installed inside the Docker image. Compose mounts only the sour
 files needed for local development, so the host project should not need a local
 `node_modules` directory.
 
+## Optional Cinema metadata
+
+Set `TMDB_API_TOKEN` in the Docker Compose environment to a TMDB API Read Access
+Token to enable Cinema metadata search and matching. Do not put the token in
+browser settings or commit it. Cinema remains fully usable without this value.
+
 ## New Session Quick Start
 
 1. Read [AGENTS.md](AGENTS.md).
