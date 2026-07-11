@@ -529,7 +529,7 @@ const renderCinemaSheet = (title: string, eyebrow: string, body: string) => `
 const renderTmdbSheet = (entry: CinemaEntry, status: CinemaTmdbStatusResponse | null, candidates: CinemaTmdbCandidate[] = [], message = "") =>
   renderCinemaSheet("Match with TMDB", entry.title, `
     <div class="cinema-tmdb-panel">
-      ${status?.configured === false ? `<div class="cinema-empty"><strong>TMDB is not configured</strong><span>Set TMDB_API_TOKEN on the Nebula server and restart it. Cinema and manual metadata remain available.</span></div>` : ""}
+      ${status?.configured === false ? `<div class="cinema-empty"><strong>TMDB is not configured</strong><span>An owner can add a token in Settings / Account, or set TMDB_API_TOKEN on the server. Cinema and manual metadata remain available.</span></div>` : ""}
       ${status?.configured !== false ? `<form data-cinema-tmdb-search class="cinema-tmdb-search">
         <label>Title <input name="query" value="${escapeHtml(entry.title)}" required /></label>
         <label>Year <input name="year" inputmode="numeric" value="${escapeHtml(entry.releaseYear)}" /></label>

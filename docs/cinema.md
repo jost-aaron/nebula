@@ -70,11 +70,12 @@ Category assignment is local and heuristic:
 
 ### Optional TMDB metadata
 
-Set `TMDB_API_TOKEN` to a TMDB API Read Access Token to enable server-side
-movie and TV search. A selected title can be matched from explicit candidates
+An owner can add a TMDB API Read Access Token in Settings / Account, or a server
+operator can set `TMDB_API_TOKEN` as a fallback, to enable server-side movie and
+TV search. A selected title can be matched from explicit candidates
 and refreshed later by its stored TMDB media type and ID. Missing configuration
 does not affect scanning, playback, watchlists, or manual editing. The credential
-never enters browser code or API responses. See
+is never embedded in browser bundles or returned by API responses. See
 [`docs/tmdb-metadata-design.md`](tmdb-metadata-design.md) for the full design.
 
 Shared editable media properties are stored in:

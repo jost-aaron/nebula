@@ -94,10 +94,9 @@ export const verifyPassword = async (password, credential) => {
 const migrate = (db) => {
   db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;");
   const version = db.prepare("PRAGMA user_version").get().user_version;
-  if (version > 1) throw new Error(`Account database schema ${version} is newer than this server supports.`);
-  if (version === 1) return;
+  if (version > 2) throw new Error(`Account database schema ${version} is newer than this server supports.`);
 
-  db.exec(`
+  if (version === 0) db.exec(`
     BEGIN IMMEDIATE;
     CREATE TABLE users (
       id TEXT PRIMARY KEY,
@@ -154,6 +153,17 @@ const migrate = (db) => {
     );
     CREATE INDEX media_ticket_expiration ON media_tickets(expires_at);
     PRAGMA user_version = 1;
+    COMMIT;
+  `);
+
+  if (version < 2) db.exec(`
+    BEGIN IMMEDIATE;
+    CREATE TABLE server_settings (
+      setting_key TEXT PRIMARY KEY,
+      setting_value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    PRAGMA user_version = 2;
     COMMIT;
   `);
 };
@@ -365,6 +375,19 @@ export const createAccountStore = async ({ databasePath, now = () => Date.now() 
     }
   };
 
+  const getServerSetting = (key) => db.prepare("SELECT setting_value FROM server_settings WHERE setting_key = ?")
+    .get(String(key))?.setting_value ?? "";
+
+  const setServerSetting = (key, value) => {
+    const settingKey = bounded(key, 80);
+    const settingValue = String(value ?? "");
+    db.prepare(`INSERT INTO server_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = excluded.updated_at`)
+      .run(settingKey, settingValue, iso(now()));
+  };
+
+  const deleteServerSetting = (key) => db.prepare("DELETE FROM server_settings WHERE setting_key = ?").run(String(key));
+
   const issueMediaTicket = ({ contentPath, mediaKind, principalId, principalType }) => {
     db.prepare("DELETE FROM media_tickets WHERE expires_at <= ? OR revoked_at IS NOT NULL").run(iso(now()));
     const token = randomBytes(32).toString("base64url");
@@ -390,6 +413,8 @@ export const createAccountStore = async ({ databasePath, now = () => Date.now() 
     close: () => db.close(),
     countUsers: () => db.prepare("SELECT COUNT(*) AS count FROM users").get().count,
     createMember,
+    deleteServerSetting,
+    getServerSetting,
     getUser: (userId) => publicUser(db.prepare("SELECT * FROM users WHERE id = ?").get(userId)),
     getWatchlist,
     issueMediaTicket,
@@ -399,6 +424,7 @@ export const createAccountStore = async ({ databasePath, now = () => Date.now() 
     migrateLegacyWatchlist,
     revokeSession,
     setWatchlisted,
+    setServerSetting,
     setMemberDisabled,
     setupOwner,
     updateProfile

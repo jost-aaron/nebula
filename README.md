@@ -37,9 +37,11 @@ files needed for local development, so the host project should not need a local
 
 ## Optional Cinema metadata
 
-Set `TMDB_API_TOKEN` in the Docker Compose environment to a TMDB API Read Access
-Token to enable Cinema metadata search and matching. Do not put the token in
-browser settings or commit it. Cinema remains fully usable without this value.
+An owner can add a TMDB API Read Access Token under Settings / Account to enable
+Cinema metadata search and matching. `TMDB_API_TOKEN` remains a Docker Compose
+fallback. The admin value is stored in the server data volume, is never returned
+to the browser after saving, and must not be committed. Cinema remains usable
+without either configuration source.
 
 ## New Session Quick Start
 

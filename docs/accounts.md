@@ -43,7 +43,8 @@ source. `NEBULA_DATA_ROOT` can select another server-owned directory.
 
 Migrations use SQLite `PRAGMA user_version` and run in a transaction. Version 1
 creates users, sessions, login-attempt throttling, personal watchlists, and
-media access tickets. Database, WAL, and SHM files are ignored and must never be
+media access tickets. Version 2 adds owner-managed server settings. Database,
+WAL, and SHM files are ignored and must never be
 committed or copied into a client bundle.
 
 ## Authentication Flow
@@ -132,6 +133,8 @@ explicitly allowed origin, and no arbitrary origin is reflected.
 
 - Cinema watchlists are per-user in SQLite.
 - Account preferences and active devices/sessions are per-user in SQLite.
+- Owner-managed server credentials, currently the optional TMDB token, are
+  server-shared in SQLite. Admin APIs return status only, never the value.
 - Cinema metadata remains server-shared and owner-writable.
 - Studio queue/history remain client-memory state in version one.
 - Files remain a shared namespace. Members may browse/download; owners may
@@ -159,6 +162,10 @@ Existing media and Cinema metadata remain in place. Container recreation keeps
 the account database through the `nebula-data` volume. A database backup should
 copy the SQLite database together with its WAL state using SQLite's backup
 facilities or while the server is stopped.
+
+An outbound API token must remain reversible for server requests, so protect the
+`nebula-data` volume and its backups as secrets. Nebula does not currently
+provide encrypted database-at-rest support.
 
 ## Threat Analysis
 

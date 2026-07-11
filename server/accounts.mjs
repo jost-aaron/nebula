@@ -71,6 +71,40 @@ export const createAccountRoutes = (accountStore, authGuard) => async (request, 
     return true;
   }
 
+  if (url.pathname === "/api/auth/server-settings/tmdb") {
+    const saved = Boolean(accountStore.getServerSetting("tmdb_api_token"));
+    const environment = Boolean(String(process.env.TMDB_API_TOKEN ?? "").trim());
+
+    if (request.method === "GET") {
+      json(response, 200, {
+        configured: saved || environment,
+        source: saved ? "admin" : environment ? "environment" : "none"
+      });
+      return true;
+    }
+
+    if (request.method === "PATCH") {
+      const body = await readBody(request, { limit: 8 * 1024 });
+      const token = typeof body.token === "string" ? body.token.trim() : "";
+      if (token.length < 20 || token.length > 2048 || /\s/.test(token)) {
+        json(response, 400, { error: "Enter a valid TMDB API Read Access Token." });
+        return true;
+      }
+      accountStore.setServerSetting("tmdb_api_token", token);
+      json(response, 200, { configured: true, source: "admin" });
+      return true;
+    }
+
+    if (request.method === "DELETE") {
+      accountStore.deleteServerSetting("tmdb_api_token");
+      json(response, 200, {
+        configured: environment,
+        source: environment ? "environment" : "none"
+      });
+      return true;
+    }
+  }
+
   if (request.method === "POST" && url.pathname === "/api/auth/logout") {
     accountStore.revokeSession(context.user.id, context.sessionId);
     response.setHeader("set-cookie", clearSessionCookie(request));

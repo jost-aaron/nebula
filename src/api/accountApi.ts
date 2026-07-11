@@ -58,3 +58,14 @@ export const createMemberAccount = (body: { displayName: string; password: strin
 
 export const setMemberDisabled = (id: string, disabled: boolean) =>
   apiJson<{ user: AccountUser }>(`/api/auth/accounts/${encodeURIComponent(id)}`, { body: JSON.stringify({ disabled }), method: "PATCH" });
+
+export type TmdbServerSettingStatus = { configured: boolean; source: "admin" | "environment" | "none" };
+
+export const getTmdbServerSetting = () =>
+  apiJson<TmdbServerSettingStatus>("/api/auth/server-settings/tmdb", { method: "GET" });
+
+export const saveTmdbServerSetting = (token: string) =>
+  apiJson<TmdbServerSettingStatus>("/api/auth/server-settings/tmdb", { body: JSON.stringify({ token }), method: "PATCH" });
+
+export const clearTmdbServerSetting = () =>
+  apiJson<TmdbServerSettingStatus>("/api/auth/server-settings/tmdb", { method: "DELETE" });

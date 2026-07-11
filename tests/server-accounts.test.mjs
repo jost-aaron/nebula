@@ -169,6 +169,29 @@ test("owner and member capabilities protect shared Files mutations", async (t) =
   assert.equal((await jsonRequest(`${api.baseUrl}/api/files/folder`, { body: { name: "owner-folder", path: "" }, cookie: owner.cookie, csrf: owner.data.csrfToken, method: "POST" })).status, 201);
 });
 
+test("only owners can manage a redacted persistent TMDB server token", async (t) => {
+  const api = await startApi();
+  t.after(() => api.close());
+  const owner = await setupOwner(api, "native");
+  await api.accountStore.createMember({ displayName: "Member", password: memberPassword, username: "member" });
+  const member = await jsonRequest(`${api.baseUrl}/api/auth/login`, { body: { clientType: "native", password: memberPassword, username: "member" }, method: "POST" }).then((response) => response.json());
+  const secret = "tmdb-admin-test-token-value-123456";
+
+  const denied = await jsonRequest(`${api.baseUrl}/api/auth/server-settings/tmdb`, { bearer: member.sessionToken });
+  assert.equal(denied.status, 403);
+  const saved = await jsonRequest(`${api.baseUrl}/api/auth/server-settings/tmdb`, { bearer: owner.data.sessionToken, body: { token: secret }, method: "PATCH" });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(await saved.json(), { configured: true, source: "admin" });
+  assert.equal(api.accountStore.getServerSetting("tmdb_api_token"), secret);
+  const status = await jsonRequest(`${api.baseUrl}/api/auth/server-settings/tmdb`, { bearer: owner.data.sessionToken });
+  const statusText = await status.text();
+  assert.deepEqual(JSON.parse(statusText), { configured: true, source: "admin" });
+  assert.equal(statusText.includes(secret), false);
+  const removed = await jsonRequest(`${api.baseUrl}/api/auth/server-settings/tmdb`, { bearer: owner.data.sessionToken, method: "DELETE" });
+  assert.equal(removed.status, 200);
+  assert.equal(api.accountStore.getServerSetting("tmdb_api_token"), "");
+});
+
 test("legacy service tokens still authorize protected APIs", async (t) => {
   const api = await startApi({ serviceToken: "legacy-service-secret" });
   t.after(() => api.close());

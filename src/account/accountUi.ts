@@ -1,4 +1,4 @@
-import { changePassword, createMemberAccount, listAccountSessions, listAccounts, login, logout, revokeAccountSession, setMemberDisabled, setupOwner, updateProfile } from "../api/accountApi";
+import { changePassword, clearTmdbServerSetting, createMemberAccount, getTmdbServerSetting, listAccountSessions, listAccounts, login, logout, revokeAccountSession, saveTmdbServerSetting, setMemberDisabled, setupOwner, updateProfile } from "../api/accountApi";
 import { getApiBaseUrl, setApiBaseUrl } from "../api/http";
 import type { AccountSessionState, AccountUser } from "../shared/accountTypes";
 
@@ -147,7 +147,17 @@ export const renderAccountSettings = (session: AccountSessionState) => `
       <section class="account-sessions-panel">
         <p class="eyebrow">Devices</p><h4>Active sessions</h4><div data-account-sessions><p>Loading sessions...</p></div>
       </section>
-      ${session.user.role === "owner" ? `<section class="account-members-panel"><p class="eyebrow">Server administration</p><h4>Accounts</h4><div data-account-members><p>Loading accounts...</p></div><form data-create-member-form><label><span>Account name</span><input name="username" required minlength="3" maxlength="32" /></label><label><span>Display name</span><input name="displayName" required maxlength="80" /></label><label><span>Temporary password</span><input name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password" /></label><button type="submit">Add member</button><span data-member-status></span></form></section>` : ""}
+      ${session.user.role === "owner" ? `
+        <section class="account-provider-panel">
+          <p class="eyebrow">Server administration</p><h4>TMDB metadata</h4>
+          <p>Configure the server-side API Read Access Token used by Cinema. The saved token is never displayed again or returned by the API.</p>
+          <form data-tmdb-setting-form>
+            <label><span>TMDB API Read Access Token</span><input name="token" type="password" required minlength="20" maxlength="2048" autocomplete="off" placeholder="Paste a new token" /></label>
+            <div><button type="submit">Save token</button><button type="button" data-tmdb-setting-clear>Remove saved token</button></div>
+            <span data-tmdb-setting-status>Loading status...</span>
+          </form>
+        </section>
+        <section class="account-members-panel"><p class="eyebrow">Server administration</p><h4>Accounts</h4><div data-account-members><p>Loading accounts...</p></div><form data-create-member-form><label><span>Account name</span><input name="username" required minlength="3" maxlength="32" /></label><label><span>Display name</span><input name="displayName" required maxlength="80" /></label><label><span>Temporary password</span><input name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password" /></label><button type="submit">Add member</button><span data-member-status></span></form></section>` : ""}
       <section class="account-signout-panel"><p><strong>Leave this dashboard</strong><span>Server and client connection settings stay on this device.</span></p><button class="destructive" type="button" data-settings-sign-out>Sign out</button></section>
     </div>
   </section>`;
@@ -221,6 +231,45 @@ export const bindAccountSettings = (container: ParentNode) => {
     } catch (error) { if (status) status.textContent = error instanceof Error ? error.message : "Unable to add member."; }
   });
   void loadMembers();
+
+  const tmdbForm = container.querySelector<HTMLFormElement>("[data-tmdb-setting-form]");
+  const tmdbStatus = container.querySelector<HTMLElement>("[data-tmdb-setting-status]");
+  const tmdbClear = container.querySelector<HTMLButtonElement>("[data-tmdb-setting-clear]");
+  const renderTmdbStatus = (status: { configured: boolean; source: "admin" | "environment" | "none" }) => {
+    if (!tmdbStatus) return;
+    tmdbStatus.textContent = status.source === "admin"
+      ? "Configured from Admin Settings."
+      : status.source === "environment"
+        ? "Configured by the TMDB_API_TOKEN server environment variable."
+        : "Not configured. Cinema will continue with local metadata.";
+  };
+  const loadTmdbStatus = async () => {
+    if (!tmdbForm) return;
+    try { renderTmdbStatus(await getTmdbServerSetting()); }
+    catch (error) { if (tmdbStatus) tmdbStatus.textContent = error instanceof Error ? error.message : "Unable to load TMDB status."; }
+  };
+  tmdbForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const input = tmdbForm.querySelector<HTMLInputElement>("input[name='token']");
+    const submit = tmdbForm.querySelector<HTMLButtonElement>("button[type='submit']");
+    if (!input || !submit) return;
+    submit.disabled = true;
+    if (tmdbStatus) tmdbStatus.textContent = "Saving token...";
+    try {
+      renderTmdbStatus(await saveTmdbServerSetting(input.value));
+      input.value = "";
+    } catch (error) {
+      if (tmdbStatus) tmdbStatus.textContent = error instanceof Error ? error.message : "Unable to save the TMDB token.";
+    } finally { submit.disabled = false; }
+  });
+  tmdbClear?.addEventListener("click", async () => {
+    tmdbClear.disabled = true;
+    if (tmdbStatus) tmdbStatus.textContent = "Removing saved token...";
+    try { renderTmdbStatus(await clearTmdbServerSetting()); }
+    catch (error) { if (tmdbStatus) tmdbStatus.textContent = error instanceof Error ? error.message : "Unable to remove the TMDB token."; }
+    finally { tmdbClear.disabled = false; }
+  });
+  void loadTmdbStatus();
 
   container.querySelector("[data-settings-sign-out]")?.addEventListener("click", async () => {
     try { await logout(); } finally { window.location.reload(); }

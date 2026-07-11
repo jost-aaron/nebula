@@ -50,6 +50,22 @@ test("TMDB safely maps missing configuration and upstream failures", async () =>
   await assert.rejects(() => createTmdbClient({ token: "secret", fetchImpl: async () => new Response("not json") }).search({ query: "x" }), (error) => error.status === 502);
 });
 
+test("TMDB resolves a changed server token for each request", async () => {
+  let token = "first-dynamic-token-value";
+  const headers = [];
+  const client = createTmdbClient({ tokenProvider: () => token, fetchImpl: async (_url, options) => {
+    headers.push(options.headers.authorization);
+    return jsonResponse({ results: [] });
+  }});
+  assert.equal(client.configured, true);
+  await client.search({ category: "movies", query: "Example" });
+  token = "second-dynamic-token-value";
+  await client.search({ category: "movies", query: "Example" });
+  assert.deepEqual(headers, ["Bearer first-dynamic-token-value", "Bearer second-dynamic-token-value"]);
+  token = "";
+  assert.equal(client.configured, false);
+});
+
 test("Cinema TMDB routes require explicit apply before writing matched metadata", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "nebula-tmdb-route-"));
   const storage = await createStorage({ contentRoot: root });

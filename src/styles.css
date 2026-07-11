@@ -6116,6 +6116,12 @@ h1 {
 .account-detail { margin: 0; color: #91a0af; text-transform: capitalize; }
 .account-sessions-panel { grid-column: 1 / -1; }
 .account-members-panel { grid-column: 1 / -1; display: grid; gap: 11px; border-radius: 8px; padding: 16px; background: rgba(0, 0, 0, 0.18); }
+.account-provider-panel { grid-column: 1 / -1; display: grid; gap: 11px; border-radius: 8px; padding: 16px; background: rgba(0, 0, 0, 0.18); }
+.account-provider-panel h4, .account-provider-panel p { margin: 0; }
+.account-provider-panel > p { color: #9aa8b7; }
+.account-provider-panel form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; }
+.account-provider-panel form > div { display: flex; gap: 8px; }
+.account-provider-panel form > span { grid-column: 1 / -1; min-height: 18px; color: #9dcdd5; font-size: .86rem; }
 .account-members-panel h4 { margin: 0; }
 .account-members-panel form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; align-items: end; gap: 10px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 14px; }
 .account-members-panel form > span { grid-column: 1 / -1; color: #9dcdd5; }
@@ -6138,5 +6144,7 @@ h1 {
   .account-menu { position: fixed; top: calc(74px + var(--safe-area-top)); right: calc(14px + var(--safe-area-right)); }
   .account-settings-grid { grid-template-columns: 1fr; }
   .account-members-panel form { grid-template-columns: 1fr; }
+  .account-provider-panel form { grid-template-columns: 1fr; }
+  .account-provider-panel form > div { flex-wrap: wrap; }
   .account-signout-panel { grid-template-columns: 1fr; }
 }

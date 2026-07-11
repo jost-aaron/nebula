@@ -75,7 +75,10 @@ const googleVisionWebDetection = async (frames) => {
 };
 
 export const createCinemaRoutes = (storage, accountStore, options = {}) => {
-  const tmdb = options.tmdbClient ?? createTmdbClient(options.tmdb);
+  const tmdb = options.tmdbClient ?? createTmdbClient({
+    ...options.tmdb,
+    tokenProvider: options.tmdb?.tokenProvider ?? (() => accountStore?.getServerSetting?.("tmdb_api_token") || process.env.TMDB_API_TOKEN || "")
+  });
   const requireVideo = async (requestedPath) => {
     const contentPath = storage.relativePath(requestedPath ?? "");
     const absolutePath = storage.resolveContentPath(contentPath);

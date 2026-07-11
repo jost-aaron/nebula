@@ -27,13 +27,15 @@ const tmdbError = (status, message, retryAfter = "") => Object.assign(new Error(
 export const createTmdbClient = ({
   baseUrl = process.env.TMDB_API_BASE_URL || DEFAULT_BASE_URL,
   fetchImpl = globalThis.fetch,
-  token = process.env.TMDB_API_TOKEN || ""
+  token = process.env.TMDB_API_TOKEN || "",
+  tokenProvider = () => token
 } = {}) => {
-  const configured = Boolean(token.trim());
+  const currentToken = () => safeText(tokenProvider());
 
   const request = async (pathname, searchParams = {}) => {
-    if (!configured) {
-      throw tmdbError(503, "TMDB metadata is not configured. Set TMDB_API_TOKEN on the server and restart Nebula.");
+    const requestToken = currentToken();
+    if (!requestToken) {
+      throw tmdbError(503, "TMDB metadata is not configured. Add a token in Settings or set TMDB_API_TOKEN on the server.");
     }
 
     const url = new URL(`${baseUrl.replace(/\/$/, "")}${pathname}`);
@@ -46,7 +48,7 @@ export const createTmdbClient = ({
 
     try {
       response = await fetchImpl(url, {
-        headers: { accept: "application/json", authorization: `Bearer ${token}` },
+        headers: { accept: "application/json", authorization: `Bearer ${requestToken}` },
         signal: controller.signal
       });
     } catch (error) {
@@ -122,5 +124,5 @@ export const createTmdbClient = ({
     };
   };
 
-  return { configured, details, search };
+  return { get configured() { return Boolean(currentToken()); }, details, search };
 };

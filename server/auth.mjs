@@ -41,6 +41,7 @@ export const capabilitiesForRole = (role) => new Set(role === "owner"
 const capabilityForRoute = (request, url) => {
   const method = request.method ?? "GET";
   const path = url.pathname;
+  if (path === "/api/auth/server-settings/tmdb") return "server.admin";
   if (path === "/api/auth/accounts" || path.startsWith("/api/auth/accounts/")) return "server.admin";
   if (path.startsWith("/api/auth/")) return "account.use";
   if (path === "/api/server/info") return "dashboard.use";

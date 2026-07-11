@@ -5,10 +5,13 @@ playback, local metadata, accounts, and watchlists do not depend on TMDB.
 
 ## Configuration and security
 
-- Set the TMDB API Read Access Token as `TMDB_API_TOKEN` in the server/Compose
-  environment. Nebula sends it as an `Authorization: Bearer` header to TMDB v3.
-- The token is never returned by an API, embedded in browser code, included in
-  image URLs, or written to metadata. Missing configuration is a supported state.
+- An owner can save the TMDB API Read Access Token in Settings / Account. It is
+  stored in the server-only SQLite data volume and is never returned after the
+  write. `TMDB_API_TOKEN` remains a server/Compose fallback when no saved token
+  exists. Nebula sends the effective token as an `Authorization: Bearer` header.
+- The token value is never returned by an API, embedded in browser code,
+  included in image URLs, or written to metadata. Missing configuration is a
+  supported state.
 - `TMDB_API_BASE_URL` exists only to point automated tests at a mock service; a
   deployment should leave it unset.
 - Existing Nebula authorization applies. All signed-in users can read library
