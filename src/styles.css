@@ -5409,6 +5409,98 @@ h1 {
   font-weight: 600;
 }
 
+.cinema-card-progress {
+  position: absolute;
+  right: 9px;
+  bottom: 8px;
+  left: 9px;
+  z-index: 2;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.cinema-card-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--cinema-cyan);
+  box-shadow: 0 0 12px rgba(85, 223, 243, 0.55);
+}
+
+.cinema-continue {
+  display: grid;
+  gap: 12px;
+  padding: 4px 2px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.cinema-continue > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cinema-continue h3 {
+  margin: 2px 0 0;
+  font-size: clamp(1.3rem, 2vw, 2rem);
+}
+
+.cinema-continue > header > span,
+.cinema-catalog-status {
+  color: #82919c;
+  font-size: 0.8rem;
+}
+
+.cinema-continue .cinema-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(150px, 190px);
+  gap: 14px;
+  overflow-x: auto;
+  padding: 2px 2px 10px;
+}
+
+.cinema-catalog-status,
+.cinema-catalog-note {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid rgba(85, 223, 243, 0.14);
+  border-radius: 10px;
+  background: rgba(85, 223, 243, 0.045);
+}
+
+.cinema-catalog-status span {
+  flex: 1;
+}
+
+.cinema-catalog-status button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid rgba(85, 223, 243, 0.26);
+  border-radius: 8px;
+  color: #dffbff;
+  background: rgba(85, 223, 243, 0.09);
+  font: inherit;
+}
+
+.cinema-catalog-note {
+  align-items: flex-start;
+  flex-direction: column;
+  justify-content: center;
+  color: #d8e5eb;
+}
+
+.cinema-catalog-note span {
+  color: #82919c;
+  font-size: 0.82rem;
+}
+
 .cinema-library.browsing .cinema-empty,
 .cinema-watchlist-view.browsing .cinema-empty {
   min-height: clamp(260px, 48vh, 480px);
@@ -5899,7 +5991,29 @@ h1 {
 
   .cinema-actions {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cinema-actions button:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .cinema-catalog-status {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .cinema-catalog-status span {
+    min-width: calc(100% - 32px);
+  }
+
+  .cinema-catalog-status button {
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .cinema-continue .cinema-grid {
+    grid-auto-columns: minmax(132px, 40vw);
   }
 
   .cinema-actions button {

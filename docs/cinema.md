@@ -37,6 +37,13 @@ It renders:
 - A metadata editor for imported video items.
 - Browser-generated preview thumbnails.
 - A prototype visual identification workflow for selected videos.
+- Stable catalog item/source identities when available, with path-based local
+  library and streaming behavior retained as a compatibility fallback.
+- Per-account Continue Watching, resume prompts, progress bars, watched state
+  controls, and throttled playback lifecycle reporting.
+- Embedded chapters when the catalog item response includes probed chapter
+  data; prototype chapter markers are no longer shown.
+- Catalog scan status and explicit local metadata/artwork fallback states.
 
 The Dashboard command uses the same close-app path as Escape, returning from the
 Cinema surface to the main dashboard without changing library state.
@@ -131,6 +138,11 @@ The frontend updates these through:
 - `POST /api/cinema/tmdb/search` - return movie or TV match candidates.
 - `POST /api/cinema/tmdb/apply` - explicitly apply a selected candidate.
 - `POST /api/cinema/tmdb/refresh` - explicitly refresh a stored TMDB match.
+- `GET /api/catalog/items?mediaKind=video` - resolve stable Cinema identities.
+- `GET /api/catalog/items/:id` - read available catalog enrichment/chapter data.
+- `POST /api/catalog/scan` - request a catalog rescan and return scan counts.
+- `POST /api/playback/events` - report start, progress, pause, stop, and complete.
+- `GET /api/playback/continue-watching` - load the current account's resumable titles.
 
 The media endpoint supports HTTP byte ranges and returns `206 Partial Content`
 for range requests. This is required for normal browser video playback behavior,
@@ -144,6 +156,10 @@ revoked with account sessions.
 
 ## Boundaries
 
-Cinema is still a local video-library prototype. It does not scrape metadata,
-persist watch progress, transcode files, detect seasons deeply, or create
-server-side thumbnails yet. Music is intentionally handled by Studio.
+Cinema remains additive during the catalog rollout: watchlists, metadata edits,
+TMDB matching, media tickets, and playback continue to use the existing Cinema
+path APIs. Stable IDs are canonical for new playback state, but a catalog outage
+falls back to the local library rather than blocking browsing or playback.
+Transcoding and server-side thumbnail generation are not implemented. Chapter,
+probe, and background-enrichment status can only be shown when those fields are
+projected by the catalog API. Music remains intentionally handled by Studio.
