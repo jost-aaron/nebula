@@ -1,6 +1,16 @@
 import { createElement, icons } from "lucide";
 import { getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken } from "../api/http";
-import { identifyCinemaFrames, listCinemaLibrary, updateCinemaMetadata, updateCinemaWatchlist } from "../api/cinemaApi";
+import {
+  getCinemaCatalogItem,
+  identifyCinemaFrames,
+  listCinemaCatalog,
+  listCinemaContinueWatching,
+  listCinemaLibrary,
+  reportCinemaPlayback,
+  scanCinemaCatalog,
+  updateCinemaMetadata,
+  updateCinemaWatchlist
+} from "../api/cinemaApi";
 import { createCinemaTmdbController, renderTmdbPanel } from "./tmdbUi";
 import type {
   CinemaCategory,
@@ -11,6 +21,8 @@ import type {
   CinemaWatchlistUpdateRequest
 } from "../shared/cinemaTypes";
 import type { CinemaTmdbCandidate, CinemaTmdbStatusResponse } from "../shared/cinemaTmdbTypes";
+import type { MediaChapter } from "../shared/catalogTypes";
+import type { ContinueWatchingEntry, PlaybackEventKind } from "../shared/playbackTypes";
 
 type CinemaView = "library" | "watchlist" | "title-detail" | "player" | "metadata-editor" | "servers" | "identify";
 
@@ -27,14 +39,10 @@ const categories: Array<{ id: CinemaCategory; label: string; empty: string }> = 
   { empty: "Put episode files in a TV, Shows, or Series folder.", id: "tv", label: "TV Shows" }
 ];
 
-const chapterMarkers = [
-  ["The Beginning", "0:00"],
-  ["The Plan", "6:23"],
-  ["The Attack", "13:08"],
-  ["The Resistance", "21:53"],
-  ["The Truth", "30:38"],
-  ["The End", "43:45"]
-] as const;
+interface CinemaCatalogState {
+  chapters: MediaChapter[];
+  probeState: string;
+}
 
 const escapeHtml = (value: string) =>
   value
@@ -58,12 +66,6 @@ const formatTime = (seconds: number) => {
   const remainder = safeSeconds % 60;
   return `${minutes}:${String(remainder).padStart(2, "0")}`;
 };
-
-const parseTimeLabel = (time: string) =>
-  time
-    .split(":")
-    .map((part) => Number(part))
-    .reduce((total, part) => total * 60 + (Number.isFinite(part) ? part : 0), 0);
 
 const estimateRuntime = (_entry: CinemaEntry) => "Runtime pending";
 
@@ -172,7 +174,7 @@ const renderWatchlistButton = (entry: CinemaEntry) => `
   </button>
 `;
 
-const renderPlaybackControls = (entry: CinemaEntry, server: CinemaServerInfo) => `
+const renderPlaybackControls = (entry: CinemaEntry, server: CinemaServerInfo, playback?: ContinueWatchingEntry, chapters: MediaChapter[] = []) => `
   <div class="cinema-player-overlay">
     <div class="cinema-preview-badges">
       <span><i class="cinema-status-dot ${server.online ? "online" : "offline"}"></i>${escapeHtml(server.mode)}</span>
@@ -180,17 +182,17 @@ const renderPlaybackControls = (entry: CinemaEntry, server: CinemaServerInfo) =>
     </div>
     <button class="cinema-play-orb" type="button" data-cinema-action="play" aria-label="Play">${renderCinemaIcon("Play", "cinema-play-icon")}</button>
     <div class="cinema-preview-transport" aria-hidden="true">
-      <span>${renderCinemaIcon("Play")} 0:00</span>
+      <span>${renderCinemaIcon("Play")} ${playback ? formatTime(playback.positionSeconds) : "0:00"}</span>
       <div class="cinema-preview-timeline">
-        <i></i>
-        ${chapterMarkers.map((_, index) => `<b style="--chapter-position: ${(index / (chapterMarkers.length - 1)) * 100}%"></b>`).join("")}
+        <i style="width: ${Math.round((playback?.progress ?? 0) * 100)}%"></i>
+        ${chapters.map((chapter, index) => `<b title="${escapeHtml(chapter.title)}" style="--chapter-position: ${(index / Math.max(1, chapters.length - 1)) * 100}%"></b>`).join("")}
       </div>
       <span>${estimateRuntime(entry)}</span>
     </div>
   </div>
 `;
 
-const renderCinemaCards = (entries: CinemaEntry[], category: CinemaCategory) => {
+const renderCinemaCards = (entries: CinemaEntry[], category: CinemaCategory, playback: Map<string, ContinueWatchingEntry> = new Map()) => {
   if (entries.length === 0) {
     return `
       <div class="cinema-empty">
@@ -202,44 +204,48 @@ const renderCinemaCards = (entries: CinemaEntry[], category: CinemaCategory) => 
 
   return entries
     .map(
-      (entry) => `
+      (entry) => {
+        const state = entry.id ? playback.get(entry.id) : undefined;
+        return `
         <button class="cinema-card" type="button" data-cinema-path="${escapeHtml(entry.path)}">
           <span class="cinema-poster" data-cinema-poster="${escapeHtml(entry.path)}"${posterStyle(entry)}>
             ${entry.posterUrl ? "" : renderPosterFallback(entry)}
             <span class="cinema-poster-scrim"></span>
             <span class="cinema-card-badge">${escapeHtml(entry.category === "tv" ? "Series" : "Movie")}</span>
             <span class="cinema-card-play">${renderCinemaIcon("Play", "cinema-play-icon")}</span>
+            ${state ? `<span class="cinema-card-progress"><i style="width:${Math.round(state.progress * 100)}%"></i></span>` : ""}
           </span>
           <span class="cinema-card-copy">
             <strong>${escapeHtml(displayTitle(entry))}</strong>
             <small>${escapeHtml([entry.releaseYear, entry.genres[0] || entry.folder || "Local media"].filter(Boolean).join(" · "))}</small>
           </span>
         </button>
-      `
+      `;
+      }
     )
     .join("");
 };
 
-const renderChapterStrip = (entry: CinemaEntry) => `
+const renderChapterStrip = (entry: CinemaEntry, chapters: MediaChapter[]) => chapters.length > 0 ? `
   <section class="cinema-chapter-strip" aria-label="Chapters">
     <header>
       <strong>Chapters</strong>
       <button type="button" data-cinema-action="view-chapters">View All Chapters</button>
     </header>
     <div class="cinema-chapter-cards">
-      ${renderChapterCards(entry, "rail")}
+      ${renderChapterCards(entry, chapters, "rail")}
     </div>
   </section>
-`;
+` : `<section class="cinema-catalog-note"><strong>Chapters pending</strong><span>Embedded chapters will appear after this source is probed.</span></section>`;
 
-const renderChapterCards = (entry: CinemaEntry, mode: "rail" | "expanded") =>
-  chapterMarkers
+const renderChapterCards = (entry: CinemaEntry, chapters: MediaChapter[], mode: "rail" | "expanded") =>
+  chapters
     .map(
-      ([chapter, time], index) => `
-        <button class="${index === 0 ? "active" : ""}" type="button">
-          <span class="cinema-chapter-thumb" data-cinema-backdrop="${escapeHtml(entry.path)}" data-cinema-frame-time="${parseTimeLabel(time)}"${posterStyle(entry)}>${entry.posterUrl ? "" : renderPosterFallback(entry)}</span>
-          <strong>${index + 1}. ${chapter}</strong>
-          <small>${time}${mode === "expanded" ? " / Scene preview" : ""}</small>
+      (chapter, index) => `
+        <button class="${index === 0 ? "active" : ""}" type="button" data-cinema-action="chapter" data-cinema-chapter-time="${chapter.startSeconds}">
+          <span class="cinema-chapter-thumb" data-cinema-backdrop="${escapeHtml(entry.path)}" data-cinema-frame-time="${chapter.startSeconds}"${posterStyle(entry)}>${entry.posterUrl ? "" : renderPosterFallback(entry)}</span>
+          <strong>${index + 1}. ${escapeHtml(chapter.title || `Chapter ${index + 1}`)}</strong>
+          <small>${formatTime(chapter.startSeconds)}${mode === "expanded" ? " / Embedded chapter" : ""}</small>
         </button>
       `
     )
@@ -299,7 +305,12 @@ const renderQueueCards = (entries: CinemaEntry[]) =>
     )
     .join("");
 
-const renderLibrary = (entries: CinemaEntry[], activeCategory: CinemaCategory, query: string, selected: CinemaEntry | null) => {
+const renderContinueWatching = (entries: CinemaEntry[], playback: Map<string, ContinueWatchingEntry>) => {
+  const continuing = [...playback.values()].map((state) => entries.find((entry) => entry.id === state.itemId)).filter((entry): entry is CinemaEntry => Boolean(entry));
+  return continuing.length ? `<section class="cinema-continue"><header><div><p class="eyebrow">For You</p><h3>Continue Watching</h3></div><span>${continuing.length} in progress</span></header><div class="cinema-grid">${renderCinemaCards(continuing, "movies", playback)}</div></section>` : "";
+};
+
+const renderLibrary = (entries: CinemaEntry[], activeCategory: CinemaCategory, query: string, selected: CinemaEntry | null, playback: Map<string, ContinueWatchingEntry>, catalogMessage: string) => {
   const categoryEntries = entries.filter((entry) => entry.category === activeCategory);
   const visibleEntries = query
     ? categoryEntries.filter((entry) =>
@@ -309,6 +320,8 @@ const renderLibrary = (entries: CinemaEntry[], activeCategory: CinemaCategory, q
 
   return `
     <main class="cinema-library browsing" data-cinema-view="library">
+      ${!query ? renderContinueWatching(entries, playback) : ""}
+      <div class="cinema-catalog-status">${renderCinemaIcon(catalogMessage.includes("fallback") ? "HardDrive" : "RefreshCw")}<span>${escapeHtml(catalogMessage)}</span><button type="button" data-cinema-action="scan-catalog">Scan library</button></div>
       <section class="cinema-library-row">
         <header>
           <div class="cinema-library-heading">
@@ -331,7 +344,7 @@ const renderLibrary = (entries: CinemaEntry[], activeCategory: CinemaCategory, q
             </nav>
           </div>
         </header>
-        <div class="cinema-grid" data-cinema-grid>${renderCinemaCards(visibleEntries, activeCategory)}</div>
+        <div class="cinema-grid" data-cinema-grid>${renderCinemaCards(visibleEntries, activeCategory, playback)}</div>
       </section>
     </main>
   `;
@@ -372,11 +385,11 @@ const renderWatchlistView = (entries: CinemaEntry[], query: string) => {
   `;
 };
 
-const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[]) => `
+const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: ContinueWatchingEntry | undefined, catalog: CinemaCatalogState | undefined) => `
   <main class="cinema-title-detail" data-cinema-view="title-detail">
     <section class="cinema-player-layout">
       <div class="cinema-player-frame" data-cinema-backdrop="${escapeHtml(entry.path)}"${backdropStyle(entry)}>
-        ${renderPlaybackControls(entry, currentServerInfo())}
+        ${renderPlaybackControls(entry, currentServerInfo(), playback, catalog?.chapters)}
       </div>
       <aside class="cinema-title-panel">
         <button class="cinema-back-command" type="button" data-cinema-action="library">${renderCinemaIcon("ArrowLeft")} Back to Library</button>
@@ -386,7 +399,8 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[]) => `
         <p class="cinema-title-meta">${escapeHtml(metadataLine(entry) || `${entry.folder || "Content"} / ${formatSize(entry.size)}`)}</p>
         <p>${escapeHtml(entry.summary || "No synopsis has been added for this title yet.")}</p>
         <div class="cinema-actions">
-          <button type="button" data-cinema-action="play">${renderCinemaIcon("Play")} Play</button>
+          <button type="button" data-cinema-action="play">${renderCinemaIcon("Play")} ${playback ? `Resume at ${formatTime(playback.positionSeconds)}` : "Play"}</button>
+          ${entry.id && entry.sourceId ? `<button type="button" data-cinema-action="played">${renderCinemaIcon("BadgeCheck")} Mark watched</button><button type="button" data-cinema-action="unplayed">Mark unwatched</button>` : ""}
           ${renderWatchlistButton(entry)}
           <button type="button" data-cinema-action="more">${renderCinemaIcon("MoreHorizontal")} More</button>
         </div>
@@ -404,11 +418,13 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[]) => `
           <span>Studio <strong>${escapeHtml(entry.studio || "Not set")}</strong></span>
           <span>File <strong>${escapeHtml(entry.name)}</strong></span>
           <span>Metadata <strong>${entry.tmdbId ? `TMDB ${escapeHtml(entry.tmdbMediaType)} #${entry.tmdbId}` : "Local"}</strong></span>
+          <span>Catalog <strong>${entry.id && entry.sourceId ? "Stable ID" : "Path fallback"}</strong></span>
+          <span>Enrichment <strong>${escapeHtml(catalog?.probeState || (entry.posterUrl || entry.tmdbId ? "Metadata ready" : "Local fallback"))}</strong></span>
         </div>
       </aside>
     </section>
     <section class="cinema-detail-lower">
-      ${renderChapterStrip(entry)}
+      ${renderChapterStrip(entry, catalog?.chapters ?? [])}
       ${renderNextUpQueue(entries, entry)}
     </section>
   </main>
@@ -555,11 +571,11 @@ const renderMoreSheet = (entry: CinemaEntry) =>
     `
   );
 
-const renderChaptersSheet = (entry: CinemaEntry) =>
+const renderChaptersSheet = (entry: CinemaEntry, chapters: MediaChapter[]) =>
   renderCinemaSheet(
     "All Chapters",
     entry.title,
-    `<div class="cinema-expanded-chapters">${renderChapterCards(entry, "expanded")}</div>`
+    chapters.length ? `<div class="cinema-expanded-chapters">${renderChapterCards(entry, chapters, "expanded")}</div>` : `<div class="cinema-empty"><strong>No embedded chapters</strong><span>Chapter data is not available for this source yet.</span></div>`
   );
 
 const renderQueueSheet = (entries: CinemaEntry[], selected: CinemaEntry | null) => {
@@ -669,6 +685,10 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
   let view: CinemaView = "library";
   let query = "";
   let isScanning = false;
+  let catalogMessage = "Loading catalog…";
+  let playback = new Map<string, ContinueWatchingEntry>();
+  const catalogState = new Map<string, CinemaCatalogState>();
+  let stopActivePlayback: (() => void) | null = null;
 
   const currentVisibleEntries = () =>
     entries
@@ -817,7 +837,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
     content.classList.toggle("scanning", isScanning);
 
     if (view === "library") {
-      content.innerHTML = renderLibrary(entries, activeCategory, query, selected);
+      content.innerHTML = renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage);
     }
 
     if (view === "watchlist") {
@@ -825,11 +845,11 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
     }
 
     if (view === "title-detail") {
-      content.innerHTML = selected ? renderTitleHero(selected, entries) : renderLibrary(entries, activeCategory, query, selected);
+      content.innerHTML = selected ? renderTitleHero(selected, entries, selected.id ? playback.get(selected.id) : undefined, selected.id ? catalogState.get(selected.id) : undefined) : renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage);
     }
 
     if (view === "player") {
-      content.innerHTML = selected ? renderPlayerView(selected, entries) : renderLibrary(entries, activeCategory, query, selected);
+      content.innerHTML = selected ? renderPlayerView(selected, entries) : renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage);
     }
 
     if (view === "servers") {
@@ -853,11 +873,26 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
     hydratePosters();
   };
 
+  const loadCatalogDetail = async (entry: CinemaEntry) => {
+    if (!entry.id || catalogState.has(entry.id)) return;
+    try {
+      const detail = (await getCinemaCatalogItem(entry.id)).item;
+      const candidate = detail as typeof detail & { chapters?: unknown; probeState?: unknown; source?: { chapters?: unknown; probeState?: unknown } };
+      const rawChapters = Array.isArray(candidate.chapters) ? candidate.chapters : Array.isArray(candidate.source?.chapters) ? candidate.source.chapters : [];
+      const chapters = rawChapters.filter((chapter): chapter is MediaChapter => Boolean(chapter && typeof chapter === "object" && Number.isFinite((chapter as MediaChapter).startSeconds)));
+      catalogState.set(entry.id, { chapters, probeState: String(candidate.probeState ?? candidate.source?.probeState ?? (chapters.length ? "Ready" : "Pending")) });
+      if (selected?.id === entry.id && view === "title-detail") render();
+    } catch {
+      catalogState.set(entry.id, { chapters: [], probeState: "Local fallback" });
+    }
+  };
+
   const openTitle = (entry: CinemaEntry) => {
     selected = entry;
     activeCategory = entry.category;
     view = "title-detail";
     render();
+    void loadCatalogDetail(entry);
   };
 
   const openPlayer = (fullscreen = false) => {
@@ -865,6 +900,9 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
       return;
     }
 
+    const playingEntry = selected;
+    const resume = playingEntry.id ? playback.get(playingEntry.id) : undefined;
+    const shouldResume = resume ? window.confirm(`Resume ${playingEntry.title} at ${formatTime(resume.positionSeconds)}?`) : false;
     view = "player";
     render();
 
@@ -873,6 +911,41 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
     const status = content.querySelector<HTMLElement>("[data-cinema-player-status]");
 
     if (player && stage) {
+      let sessionId: string | null = null;
+      let ended = false;
+      let lifecycleStarted = false;
+      let lastProgressAt = 0;
+      let eventQueue = Promise.resolve();
+      const report = (event: PlaybackEventKind) => {
+        if (!playingEntry.id || !playingEntry.sourceId) return;
+        if (event === "start") lifecycleStarted = true;
+        const durationSeconds = Number.isFinite(player.duration) && player.duration > 0 ? player.duration : null;
+        const positionSeconds = durationSeconds === null ? Math.max(0, player.currentTime || 0) : Math.min(durationSeconds, Math.max(0, player.currentTime || 0));
+        eventQueue = eventQueue.then(async () => {
+          if (event !== "start" && !sessionId) return;
+          const result = await reportCinemaPlayback({
+            durationSeconds,
+            event,
+            eventId: crypto.randomUUID(),
+            itemId: playingEntry.id!,
+            positionSeconds,
+            sessionId,
+            sourceId: playingEntry.sourceId!
+          });
+          sessionId = result.session.id;
+          if (result.state.positionSeconds > 0 && result.state.lastPlayedAt) {
+            playback.set(playingEntry.id!, {
+              itemId: playingEntry.id!,
+              lastPlayedAt: result.state.lastPlayedAt,
+              positionSeconds: result.state.positionSeconds,
+              progress: durationSeconds ? result.state.positionSeconds / durationSeconds : 0,
+              sourceId: result.state.sourceId
+            });
+          } else {
+            playback.delete(playingEntry.id!);
+          }
+        }).catch(() => setStatus("Playing locally; progress sync is unavailable."));
+      };
       const renderPlaybackState = () => {
         stage.classList.toggle("is-playing", !player.paused && !player.ended);
       };
@@ -885,6 +958,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
       player.addEventListener("play", () => {
         renderPlaybackState();
         setStatus("Playback requested.");
+        if (!lifecycleStarted) report("start");
       });
       player.addEventListener("playing", () => {
         renderPlaybackState();
@@ -893,11 +967,33 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
       player.addEventListener("pause", () => {
         renderPlaybackState();
         setStatus("Paused.");
+        if (!ended) report("pause");
       });
       player.addEventListener("ended", () => {
+        ended = true;
         renderPlaybackState();
         setStatus("Finished.");
+        report("complete");
       });
+      player.addEventListener("timeupdate", () => {
+        if (sessionId && Date.now() - lastProgressAt >= 10_000) {
+          lastProgressAt = Date.now();
+          report("progress");
+        }
+      });
+      player.addEventListener("loadedmetadata", () => {
+        if (shouldResume && resume && resume.positionSeconds < player.duration) player.currentTime = resume.positionSeconds;
+      }, { once: true });
+      const stopPlayback = () => {
+        if (!ended && lifecycleStarted) {
+          ended = true;
+          report("stop");
+        }
+        window.removeEventListener("pagehide", stopPlayback);
+      };
+      stopActivePlayback = stopPlayback;
+      player.addEventListener("emptied", stopPlayback, { once: true });
+      window.addEventListener("pagehide", stopPlayback, { once: true });
       player.addEventListener("stalled", () => setStatus("Playback is waiting for more data from the server."));
       player.addEventListener("error", () => setStatus("This video could not be played here."));
       renderPlaybackState();
@@ -1145,6 +1241,23 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
 
     try {
       entries = (await listCinemaLibrary()).entries;
+      try {
+        const [catalog, continuing] = await Promise.all([listCinemaCatalog(), listCinemaContinueWatching()]);
+        const byPath = new Map(catalog.items.map((item) => [item.path ?? item.source?.path ?? "", item]));
+        entries = entries.map((entry) => {
+          const item = (entry.id ? catalog.items.find((candidate) => candidate.id === entry.id) : undefined) ?? byPath.get(entry.path);
+          return item ? {
+            ...entry,
+            availability: (item.availability ?? item.source?.availability ?? entry.availability) as CinemaEntry["availability"],
+            id: item.id,
+            sourceId: item.sourceId ?? item.source?.id ?? entry.sourceId
+          } : entry;
+        });
+        playback = new Map(continuing.entries.map((entry) => [entry.itemId, entry]));
+        catalogMessage = `${catalog.items.length} stable catalog ${catalog.items.length === 1 ? "item" : "items"} · playback synced`;
+      } catch {
+        catalogMessage = "Local fallback · catalog or personal playback state is unavailable";
+      }
       selected = selected ? entries.find((entry) => entry.path === selected?.path) ?? selected : null;
     } catch (error) {
       content.innerHTML = `
@@ -1195,10 +1308,13 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
       null;
 
     if (action === "home") {
+      stopActivePlayback?.();
       onHome?.();
     }
 
     if (action === "library") {
+      stopActivePlayback?.();
+      stopActivePlayback = null;
       selected = null;
       closeSheet();
       view = "library";
@@ -1239,6 +1355,8 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
     }
 
     if (action === "back-title") {
+      stopActivePlayback?.();
+      stopActivePlayback = null;
       view = "title-detail";
       render();
     }
@@ -1269,7 +1387,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
 
     if (action === "view-chapters" && active) {
       selected = active;
-      openSheet(renderChaptersSheet(active));
+      openSheet(renderChaptersSheet(active, active.id ? catalogState.get(active.id)?.chapters ?? [] : []));
     }
 
     if (action === "view-queue") {
@@ -1295,6 +1413,58 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
 
     if (action === "refresh") {
       void loadLibrary();
+    }
+
+    if (action === "scan-catalog") {
+      actionButton.disabled = true;
+      catalogMessage = "Catalog scan running…";
+      render();
+      void scanCinemaCatalog().then(async (result) => {
+        const scan = result.scan;
+        const scanMessage = scan.error ? `Scan failed · ${scan.error}` : `Scan complete · ${scan.discovered ?? 0} discovered · ${scan.new ?? 0} new · ${scan.changed ?? 0} changed`;
+        await loadLibrary();
+        catalogMessage = scanMessage;
+        render();
+      }).catch((error) => {
+        catalogMessage = `Local fallback · ${error instanceof Error ? error.message : "scan unavailable"}`;
+        render();
+      });
+    }
+
+    if ((action === "played" || action === "unplayed") && active?.id && active.sourceId) {
+      const markPlayed = action === "played";
+      actionButton.disabled = true;
+      const session = crypto.randomUUID();
+      const start = {
+        durationSeconds: markPlayed ? 1 : null,
+        event: "start" as const,
+        eventId: crypto.randomUUID(),
+        itemId: active.id,
+        positionSeconds: 0,
+        sessionId: session,
+        sourceId: active.sourceId
+      };
+      void reportCinemaPlayback(start).then(() => reportCinemaPlayback({
+        ...start,
+        durationSeconds: markPlayed ? 1 : null,
+        event: markPlayed ? "complete" : "stop",
+        eventId: crypto.randomUUID(),
+        positionSeconds: markPlayed ? 1 : 0
+      })).then(() => {
+        playback.delete(active.id!);
+        render();
+      }).catch(() => {
+        actionButton.disabled = false;
+        actionButton.textContent = "Playback update failed";
+      });
+    }
+
+    if (action === "chapter" && selected) {
+      const chapterTime = Number(actionButton.dataset.cinemaChapterTime);
+      closeSheet();
+      openPlayer(false);
+      const player = content.querySelector<HTMLMediaElement>("[data-cinema-player]");
+      if (player && Number.isFinite(chapterTime)) player.addEventListener("loadedmetadata", () => { player.currentTime = chapterTime; }, { once: true });
     }
 
     if (action === "servers") {
