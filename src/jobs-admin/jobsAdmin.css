@@ -1,0 +1,74 @@
+.jobs-admin {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.jobs-admin h3, .jobs-admin p { margin: 0; }
+.jobs-admin-header, .jobs-admin-actions, .jobs-admin-filters, .jobs-admin-card-header,
+.jobs-admin-card-meta, .jobs-admin-confirm, .jobs-admin-empty { display: flex; align-items: center; }
+.jobs-admin-header { justify-content: space-between; gap: 12px; }
+.jobs-admin-copy { display: grid; gap: 4px; }
+.jobs-admin-copy p, .jobs-admin-status, .jobs-admin-card-meta, .jobs-admin-empty { color: #9aa8b7; }
+.jobs-admin-copy p, .jobs-admin-status, .jobs-admin-card-meta { font-size: 0.84rem; }
+.jobs-admin-actions, .jobs-admin-filters, .jobs-admin-card-meta, .jobs-admin-confirm { flex-wrap: wrap; gap: 8px; }
+
+.jobs-admin button, .jobs-admin select {
+  min-height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 0 11px;
+  color: #f6f8fb;
+  background: rgba(255, 255, 255, 0.08);
+  font: inherit;
+}
+.jobs-admin button { cursor: pointer; }
+.jobs-admin button:hover:not(:disabled), .jobs-admin button:focus-visible,
+.jobs-admin select:focus-visible { border-color: rgba(255, 255, 255, 0.5); background: rgba(255, 255, 255, 0.15); outline: none; }
+.jobs-admin button:disabled { cursor: wait; opacity: 0.55; }
+.jobs-admin-enqueue { display: flex; flex-wrap: wrap; gap: 7px; }
+.jobs-admin-enqueue button:first-child { color: #061019; background: #7de0ea; }
+.jobs-admin-filters label { display: grid; gap: 4px; color: #9aa8b7; font-size: 0.78rem; }
+.jobs-admin-list { display: grid; gap: 8px; }
+
+.jobs-admin-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 3px solid var(--job-color, #8896a5);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.18);
+}
+.jobs-admin-card[data-state="running"] { --job-color: #73dce7; }
+.jobs-admin-card[data-state="succeeded"] { --job-color: #72d79f; }
+.jobs-admin-card[data-state="failed"] { --job-color: #ff8181; }
+.jobs-admin-card[data-state="cancelled"] { --job-color: #a6afba; }
+.jobs-admin-card-header { justify-content: space-between; gap: 8px; }
+.jobs-admin-title { display: grid; gap: 2px; }
+.jobs-admin-title strong { text-transform: capitalize; }
+.jobs-admin-title code { color: #8493a3; font-size: 0.72rem; }
+.jobs-admin-state { border-radius: 99px; padding: 4px 8px; color: #071016; background: var(--job-color, #8896a5); font-size: 0.72rem; font-weight: 800; text-transform: uppercase; }
+.jobs-admin-progress { height: 6px; overflow: hidden; border-radius: 99px; background: rgba(255, 255, 255, 0.1); }
+.jobs-admin-progress i { display: block; width: var(--job-progress); height: 100%; background: var(--job-color, #8896a5); transition: width 180ms ease; }
+.jobs-admin-error { margin: 0; color: #ffc0c0; font-size: 0.84rem; overflow-wrap: anywhere; }
+.jobs-admin-cancel, .jobs-admin-confirm [data-jobs-confirm-cancel] { color: #ffc0c0 !important; }
+.jobs-admin-confirm { padding-top: 2px; color: #dbe4ec; font-size: 0.84rem; }
+.jobs-admin-empty { min-height: 92px; justify-content: center; border: 1px dashed rgba(255, 255, 255, 0.14); border-radius: 8px; text-align: center; }
+
+@media (max-width: 560px) {
+  .jobs-admin { padding: 11px; }
+  .jobs-admin-header, .jobs-admin-card-header { align-items: flex-start; }
+  .jobs-admin-header { flex-direction: column; }
+  .jobs-admin-actions, .jobs-admin-actions > button, .jobs-admin-filters, .jobs-admin-filters label { width: 100%; }
+  .jobs-admin-filters select { width: 100%; }
+  .jobs-admin-enqueue { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .jobs-admin-card { padding: 10px; }
+  .jobs-admin-confirm { align-items: stretch; flex-direction: column; }
+}
+
+@media (prefers-reduced-motion: reduce) { .jobs-admin-progress i { transition: none; } }
