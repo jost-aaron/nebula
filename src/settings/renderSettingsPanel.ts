@@ -6,6 +6,7 @@ import type { AccountSessionState } from "../shared/accountTypes";
 import { renderAccountSettings } from "../account/accountUi";
 import { renderJobsAdmin } from "../jobs-admin/renderJobsAdmin";
 import { renderPlaybackPolicyAdmin } from "./playbackPolicyAdmin";
+import { renderActivityAdmin } from "../activity-admin/renderActivityAdmin";
 
 const formatNumber = (value: number, digits = 1) => (Number.isFinite(value) ? value.toFixed(digits) : "0.0");
 
@@ -79,6 +80,8 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
       <button type="button" data-diagnostic-tab="account">Account</button>
       ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="jobs">Jobs</button>` : ""}
       ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="playback-policy">Playback</button>` : ""}
+      ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="activity">Activity</button>` : ""}
+      ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="playback-policy">Playback</button>` : ""}
       <button type="button" data-diagnostic-tab="renderer">Renderer</button>
       <button type="button" data-diagnostic-tab="display">Display</button>
       <button type="button" data-diagnostic-tab="performance">Performance</button>
@@ -90,6 +93,8 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
     <div class="diagnostics-board">
       ${renderAccountSettings(accountSession)}
       ${showJobsAdmin ? renderJobsAdmin() : ""}
+      ${showJobsAdmin ? renderPlaybackPolicyAdmin() : ""}
+      ${showJobsAdmin ? renderActivityAdmin() : ""}
       ${showJobsAdmin ? renderPlaybackPolicyAdmin() : ""}
       ${renderSection(
         "Renderer",

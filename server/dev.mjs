@@ -21,6 +21,7 @@ import { createDeliveryService } from "./playback/delivery.mjs";
 import { createLibraryPermissionsService, libraryPermissionsMigration } from "./permissions/index.mjs";
 import { createPlaybackPolicyRepository, createPlaybackPolicyService, playbackPolicyMigration } from "./playbackPolicy/index.mjs";
 import { createBackupService } from "./backup/index.mjs";
+import { auditMigration, createAuditService } from "./audit/index.mjs";
 import {
   createCatalogCheck,
   createDatabaseCheck,
@@ -42,7 +43,12 @@ const host = process.env.HOST ?? "0.0.0.0";
 const storage = await createStorage({ contentRoot, dataRoot });
 const database = await openNebulaDatabase(storage.accountDatabasePath);
 const accountStore = await createAccountStore({ database });
-applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration]);
+applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration]);
+const auditService = createAuditService({
+  db: database,
+  maxEvents: Number(process.env.NEBULA_AUDIT_MAX_EVENTS ?? 10_000),
+  retentionDays: Number(process.env.NEBULA_AUDIT_RETENTION_DAYS ?? 90)
+});
 const catalogRepository = createCatalogRepository(database);
 const libraryPermissions = createLibraryPermissionsService({ database });
 const probeReader = createProbeCatalogReader(database);
@@ -110,7 +116,7 @@ const jobsWorker = createJobsWorker({
   }),
   repository: jobsRepository
 });
-const authGuard = createAuthGuard(accountStore);
+const authGuard = createAuthGuard(accountStore, { audit: auditService });
 const backupService = createBackupService({
   backupRoot,
   dataRoot: storage.dataRoot,
@@ -150,6 +156,7 @@ const handleObservability = createObservabilityRoutes({
   service: observabilityService
 });
 const handleApi = createApiHandler(storage, accountStore, authGuard, {
+  audit: auditService,
   backup: backupService,
   catalog: { libraryPermissions, probeReader, repository: catalogRepository, scan: scanCatalog },
   jobs: jobsService,

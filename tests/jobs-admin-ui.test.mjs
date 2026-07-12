@@ -33,6 +33,7 @@ test("settings integrates jobs admin only for owners and adds a Jobs category", 
   assert.match(settings, /accountSession\.user\.role === "owner"/);
   assert.match(settings, /data-diagnostic-tab="jobs"/);
   assert.match(settings, /renderJobsAdmin\(\)/);
+  assert.match(source, /data-diagnostic-section="jobs"/);
 });
 
 test("settings app binds and disposes jobs admin lifecycle work", () => {
@@ -45,4 +46,5 @@ test("settings app binds and disposes jobs admin lifecycle work", () => {
 test("390x844 jobs layout keeps filters full-width and the enqueue grid in two columns", () => {
   assert.match(css, /\.jobs-admin-actions, \.jobs-admin-actions > button, \.jobs-admin-filters, \.jobs-admin-filters label \{ width: 100%; \}/);
   assert.match(css, /\.jobs-admin-enqueue \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); width: 100%; \}/);
+  assert.match(css, /\.jobs-admin\[hidden\] \{ display: none; \}/);
 });

@@ -43,7 +43,7 @@ const capabilityForRoute = (request, url) => {
   const path = url.pathname;
   if (path === "/api/auth/server-settings/tmdb") return "server.admin";
   if (path === "/api/auth/accounts" || path.startsWith("/api/auth/accounts/")) return "server.admin";
-  if (path === "/api/admin/observability/readiness" || path === "/api/admin/backups" || path.startsWith("/api/admin/backups/") || path.startsWith("/api/admin/playback-policy")) return "server.admin";
+  if (path === "/api/admin/observability/readiness" || path === "/api/admin/audit" || path === "/api/admin/backups" || path.startsWith("/api/admin/backups/") || path.startsWith("/api/admin/playback-policy")) return "server.admin";
   if (path.startsWith("/api/auth/")) return "account.use";
   if (path === "/api/server/info") return "dashboard.use";
   if (path.startsWith("/api/files")) return ["GET", "HEAD"].includes(method) ? "files.read" : "files.write";
@@ -69,7 +69,7 @@ export const createAuthGuard = (accountStore = {
   authenticateMediaTicket: () => null,
   authenticateSession: () => null,
   countUsers: () => 1
-}) => {
+}, { audit = null } = {}) => {
   const serviceAuthRequired = process.env.NEBULA_REQUIRE_AUTH === "true";
   const serviceToken = process.env.NEBULA_API_TOKEN ?? "";
   const allowLocalhost = process.env.NEBULA_AUTH_ALLOW_LOCALHOST !== "false";
@@ -136,6 +136,7 @@ export const createAuthGuard = (accountStore = {
       if (publicAuthRoutes.has(routeKey)) return true;
 
       if (!context) {
+        audit?.recordBestEffort({ actor: { kind: "anonymous" }, eventType: "auth.access_denied", outcome: "denied" });
         json(response, 401, {
           code: accountStore.countUsers() === 0 ? "setup_required" : "unauthorized",
           error: "Authentication required."
@@ -148,6 +149,7 @@ export const createAuthGuard = (accountStore = {
       if (context.transport === "cookie" && isStateChanging(request)) {
         const csrf = String(request.headers["x-nebula-csrf"] ?? "");
         if (!constantTimeTokenMatch(csrf, context.csrfToken)) {
+          audit?.recordBestEffort({ actor: { kind: "account", principalId: context.principalId, role: context.user?.role }, eventType: "auth.access_denied", outcome: "denied", metadata: { transport: "cookie" } });
           json(response, 403, { code: "csrf_required", error: "Request verification failed." });
           return false;
         }
@@ -155,6 +157,7 @@ export const createAuthGuard = (accountStore = {
 
       const capability = capabilityForRoute(request, url);
       if (!context.capabilities.has(capability)) {
+        audit?.recordBestEffort({ actor: { kind: context.kind, principalId: context.principalId, role: context.user?.role }, eventType: "auth.access_denied", outcome: "denied", target: { type: "capability", id: capability }, metadata: { transport: context.transport } });
         json(response, 403, { code: "permission_denied", error: "You do not have permission to perform this action." });
         return false;
       }

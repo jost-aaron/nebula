@@ -21,6 +21,8 @@ Owners can set global and per-account concurrent stream and bitrate limits in
 Settings / Playback. Limits default to unlimited and govern trusted remux and
 HLS/transcode delivery. Direct byte-range playback remains outside reliable
 stream accounting; see [docs/playback-policies.md](docs/playback-policies.md).
+Owners also have a bounded, redacted Activity history for account, authorization,
+scan/job, backup, and other server-administration actions.
 
 ## Run
 
@@ -66,6 +68,7 @@ without either configuration source.
 - `src/diagnostics/` - renderer, display, runtime, app, and performance
   diagnostics collectors.
 - `src/settings/` - shared Settings/Diagnostics panel renderer.
+- `src/activity-admin/` - owner-only responsive audit history surface.
 - `src/search/` - shared Search UI for the Search app.
 - `src/library/` - installed-app Library grid renderer.
 - `src/cinema/` - Plex-like local video library and lazy web player.
@@ -81,6 +84,7 @@ without either configuration source.
 - `server/accounts.mjs` - account and session API routes.
 - `server/playbackPolicy/` - persisted generated-stream limits, race-safe
   admission accounting, aggregate status, and stable policy denials.
+- `server/audit/` - structured audit migration, retention, redaction, and API.
 - `content/` - ignored local content root for Files and Cinema.
 - `ios/` - Capacitor iOS shell.
 - `scripts/ios-sync*.sh` - Docker-first Capacitor web asset sync helpers.

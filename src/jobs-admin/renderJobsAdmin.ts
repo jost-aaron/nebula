@@ -42,7 +42,7 @@ const renderJob = (job: BackgroundJob, confirmingId: string | null) => {
   </article>`;
 };
 
-export const renderJobsAdmin = () => `<section class="jobs-admin" data-jobs-admin aria-labelledby="jobs-admin-title">
+export const renderJobsAdmin = () => `<section class="jobs-admin" data-jobs-admin data-diagnostic-section="jobs" aria-labelledby="jobs-admin-title">
   <div class="jobs-admin-header">
     <div class="jobs-admin-copy"><h3 id="jobs-admin-title">Background jobs</h3><p>Owner operations for media maintenance and processing.</p></div>
     <div class="jobs-admin-actions"><button type="button" data-jobs-refresh>Refresh</button></div>

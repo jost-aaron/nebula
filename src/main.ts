@@ -9,6 +9,7 @@ import { createPerformanceMonitor } from "./diagnostics/performanceMonitor";
 import type { RendererRuntimeState } from "./diagnostics/types";
 import { bindFileBrowser, renderFileBrowserShell } from "./files/fileBrowser";
 import { bindJobsAdmin } from "./jobs-admin/renderJobsAdmin";
+import { bindActivityAdmin } from "./activity-admin/renderActivityAdmin";
 import { filterApps, renderSearchResults, renderSearchView } from "./search/renderSearchView";
 import { renderSettingsPanel } from "./settings/renderSettingsPanel";
 import { bindPlaybackPolicyAdmin } from "./settings/playbackPolicyAdmin";
@@ -221,6 +222,7 @@ const bindSettingsTabs = (container: ParentNode) => {
     account: ["account"],
     jobs: ["jobs"],
     "playback-policy": ["playback-policy"],
+    activity: ["activity"],
     apps: ["apps"],
     display: ["display"],
     performance: ["performance"],
@@ -381,7 +383,8 @@ const launchApp = async (app: DashboardApp) => {
     if (accountSession.user.role === "owner") {
       const disposeJobs = bindJobsAdmin(appSurface);
       const disposePlaybackPolicy = bindPlaybackPolicyAdmin(appSurface);
-      disposeActiveApp = () => { disposeJobs(); disposePlaybackPolicy(); };
+      const disposeActivity = bindActivityAdmin(appSurface);
+      disposeActiveApp = () => { disposeJobs(); disposePlaybackPolicy(); disposeActivity(); };
     }
   }
 
