@@ -41,6 +41,11 @@ Wave 4 audit coverage includes idempotent migration, count/age retention,
 allowlisted write/read redaction, best-effort storage failure, cursor pagination,
 filter validation, owner/service-admin access, member denial, safe seam capture,
 and desktop plus 390×844 Settings Activity layout contracts.
+Wave 4 media-list coverage includes idempotent migration, naming and media-kind
+validation, duplicate rejection, atomic ordering, unavailable-item retention,
+owner-only collection mutation, playlist cross-user isolation, library grant
+filtering, and path-free API projections. Cinema and Studio source contracts
+cover focused stable-ID save controls and 390×844 responsive behavior.
 
 ## API Smoke Checks
 

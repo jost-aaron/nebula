@@ -23,6 +23,8 @@ HLS/transcode delivery. Direct byte-range playback remains outside reliable
 stream accounting; see [docs/playback-policies.md](docs/playback-policies.md).
 Owners also have a bounded, redacted Activity history for account, authorization,
 scan/job, backup, and other server-administration actions.
+Accounts can keep ordered video and audio playlists, while owners can publish
+shared collections whose visible items follow each member's library grants.
 
 ## Run
 

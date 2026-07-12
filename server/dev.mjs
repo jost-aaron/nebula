@@ -22,6 +22,7 @@ import { createLibraryPermissionsService, libraryPermissionsMigration } from "./
 import { createPlaybackPolicyRepository, createPlaybackPolicyService, playbackPolicyMigration } from "./playbackPolicy/index.mjs";
 import { createBackupService } from "./backup/index.mjs";
 import { auditMigration, createAuditService } from "./audit/index.mjs";
+import { createMediaListsService, mediaListsMigration } from "./mediaLists/index.mjs";
 import {
   createCatalogCheck,
   createDatabaseCheck,
@@ -43,7 +44,7 @@ const host = process.env.HOST ?? "0.0.0.0";
 const storage = await createStorage({ contentRoot, dataRoot });
 const database = await openNebulaDatabase(storage.accountDatabasePath);
 const accountStore = await createAccountStore({ database });
-applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration]);
+applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration]);
 const auditService = createAuditService({
   db: database,
   maxEvents: Number(process.env.NEBULA_AUDIT_MAX_EVENTS ?? 10_000),
@@ -51,6 +52,7 @@ const auditService = createAuditService({
 });
 const catalogRepository = createCatalogRepository(database);
 const libraryPermissions = createLibraryPermissionsService({ database });
+const mediaLists = createMediaListsService({ database, permissions: libraryPermissions });
 const probeReader = createProbeCatalogReader(database);
 const { root: catalogRoot } = bootstrapSharedContentRoot(catalogRepository, { contentRoot: storage.contentRoot });
 const scanCatalog = async () => {
@@ -161,6 +163,7 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   catalog: { libraryPermissions, probeReader, repository: catalogRepository, scan: scanCatalog },
   jobs: jobsService,
   libraryPermissions,
+  mediaLists,
   playback: playbackService,
   playbackPlanner,
   playbackDelivery,
