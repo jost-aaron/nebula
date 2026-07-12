@@ -244,6 +244,33 @@ At a phone-like viewport, for example `390 x 844`:
   refresh/load-more controls span the panel, and the page has no horizontal
   overflow. Selecting Activity hides Jobs and other Settings sections.
 
+## Playwright end-to-end suite
+
+Run the browser suite only through its Docker wrapper:
+
+```sh
+./scripts/test-e2e.sh
+```
+
+The wrapper assigns a unique Compose project and free host port, then replaces
+both `/app/data` and `/app/content` with per-run temporary bind mounts. It seeds
+small deterministic video, audio, and text fixtures, disables TMDB credentials,
+and runs Chromium inside the pinned Playwright image. The suite never reads the
+normal `nebula-data` volume or developer `content/`, and it does not require port
+5173 or outbound network access at test time.
+
+Failure screenshots, videos, and traces are retained under `test-results/` and
+the HTML report is written to `playwright-report/`; both directories are ignored.
+Pass normal Playwright filters after the wrapper when narrowing a failure:
+
+```sh
+./scripts/test-e2e.sh --project=owner --grep "Cinema"
+```
+
+Coverage includes first-owner setup and cookie restoration, member sign-in and
+role visibility, app-first and keyboard navigation, Cinema/Studio/Files smoke
+paths, owner Jobs/Activity/Playback controls, and the 390x844 responsive contract.
+
 ## iOS Safe-Area Test
 
 The app is intended to run under Capacitor with `viewport-fit=cover`, so iOS

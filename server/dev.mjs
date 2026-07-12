@@ -41,6 +41,7 @@ const backupRoot = process.env.NEBULA_BACKUP_ROOT ? path.resolve(process.env.NEB
 const restoreStagingRoot = process.env.NEBULA_RESTORE_STAGING_ROOT ? path.resolve(process.env.NEBULA_RESTORE_STAGING_ROOT) : path.join(dataRoot, "restore-staging");
 const port = Number(process.env.PORT ?? 5173);
 const host = process.env.HOST ?? "0.0.0.0";
+const viteAllowedHosts = (process.env.NEBULA_VITE_ALLOWED_HOSTS ?? "").split(",").map((value) => value.trim()).filter(Boolean);
 
 const storage = await createStorage({ contentRoot, dataRoot });
 const database = await openNebulaDatabase(storage.accountDatabasePath);
@@ -178,6 +179,7 @@ jobsService.enqueue({ type: "scan", payload: { rootId: catalogRoot.id }, dedupeK
 
 const vite = await createViteServer({
   server: {
+    ...(viteAllowedHosts.length > 0 ? { allowedHosts: viteAllowedHosts } : {}),
     middlewareMode: true,
     host,
     hmr: {

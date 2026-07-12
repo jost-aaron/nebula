@@ -81,7 +81,6 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
       ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="jobs">Jobs</button>` : ""}
       ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="playback-policy">Playback</button>` : ""}
       ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="activity">Activity</button>` : ""}
-      ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="playback-policy">Playback</button>` : ""}
       <button type="button" data-diagnostic-tab="renderer">Renderer</button>
       <button type="button" data-diagnostic-tab="display">Display</button>
       <button type="button" data-diagnostic-tab="performance">Performance</button>
@@ -95,7 +94,6 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
       ${showJobsAdmin ? renderJobsAdmin() : ""}
       ${showJobsAdmin ? renderPlaybackPolicyAdmin() : ""}
       ${showJobsAdmin ? renderActivityAdmin() : ""}
-      ${showJobsAdmin ? renderPlaybackPolicyAdmin() : ""}
       ${renderSection(
         "Renderer",
         [
