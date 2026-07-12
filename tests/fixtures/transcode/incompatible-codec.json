@@ -1,0 +1,7 @@
+{
+  "description": "Docker-generated MPEG-4 Part 2 and MP2 source for a real software transcode",
+  "container": "avi",
+  "videoCodec": "mpeg4",
+  "audioCodec": "mp2",
+  "durationSeconds": 2
+}
