@@ -3,15 +3,17 @@ import path from "node:path";
 import { readdir, stat, writeFile } from "node:fs/promises";
 import { TranscodeError, transcodeFailure } from "./errors.mjs";
 
-export const buildTranscodeArguments = (inputPath, outputDirectory, { maxBitrate = null, segmentDuration = 6 } = {}) => {
+export const buildTranscodeArguments = (inputPath, outputDirectory, { maxBitrate = null, profile = {}, segmentDuration = 6, subtitleFilter = null } = {}) => {
   const rate = Number.isFinite(maxBitrate) ? Math.floor(maxBitrate) : null;
   const elementaryBudget = rate === null ? null : Math.floor(rate * 0.95);
   const audioRate = elementaryBudget === null ? null : Math.max(16_000, Math.min(128_000, Math.floor(elementaryBudget * 0.12)));
   const videoRate = elementaryBudget === null ? null : Math.max(16_000, elementaryBudget - audioRate);
   return [
-    "-nostdin", "-v", "error", "-n", "-i", inputPath,
+    "-nostdin", "-v", "error", "-n", ...(Array.isArray(profile.inputArguments) ? profile.inputArguments : []), "-i", inputPath,
     "-map", "0:v:0?", "-map", "0:a:0?", "-sn",
-    "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+    "-c:v", profile.encoder ?? "libx264", ...(profile.preset ? ["-preset", profile.preset] : []),
+    ...((subtitleFilter ?? profile.videoFilter) ? ["-vf", [subtitleFilter, profile.videoFilter].filter(Boolean).join(",")] : []),
+    ...(profile.pixelFormat === null ? [] : ["-pix_fmt", profile.pixelFormat ?? "yuv420p"]),
     ...(videoRate === null ? [] : ["-b:v", String(videoRate), "-maxrate", String(videoRate), "-bufsize", String(videoRate * 2)]),
     "-c:a", "aac", "-ac", "2", ...(audioRate === null ? [] : ["-b:a", String(audioRate)]),
     "-f", "hls", "-hls_time", String(segmentDuration), "-hls_list_size", "0",
@@ -33,13 +35,13 @@ const inspectOutput = async (outputDirectory) => {
 
 export const runFfmpegTranscode = (inputPath, outputDirectory, {
   binary = "ffmpeg", maxOutputBytes = 64 * 1024 * 1024 * 1024, maxSegments = 20_000,
-  maxBitrate = null, maxStderrBytes = 256 * 1024, outputCheckMs = 250, segmentDuration = 6,
+  maxBitrate = null, maxStderrBytes = 256 * 1024, outputCheckMs = 250, profile, segmentDuration = 6, subtitleFilter = null,
   signal, timeoutMs = 2 * 60 * 60 * 1000
 } = {}) => new Promise((resolve, reject) => {
   if (!Number.isFinite(maxOutputBytes) || maxOutputBytes <= 0) throw new RangeError("maxOutputBytes must be positive.");
   if (!Number.isInteger(maxSegments) || maxSegments < 1) throw new RangeError("maxSegments must be a positive integer.");
   if (!Number.isFinite(segmentDuration) || segmentDuration <= 0) throw new RangeError("segmentDuration must be positive.");
-  const child = spawn(binary, buildTranscodeArguments(inputPath, outputDirectory, { maxBitrate, segmentDuration }), {
+  const child = spawn(binary, buildTranscodeArguments(inputPath, outputDirectory, { maxBitrate, profile, segmentDuration, subtitleFilter }), {
     shell: false, stdio: ["ignore", "ignore", "pipe"], windowsHide: true
   });
   const stderr = []; let stderrBytes = 0; let settled = false; let outcome = null;

@@ -335,6 +335,12 @@ enforcement, terminal cleanup, restart accounting, owner/service-admin access,
 member denial, and the responsive Settings / Playback panel. Direct byte-range
 playback is explicitly excluded; see `docs/playback-policies.md`.
 
+Hardware-transcode coverage normalizes malformed probes, exercises mode and
+fallback outcomes, bounds public reasons/metrics, and verifies fixed FFmpeg
+argument arrays. The Docker suite runs a real software fixture. A real hardware
+fixture is reported passed only when the running container detects a backend
+and completes it; otherwise the result is explicitly skipped/unavailable.
+
 Good next additions:
 
 - DOM tests for app-first navigation and panel state transitions.

@@ -77,6 +77,11 @@ const startAdminServer = async ({ serviceToken = "admin-service-secret" } = {}) 
     databasePath: storage.accountDatabasePath
   });
   const playbackPolicy = createPlaybackPolicyService({ repository: createPlaybackPolicyRepository(database) });
+  let accelerationMode = "software-only";
+  const transcodeAcceleration = {
+    async refresh() {}, setMode(mode) { accelerationMode = mode; },
+    async status() { return { active: { hardware: 0, software: 0 }, backends: [], decision: "software", lastProbeAt: null, mode: accelerationMode, reason: "software_selected", selectedBackend: "software" }; }
+  };
 
   let authGuard;
   await withAuthEnvironment({
@@ -104,7 +109,7 @@ const startAdminServer = async ({ serviceToken = "admin-service-secret" } = {}) 
     },
     service: observabilityService
   });
-  const apiHandler = createApiHandler(storage, accountStore, authGuard, { backup: backupService, jobs: jobsService, playbackPolicy });
+  const apiHandler = createApiHandler(storage, accountStore, authGuard, { backup: backupService, jobs: jobsService, playbackPolicy, transcodeAcceleration });
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
     if (await observabilityRoutes(request, response, url)) return;
@@ -222,4 +227,18 @@ test("playback policy config and aggregate status allow owners and service admin
   const body = await status.json();
   assert.equal(body.global.maxConcurrentStreams, 3);
   assert.equal(body.users.find(({ id }) => id === memberUser.id).effective.maxBitrate, 3_000_000);
+});
+
+test("transcode acceleration status and configuration require owner/service admin and cookie CSRF", async (t) => {
+  const api = await startAdminServer(); t.after(() => api.close());
+  const owner = await setupOwner(api, "browser");
+  await api.accountStore.createMember({ displayName: "Member", password: memberPassword, username: "member" });
+  const member = await jsonRequest(`${api.baseUrl}/api/auth/login`, { body: { clientType: "native", password: memberPassword, username: "member" }, method: "POST" }).then((response) => response.json());
+  assert.equal((await jsonRequest(`${api.baseUrl}/api/admin/transcode-acceleration`, { bearer: member.sessionToken })).status, 403);
+  assert.equal((await jsonRequest(`${api.baseUrl}/api/admin/transcode-acceleration`, { body: { mode: "auto" }, cookie: owner.cookie, method: "PUT" })).status, 403);
+  const saved = await jsonRequest(`${api.baseUrl}/api/admin/transcode-acceleration`, { body: { mode: "auto" }, cookie: owner.cookie, csrf: owner.body.csrfToken, method: "PUT" });
+  assert.equal(saved.status, 200); assert.equal((await saved.json()).mode, "auto");
+  assert.equal((await jsonRequest(`${api.baseUrl}/api/admin/transcode-acceleration`, { bearer: "admin-service-secret" })).status, 200);
+  const preflight = await fetch(`${api.baseUrl}/api/admin/transcode-acceleration`, { method: "OPTIONS", headers: { origin: "capacitor://localhost", "access-control-request-method": "PUT", "access-control-request-headers": "authorization,content-type" } });
+  assert.ok([204, 403].includes(preflight.status));
 });

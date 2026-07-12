@@ -1,5 +1,6 @@
 import { createServer as createHttpServer } from "node:http";
 import path from "node:path";
+import { access } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
 import { createApiHandler } from "./api.mjs";
@@ -17,7 +18,7 @@ import { createJobsRepository, createJobsService, createJobsWorker, createMediaJ
 import { createProbeCatalogReader, createProbeCatalogWriter, createProbeService, probeMigration } from "./probe/index.mjs";
 import { createPlaybackPlanner } from "./playback-planner/index.mjs";
 import { createRemuxService } from "./remux/index.mjs";
-import { createTranscodeService } from "./transcode/index.mjs";
+import { createAccelerationManager, createAccelerationProbe, createTranscodeService } from "./transcode/index.mjs";
 import { createDeliveryService } from "./playback/delivery.mjs";
 import { createLibraryPermissionsService, libraryPermissionsMigration } from "./permissions/index.mjs";
 import { createPlaybackPolicyRepository, createPlaybackPolicyService, playbackPolicyMigration } from "./playbackPolicy/index.mjs";
@@ -94,7 +95,14 @@ const playbackPlanner = createPlaybackPlanner({ resolveMedia: async (ids, princi
 } });
 const deliveryCacheRoot = path.join(storage.dataRoot, "delivery-cache");
 const remuxService = createRemuxService({ contentRoot: storage.contentRoot, outputRoot: path.join(deliveryCacheRoot, "remux"), resolveSource: resolveCatalogSource, concurrency: 2 });
-const transcodeService = createTranscodeService({ contentRoot: storage.contentRoot, outputRoot: path.join(deliveryCacheRoot, "transcode"), resolveSource: resolveCatalogSource, concurrency: 1 });
+const accelerationManager = createAccelerationManager({
+  mode: process.env.NEBULA_TRANSCODE_ACCELERATION ?? "software-only",
+  probe: createAccelerationProbe({ accessDevice: async (backend) => { if (backend !== "vaapi") return false; try { await access("/dev/dri/renderD128"); return true; } catch { return false; } } })
+});
+const transcodeService = createTranscodeService({
+  acceleration: accelerationManager, contentRoot: storage.contentRoot, outputRoot: path.join(deliveryCacheRoot, "transcode"), resolveSource: resolveCatalogSource, concurrency: 1,
+  resolveSubtitle: ({ itemId, sourceId, subtitleId }, principal) => subtitleService.resolveBurnIn({ itemId, sourceId }, subtitleId, principal)
+});
 await Promise.all([remuxService.initialize(), transcodeService.initialize()]);
 const playbackPolicy = createPlaybackPolicyService({ repository: createPlaybackPolicyRepository(database) });
 const playbackDelivery = createDeliveryService({
@@ -166,7 +174,8 @@ const handleObservability = createObservabilityRoutes({
     const context = authGuard.resolve(request, url);
     return context?.kind !== "media-ticket" && authGuard.hasCapability(context, "server.admin");
   },
-  service: observabilityService
+  service: observabilityService,
+  transcodeStatus: transcodeService.status
 });
 const handleApi = createApiHandler(storage, accountStore, authGuard, {
   audit: auditService,
@@ -180,6 +189,7 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   playbackPlanner,
   playbackDelivery,
   playbackPolicy,
+  transcodeAcceleration: { refresh: accelerationManager.refresh, setMode: accelerationManager.setMode, status: transcodeService.status },
   subtitles: subtitleService
 });
 jobsWorker.start();

@@ -38,3 +38,17 @@ export const renderPrometheusMetrics = ({ readiness, uptimeSeconds }) => {
   }
   return Object.keys(HELP).map((name) => family(name, samples[name])).join("");
 };
+
+const METRIC_BACKENDS = new Set(["software", "vaapi", "nvenc", "videotoolbox"]);
+const METRIC_OUTCOMES = new Set(["success", "failure", "fallback"]);
+export const renderTranscodeAccelerationMetrics = (status = {}) => {
+  const lines = ["# HELP nebula_transcode_active Active bounded transcode jobs.", "# TYPE nebula_transcode_active gauge"];
+  lines.push(`nebula_transcode_active{backend="hardware"} ${Math.max(0, Number(status.active?.hardware) || 0)}`);
+  lines.push(`nebula_transcode_active{backend="software"} ${Math.max(0, Number(status.active?.software) || 0)}`);
+  lines.push("# HELP nebula_transcode_outcomes_total Bounded transcode outcomes.", "# TYPE nebula_transcode_outcomes_total counter");
+  for (const item of Array.isArray(status.outcomes) ? status.outcomes : []) {
+    if (!METRIC_BACKENDS.has(item.backend) || !METRIC_OUTCOMES.has(item.outcome)) continue;
+    lines.push(`nebula_transcode_outcomes_total{backend="${item.backend}",outcome="${item.outcome}"} ${Math.max(0, Number(item.count) || 0)}`);
+  }
+  return `${lines.join("\n")}\n`;
+};

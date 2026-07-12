@@ -161,3 +161,26 @@ test("duplicate session IDs cannot share cache directories", async (t) => {
   const first = await service.createSession(plan(), { userId: "user-a" }); await assert.rejects(service.createSession(plan(), { userId: "user-a" }), { code: "session_collision" });
   await first.completion; await service.shutdown();
 });
+
+test("preferred hardware failure retries software once with complete cache cleanup", async (t) => {
+  const roots = await workspace(t); await writeFile(path.join(roots.contentRoot, "incompatible.avi"), "media");
+  const attempts = [];
+  const service = serviceFor(roots, {
+    acceleration: { async decide() { return { backend: "nvenc", outcome: "hardware", reason: "available", required: false }; }, async status() { return {}; } },
+    runner: async (_input, directory, options) => {
+      attempts.push(options.profile.backend);
+      if (attempts.length === 1) { await writeFile(path.join(directory, "partial.ts"), "partial"); throw Object.assign(new Error("hardware failed /dev/gpu secret"), { code: "ffmpeg_failed" }); }
+      assert.equal(await access(path.join(directory, "partial.ts")).then(() => true, () => false), false);
+      await writeFile(path.join(directory, "master.m3u8"), "master"); return { masterPlaylist: path.join(directory, "master.m3u8") };
+    }
+  });
+  const session = await service.createSession(plan(), { userId: "user-a" }); await session.completion;
+  assert.deepEqual(attempts, ["nvenc", "software"]); assert.deepEqual(session.acceleration, { backend: "software", outcome: "fallback", reason: "hardware_job_failed" });
+  await service.shutdown();
+});
+
+test("required backend failure occurs before session publication and never runs software", async (t) => {
+  const roots = await workspace(t); await writeFile(path.join(roots.contentRoot, "incompatible.avi"), "media"); let runs = 0;
+  const service = serviceFor(roots, { acceleration: { async decide() { return { backend: "software", outcome: "failed", reason: "required_backend_unavailable", required: true }; }, async status() { return {}; } }, runner: async () => { runs += 1; } });
+  await assert.rejects(service.createSession(plan(), { userId: "user-a" }), { code: "required_backend_unavailable" }); assert.equal(runs, 0); await service.shutdown();
+});

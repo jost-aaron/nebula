@@ -29,6 +29,7 @@ export const createDeliveryService = ({
   };
   const status = (entry) => entry.worker?.status ?? entry.status;
   const publicSession = (entry) => ({
+    ...(entry.worker?.acceleration ? { acceleration: entry.worker.acceleration } : {}),
     createdAt: new Date(entry.createdAt).toISOString(),
     decision: entry.plan.decision,
     deliveryUrl: entry.plan.decision === "transcode"

@@ -47,3 +47,7 @@ MP4 stream-copy remux, or software H.264/AAC HLS. Sessions expire after 30
 minutes and are cleaned on cancellation, expiry, restart, and graceful
 shutdown. Responses never expose filesystem paths, and HLS requests use only
 the transcode service's canonical playlist/segment resolver.
+
+Optional acceleration selection occurs only after this trusted plan and policy
+bitrate enforcement. Clients never select FFmpeg backends or arguments. See
+`docs/hardware-transcoding.md`.

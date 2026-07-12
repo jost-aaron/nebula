@@ -4,6 +4,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { TranscodeError } from "./errors.mjs";
 import { resolveTranscodeAssetPath, resolveTranscodeSourcePath } from "./path.mjs";
 import { runFfmpegTranscode } from "./runner.mjs";
+import { accelerationRunnerProfile } from "./acceleration.mjs";
 
 class Semaphore {
   constructor(limit) {
@@ -34,11 +35,13 @@ const validatePlan = (plan) => {
 
 export const createTranscodeService = ({
   concurrency = 2, contentRoot, outputRoot, resolveSource,
-  runner = runFfmpegTranscode, runnerOptions, uuid = randomUUID
+  acceleration = null, resolveSubtitle = null, runner = runFfmpegTranscode, runnerOptions, uuid = randomUUID
 } = {}) => {
   if (!contentRoot || !outputRoot) throw new TypeError("contentRoot and outputRoot are required.");
   if (typeof resolveSource !== "function") throw new TypeError("resolveSource must be a function.");
   const semaphore = new Semaphore(concurrency); const sessions = new Map(); let closed = false;
+  const active = { hardware: 0, software: 0 }; const outcomes = new Map();
+  const record = (backend, outcome) => outcomes.set(`${backend}:${outcome}`, (outcomes.get(`${backend}:${outcome}`) ?? 0) + 1);
   const initialize = async () => { await rm(outputRoot, { recursive: true, force: true }); await mkdir(outputRoot, { recursive: true }); };
   const initialized = initialize();
   const createSession = async (plan, authorizationContext, { signal } = {}) => {
@@ -50,14 +53,28 @@ export const createTranscodeService = ({
       throw new TranscodeError("missing_source", "The requested catalog source is missing or unavailable.");
     }
     const inputPath = await resolveTranscodeSourcePath(contentRoot, source.path);
+    let subtitleFilter = null;
+    if (plan.output?.subtitle?.delivery === "burn-in") {
+      if (typeof resolveSubtitle !== "function") throw new TranscodeError("subtitle_unavailable", "The selected subtitle cannot be burned in.");
+      const subtitle = await resolveSubtitle({ itemId: plan.itemId, sourceId: plan.sourceId, subtitleId: plan.output.subtitle.id }, authorizationContext);
+      const escaped = (value) => String(value).replaceAll("\\", "\\\\").replaceAll(":", "\\:").replaceAll("'", "\\'").replaceAll(",", "\\,").replaceAll("[", "\\[").replaceAll("]", "\\]").replaceAll(";", "\\;");
+      subtitleFilter = subtitle?.kind === "sidecar" ? `subtitles=filename='${escaped(subtitle.path)}'` : subtitle?.kind === "embedded" && Number.isInteger(subtitle.streamIndex) ? `subtitles=filename='${escaped(inputPath)}':si=${subtitle.streamIndex}` : null;
+      if (!subtitleFilter) throw new TranscodeError("subtitle_unavailable", "The selected subtitle cannot be burned in.");
+    }
     const id = uuid();
     if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(id) || sessions.has(id)) throw new TranscodeError("session_collision", "A unique transcode session could not be allocated.");
+    const accelerationDecision = acceleration ? await acceleration.decide(plan) : { backend: "software", outcome: "software", reason: "software_selected", required: false };
+    if (accelerationDecision.outcome === "failed") {
+      const error = new TranscodeError("required_backend_unavailable", "The required transcoding backend is unavailable.");
+      error.status = 503; error.expose = true; throw error;
+    }
     const directory = path.join(outputRoot, id); const controller = new AbortController();
     const forwardAbort = () => controller.abort(); signal?.addEventListener("abort", forwardAbort, { once: true });
-    const state = { status: "queued", playlistPath: null, error: null };
+    const state = { status: "queued", playlistPath: null, error: null, acceleration: accelerationDecision };
     const session = {
       id, itemId: plan.itemId, sourceId: plan.sourceId,
       get status() { return state.status; }, get playlistPath() { return state.playlistPath; }, get error() { return state.error; },
+      get acceleration() { return { backend: state.acceleration.backend, outcome: state.acceleration.outcome, reason: state.acceleration.reason }; },
       cancel: () => controller.abort(),
       resolveAsset: (assetName) => resolveTranscodeAssetPath(directory, assetName),
       cleanup: async () => { controller.abort(); try { await session.completion; } catch {} await rm(directory, { recursive: true, force: true }); sessions.delete(id); }
@@ -66,7 +83,21 @@ export const createTranscodeService = ({
       state.status = "running"; await mkdir(directory, { recursive: false });
       try {
         if (controller.signal.aborted) throw new TranscodeError("cancelled", "Transcode was cancelled.");
-        const result = await runner(inputPath, directory, { ...runnerOptions, maxBitrate: plan.output.bitrate ?? runnerOptions?.maxBitrate ?? null, signal: controller.signal });
+        const run = async (backend) => {
+          const kind = backend === "software" ? "software" : "hardware"; active[kind] += 1;
+          try { return await runner(inputPath, directory, { ...runnerOptions, maxBitrate: plan.output.bitrate ?? runnerOptions?.maxBitrate ?? null, profile: accelerationRunnerProfile(backend), signal: controller.signal, subtitleFilter }); }
+          finally { active[kind] -= 1; }
+        };
+        let result;
+        try { result = await run(state.acceleration.backend); record(state.acceleration.backend, "success"); }
+        catch (error) {
+          const retryableHardwareFailure = state.acceleration.backend !== "software" && !state.acceleration.required && ["ffmpeg_failed", "ffmpeg_unavailable", "output_failed"].includes(error?.code);
+          record(state.acceleration.backend, retryableHardwareFailure ? "fallback" : "failure");
+          if (!retryableHardwareFailure) throw error;
+          await rm(directory, { recursive: true, force: true }); await mkdir(directory, { recursive: false });
+          state.acceleration = { backend: "software", outcome: "fallback", reason: "hardware_job_failed", required: false };
+          result = await run("software"); record("software", "success");
+        }
         state.status = "ready"; state.playlistPath = result.masterPlaylist; return session;
       } finally { signal?.removeEventListener("abort", forwardAbort); }
     }, controller.signal).catch(async (error) => {
@@ -80,5 +111,6 @@ export const createTranscodeService = ({
     await Promise.allSettled([...sessions.values()].map((session) => session.completion));
     await rm(outputRoot, { recursive: true, force: true }); sessions.clear();
   };
-  return { createSession, getSession: (id) => sessions.get(id) ?? null, initialize: () => initialized, shutdown };
+  const status = async () => ({ ...(acceleration ? await acceleration.status() : { mode: "software-only", selectedBackend: "software", decision: "software", reason: "software_selected", lastProbeAt: null, backends: [] }), active: { ...active }, outcomes: [...outcomes.entries()].map(([key, count]) => { const [backend, outcome] = key.split(":"); return { backend, outcome, count }; }) });
+  return { createSession, getSession: (id) => sessions.get(id) ?? null, initialize: () => initialized, shutdown, status };
 };

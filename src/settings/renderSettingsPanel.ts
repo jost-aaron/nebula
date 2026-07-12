@@ -7,6 +7,7 @@ import { renderAccountSettings } from "../account/accountUi";
 import { renderJobsAdmin } from "../jobs-admin/renderJobsAdmin";
 import { renderPlaybackPolicyAdmin } from "./playbackPolicyAdmin";
 import { renderActivityAdmin } from "../activity-admin/renderActivityAdmin";
+import { renderTranscodeAccelerationAdmin } from "./transcodeAccelerationAdmin";
 
 const formatNumber = (value: number, digits = 1) => (Number.isFinite(value) ? value.toFixed(digits) : "0.0");
 
@@ -80,6 +81,7 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
       <button type="button" data-diagnostic-tab="account">Account</button>
       ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="jobs">Jobs</button>` : ""}
       ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="playback-policy">Playback</button>` : ""}
+      ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="transcode-acceleration">Transcoding</button>` : ""}
       ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="activity">Activity</button>` : ""}
       <button type="button" data-diagnostic-tab="renderer">Renderer</button>
       <button type="button" data-diagnostic-tab="display">Display</button>
@@ -93,6 +95,7 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
       ${renderAccountSettings(accountSession)}
       ${showJobsAdmin ? renderJobsAdmin() : ""}
       ${showJobsAdmin ? renderPlaybackPolicyAdmin() : ""}
+      ${showJobsAdmin ? renderTranscodeAccelerationAdmin() : ""}
       ${showJobsAdmin ? renderActivityAdmin() : ""}
       ${renderSection(
         "Renderer",

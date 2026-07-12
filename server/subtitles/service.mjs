@@ -120,6 +120,11 @@ export const createSubtitleService = ({ database, contentRoot, resolveSource, pr
       if (track.format === "srt" && !/\d{1,2}:\d{2}:\d{2}[,.]\d{3}\s+-->\s+\d{1,2}:\d{2}:\d{2}[,.]\d{3}/.test(text)) throw httpError(422, "SRT content is malformed.", "invalid_subtitle_content");
       return { path: track._path, contentType: track._contentType };
     },
+    async resolveBurnIn(ids, subtitleId, principal) {
+      const track = (await discover(ids, principal)).find((candidate) => candidate.id === subtitleId);
+      if (!track) throw httpError(404, "Subtitle track not found.", "subtitle_not_found");
+      return track.kind === "sidecar" ? { kind: "sidecar", path: track._path } : { kind: "embedded", streamIndex: track.streamIndex };
+    },
     providerStatus() { return { acquisitionEnabled: false, providers: [], reason: "No allowlisted subtitle acquisition provider is configured." }; },
     setProviderConfig(input) { if (input?.enabled !== false) throw httpError(400, "No allowlisted subtitle provider is available.", "provider_unavailable"); return this.providerStatus(); }
   };
