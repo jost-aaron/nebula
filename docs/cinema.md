@@ -143,6 +143,7 @@ The frontend updates these through:
 - `POST /api/catalog/scan` - request a catalog rescan and return scan counts.
 - `POST /api/playback/events` - report start, progress, pause, stop, and complete.
 - `GET /api/playback/continue-watching` - load the current account's resumable titles.
+- `POST /api/playback/delivery-sessions` - plan and create compatible account-bound delivery.
 
 The media endpoint supports HTTP byte ranges and returns `206 Partial Content`
 for range requests. This is required for normal browser video playback behavior,
@@ -156,10 +157,10 @@ revoked with account sessions.
 
 ## Boundaries
 
-Cinema remains additive during the catalog rollout: watchlists, metadata edits,
-TMDB matching, media tickets, and playback continue to use the existing Cinema
-path APIs. Stable IDs are canonical for new playback state, but a catalog outage
-falls back to the local library rather than blocking browsing or playback.
-Transcoding and server-side thumbnail generation are not implemented. Chapter,
-probe, and background-enrichment status can only be shown when those fields are
-projected by the catalog API. Music remains intentionally handled by Studio.
+Cinema requests a delivery session when stable IDs and same-origin account
+authentication are available. It declares conservative browser-derived MP4,
+H.264, AAC, and native-HLS support, polls remux/transcode preparation, and
+cancels generated sessions when playback closes. Planning or delivery failure,
+catalog outages, and configured bearer clients retain the ticketed path-based
+media fallback. Thumbnail and identification sampling also remain on that
+fallback. Music remains intentionally handled by Studio.

@@ -193,6 +193,16 @@ flowchart TD
   catalog-backed format, stream, HDR, subtitle, and chapter persistence.
 - Startup scan jobs fan out revision-keyed probe jobs without blocking Cinema.
 
+`server/playback-planner/`, `server/remux/`, `server/transcode/`, and
+`server/playback/delivery.mjs`
+
+- Plan from catalog probe data and client capabilities without trusting a
+  client-authored decision.
+- Bind expiring delivery sessions to the creating account and route direct,
+  MP4 remux, or software HLS output through path-safe asset boundaries.
+- Treat generated output as disposable cache cleaned on cancel, expiry,
+  restart, and shutdown; absolute paths never cross the HTTP boundary.
+
 `server/files.mjs`
 
 - Owns local file browsing, creation, upload, resumable upload, rename, and

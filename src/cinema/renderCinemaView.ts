@@ -1,7 +1,10 @@
 import { createElement, icons } from "lucide";
-import { getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken } from "../api/http";
+import { apiUrl, getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken } from "../api/http";
 import {
   getCinemaCatalogItem,
+  cancelCinemaDelivery,
+  createCinemaDelivery,
+  getCinemaDelivery,
   identifyCinemaFrames,
   listCinemaCatalog,
   listCinemaContinueWatching,
@@ -443,7 +446,7 @@ const renderVideoPlayerView = (entry: CinemaEntry) => `
       <button type="button" data-cinema-action="player-fullscreen">Fullscreen</button>
     </header>
     <section class="cinema-video-stage">
-      <video class="cinema-player" data-cinema-player controls autoplay playsinline preload="metadata" crossorigin="anonymous" src="${entry.streamUrl}"></video>
+      <video class="cinema-player" data-cinema-player controls autoplay playsinline preload="metadata" crossorigin="anonymous"></video>
       <div class="cinema-player-statusbar">
         <span><i class="cinema-status-dot ${currentServerInfo().online ? "online" : "offline"}"></i>${currentServerInfo().online ? "Server Online" : "Server Offline"}</span>
         <span data-cinema-player-status>Connecting to ${escapeHtml(currentServerInfo().name)}…</span>
@@ -690,6 +693,20 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
   let playback = new Map<string, ContinueWatchingEntry>();
   const catalogState = new Map<string, CinemaCatalogState>();
   let stopActivePlayback: (() => void) | null = null;
+  let deliveryGeneration = 0;
+
+  const deliveryCapabilities = (player: HTMLVideoElement) => {
+    const mp4 = Boolean(player.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"'));
+    const hls = Boolean(player.canPlayType("application/vnd.apple.mpegurl"));
+    const storageKey = "nebula.cinema.deviceId";
+    let deviceId = window.localStorage.getItem(storageKey);
+    if (!deviceId) { deviceId = crypto.randomUUID(); window.localStorage.setItem(storageKey, deviceId); }
+    return {
+      audioCodecs: mp4 ? ["aac"] : [], containers: mp4 ? ["mp4"] : [], deviceId,
+      maxAudioChannels: null, maxBitrate: null, maxHeight: null, maxWidth: null,
+      subtitleFormats: [], supportsHls: hls, videoCodecs: mp4 ? ["h264"] : []
+    };
+  };
 
   const currentVisibleEntries = () =>
     entries
@@ -912,6 +929,8 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
 
     if (player && stage) {
       let sessionId: string | null = null;
+      let deliveryId: string | null = null;
+      const generation = ++deliveryGeneration;
       let ended = false;
       let lifecycleStarted = false;
       let lastProgressAt = 0;
@@ -985,11 +1004,13 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
         if (shouldResume && resume && resume.positionSeconds < player.duration) player.currentTime = resume.positionSeconds;
       }, { once: true });
       const stopPlayback = () => {
+        deliveryGeneration += 1;
         if (!ended && lifecycleStarted) {
           ended = true;
           report("stop");
         }
         window.removeEventListener("pagehide", stopPlayback);
+        if (deliveryId) void cancelCinemaDelivery(deliveryId).catch(() => {});
       };
       stopActivePlayback = stopPlayback;
       player.addEventListener("emptied", stopPlayback, { once: true });
@@ -997,6 +1018,37 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
       player.addEventListener("stalled", () => setStatus("Playback is waiting for more data from the server."));
       player.addEventListener("error", () => setStatus("This video could not be played here."));
       renderPlaybackState();
+
+      const useFallback = () => {
+        if (generation !== deliveryGeneration) return;
+        setStatus("Using local compatibility playback.");
+        player.src = playingEntry.streamUrl;
+        player.load();
+        void player.play().catch(() => {});
+      };
+      const prepareDelivery = async () => {
+        if (!(player instanceof HTMLVideoElement) || !playingEntry.id || !playingEntry.sourceId || getApiConnectionMode() !== "Same origin") return useFallback();
+        setStatus("Preparing compatible playback…");
+        try {
+          const created = await createCinemaDelivery({ capabilities: deliveryCapabilities(player), itemId: playingEntry.id, sourceId: playingEntry.sourceId });
+          deliveryId = created.session.id;
+          let delivery = created.session;
+          while (["queued", "running"].includes(delivery.status)) {
+            await new Promise((resolve) => window.setTimeout(resolve, 350));
+            if (generation !== deliveryGeneration) return;
+            delivery = (await getCinemaDelivery(delivery.id)).session;
+          }
+          if (delivery.status !== "ready" || generation !== deliveryGeneration) throw new Error("Delivery did not become ready.");
+          player.src = apiUrl(delivery.deliveryUrl);
+          player.load();
+          void player.play().catch(() => {});
+          setStatus(created.plan.decision === "direct-play" ? "Direct play ready." : created.plan.decision === "remux" ? "Compatible MP4 ready." : "HLS stream ready.");
+        } catch {
+          if (deliveryId) { void cancelCinemaDelivery(deliveryId).catch(() => {}); deliveryId = null; }
+          useFallback();
+        }
+      };
+      void prepareDelivery();
     }
 
     if (fullscreen && player instanceof HTMLVideoElement) {

@@ -15,6 +15,9 @@ import { PLAYBACK_MIGRATION } from "./playback/schema.mjs";
 import { createJobsRepository, createJobsService, createJobsWorker, createMediaJobHandlers, jobsMigration } from "./jobs/index.mjs";
 import { createProbeCatalogReader, createProbeCatalogWriter, createProbeService, probeMigration } from "./probe/index.mjs";
 import { createPlaybackPlanner } from "./playback-planner/index.mjs";
+import { createRemuxService } from "./remux/index.mjs";
+import { createTranscodeService } from "./transcode/index.mjs";
+import { createDeliveryService } from "./playback/delivery.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const contentRoot = path.join(root, "content");
@@ -42,15 +45,21 @@ const playbackService = createPlaybackService({
   },
   repository: playbackRepository
 });
-const playbackPlanner = createPlaybackPlanner({
-  resolveMedia: ({ itemId, sourceId }, principal) => {
-    if (principal?.type !== "user") throw Object.assign(new Error("Account playback access is required."), { status: 403 });
-    const item = catalogRepository.getItem(itemId);
-    const source = catalogRepository.getSource(sourceId);
-    if (!item || !source || source.itemId !== itemId || source.availability !== "available") return null;
-    return { item, probe: probeReader.get(sourceId), source };
-  }
-});
+const resolveCatalogSource = ({ itemId, sourceId }, principal) => {
+  if (principal?.type !== "user" || !principal.userId) throw Object.assign(new Error("Account playback access is required."), { status: 403 });
+  const item = catalogRepository.getItem(itemId);
+  const source = catalogRepository.getSource(sourceId);
+  if (!item || !source || source.itemId !== itemId || source.availability !== "available" || source.rootId !== catalogRoot.id || item.libraryId !== catalogRoot.library_id) return null;
+  return source;
+};
+const playbackPlanner = createPlaybackPlanner({ resolveMedia: async (ids, principal) => {
+  const source = await resolveCatalogSource(ids, principal);
+  return source ? { item: catalogRepository.getItem(ids.itemId), probe: probeReader.get(ids.sourceId), source } : null;
+} });
+const remuxService = createRemuxService({ contentRoot: storage.contentRoot, outputRoot: path.join(storage.dataRoot, "delivery-cache", "remux"), resolveSource: resolveCatalogSource, concurrency: 2 });
+const transcodeService = createTranscodeService({ contentRoot: storage.contentRoot, outputRoot: path.join(storage.dataRoot, "delivery-cache", "transcode"), resolveSource: resolveCatalogSource, concurrency: 1 });
+await Promise.all([remuxService.initialize(), transcodeService.initialize()]);
+const playbackDelivery = createDeliveryService({ contentRoot: storage.contentRoot, planner: playbackPlanner, remuxService, resolveSource: resolveCatalogSource, transcodeService });
 const probeService = createProbeService({
   catalogWriter: createProbeCatalogWriter(database),
   contentRoot: storage.contentRoot,
@@ -79,7 +88,8 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   catalog: { probeReader, repository: catalogRepository, scan: scanCatalog },
   jobs: jobsService,
   playback: playbackService,
-  playbackPlanner
+  playbackPlanner,
+  playbackDelivery
 });
 jobsWorker.start();
 jobsService.enqueue({ type: "scan", payload: { rootId: catalogRoot.id }, dedupeKey: `startup:${catalogRoot.id}` });
@@ -95,7 +105,7 @@ const vite = await createViteServer({
   appType: "spa"
 });
 
-createHttpServer(async (request, response) => {
+const httpServer = createHttpServer(async (request, response) => {
   if (request.url?.startsWith("/api/")) {
     applyApiCorsHeaders(request, response);
 
@@ -116,8 +126,21 @@ createHttpServer(async (request, response) => {
   }
 
   vite.middlewares(request, response);
-}).listen(port, host, () => {
+});
+httpServer.listen(port, host, () => {
   console.log(`Nebula Dashboard running at http://${host}:${port}`);
   console.log(`Content root: ${storage.contentRoot}`);
   console.log(`Account store: ${storage.accountDatabasePath}`);
 });
+
+let shuttingDown = false;
+const shutdown = async () => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  await new Promise((resolve) => httpServer.close(resolve));
+  await jobsWorker.stop();
+  await playbackDelivery.shutdown();
+  await Promise.allSettled([remuxService.shutdown(), transcodeService.shutdown(), vite.close()]);
+  database.close();
+};
+for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => { void shutdown().finally(() => process.exit(0)); });
