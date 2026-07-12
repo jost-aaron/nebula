@@ -43,6 +43,7 @@ const capabilityForRoute = (request, url) => {
   const path = url.pathname;
   if (path === "/api/auth/server-settings/tmdb") return "server.admin";
   if (path === "/api/auth/accounts" || path.startsWith("/api/auth/accounts/")) return "server.admin";
+  if (path === "/api/admin/observability/readiness" || path === "/api/admin/backups" || path.startsWith("/api/admin/backups/")) return "server.admin";
   if (path.startsWith("/api/auth/")) return "account.use";
   if (path === "/api/server/info") return "dashboard.use";
   if (path.startsWith("/api/files")) return ["GET", "HEAD"].includes(method) ? "files.read" : "files.write";
@@ -118,12 +119,19 @@ export const createAuthGuard = (accountStore = {
   };
 
   return {
+    hasCapability(context, capability) {
+      return Boolean(context?.capabilities?.has(capability));
+    },
     required: true,
     remoteAddress: normalizedRemoteAddress,
-    async authorize(request, response, url = new URL(request.url ?? "/", "http://nebula.local")) {
-      const routeKey = `${request.method ?? "GET"} ${url.pathname}`;
+    resolve(request, url = new URL(request.url ?? "/", "http://nebula.local")) {
       const context = resolveContext(request, url);
       request.nebulaAuth = context;
+      return context;
+    },
+    async authorize(request, response, url = new URL(request.url ?? "/", "http://nebula.local")) {
+      const routeKey = `${request.method ?? "GET"} ${url.pathname}`;
+      const context = this.resolve(request, url);
 
       if (publicAuthRoutes.has(routeKey)) return true;
 

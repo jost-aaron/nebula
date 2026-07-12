@@ -88,6 +88,20 @@ test("restore rejects tampering and never clobbers an existing database", async 
   await assert.rejects(service.inspect({ backupId: "protected" }), { code: "checksum_failed" });
 });
 
+test("listing summarizes valid backups and marks invalid bundles without leaking filesystem paths", async (t) => {
+  const scope = await fixture(t);
+  const service = createBackupService(scope);
+  await service.create({ backupId: "valid-backup" });
+  await import("node:fs/promises").then(({ mkdir }) => mkdir(path.join(scope.backupRoot, "broken-backup"), { recursive: true }));
+  await writeFile(path.join(scope.backupRoot, "broken-backup", "manifest.json"), "{");
+  const listed = await service.list();
+  assert.deepEqual(listed.map((entry) => ({ backupId: entry.backupId, invalid: entry.invalid === true })), [
+    { backupId: "valid-backup", invalid: false },
+    { backupId: "broken-backup", invalid: true }
+  ]);
+  assert.doesNotMatch(JSON.stringify(listed), new RegExp(scope.root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
 test("cancelled creation removes staging and reservation artifacts", async (t) => {
   const scope = await fixture(t);
   const service = createBackupService(scope);

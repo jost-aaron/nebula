@@ -18,10 +18,22 @@ import { createPlaybackPlanner } from "./playback-planner/index.mjs";
 import { createRemuxService } from "./remux/index.mjs";
 import { createTranscodeService } from "./transcode/index.mjs";
 import { createDeliveryService } from "./playback/delivery.mjs";
+import { createBackupService } from "./backup/index.mjs";
+import {
+  createCatalogCheck,
+  createDatabaseCheck,
+  createDirectoryCheck,
+  createDiskCheck,
+  createObservabilityRoutes,
+  createObservabilityService,
+  createWorkerCheck
+} from "./observability/index.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const contentRoot = path.join(root, "content");
 const dataRoot = process.env.NEBULA_DATA_ROOT ? path.resolve(process.env.NEBULA_DATA_ROOT) : path.join(root, "data");
+const backupRoot = process.env.NEBULA_BACKUP_ROOT ? path.resolve(process.env.NEBULA_BACKUP_ROOT) : path.join(dataRoot, "backups");
+const restoreStagingRoot = process.env.NEBULA_RESTORE_STAGING_ROOT ? path.resolve(process.env.NEBULA_RESTORE_STAGING_ROOT) : path.join(dataRoot, "restore-staging");
 const port = Number(process.env.PORT ?? 5173);
 const host = process.env.HOST ?? "0.0.0.0";
 
@@ -56,8 +68,9 @@ const playbackPlanner = createPlaybackPlanner({ resolveMedia: async (ids, princi
   const source = await resolveCatalogSource(ids, principal);
   return source ? { item: catalogRepository.getItem(ids.itemId), probe: probeReader.get(ids.sourceId), source } : null;
 } });
-const remuxService = createRemuxService({ contentRoot: storage.contentRoot, outputRoot: path.join(storage.dataRoot, "delivery-cache", "remux"), resolveSource: resolveCatalogSource, concurrency: 2 });
-const transcodeService = createTranscodeService({ contentRoot: storage.contentRoot, outputRoot: path.join(storage.dataRoot, "delivery-cache", "transcode"), resolveSource: resolveCatalogSource, concurrency: 1 });
+const deliveryCacheRoot = path.join(storage.dataRoot, "delivery-cache");
+const remuxService = createRemuxService({ contentRoot: storage.contentRoot, outputRoot: path.join(deliveryCacheRoot, "remux"), resolveSource: resolveCatalogSource, concurrency: 2 });
+const transcodeService = createTranscodeService({ contentRoot: storage.contentRoot, outputRoot: path.join(deliveryCacheRoot, "transcode"), resolveSource: resolveCatalogSource, concurrency: 1 });
 await Promise.all([remuxService.initialize(), transcodeService.initialize()]);
 const playbackDelivery = createDeliveryService({ contentRoot: storage.contentRoot, planner: playbackPlanner, remuxService, resolveSource: resolveCatalogSource, transcodeService });
 const probeService = createProbeService({
@@ -84,7 +97,46 @@ const jobsWorker = createJobsWorker({
   repository: jobsRepository
 });
 const authGuard = createAuthGuard(accountStore);
+const backupService = createBackupService({
+  backupRoot,
+  dataRoot: storage.dataRoot,
+  database,
+  databasePath: storage.accountDatabasePath
+});
+const catalogReadinessSnapshot = () => {
+  const roots = database.prepare(`SELECT
+      SUM(CASE WHEN scan_status = 'failed' THEN 1 ELSE 0 END) AS failed_scans,
+      SUM(CASE WHEN scan_status = 'scanning' THEN 1 ELSE 0 END) AS scanning_roots,
+      MAX(last_scan_completed_at) AS last_completed_at
+    FROM media_library_roots`).get() ?? {};
+  const probes = database.prepare(`SELECT COUNT(*) AS pending_probes
+    FROM background_jobs WHERE type = 'probe' AND state IN ('queued', 'running')`).get() ?? {};
+  return {
+    failedScans: Number(roots.failed_scans) || 0,
+    lastCompletedAt: roots.last_completed_at ? Date.parse(roots.last_completed_at) : null,
+    pendingProbes: Number(probes.pending_probes) || 0,
+    scanningRoots: Number(roots.scanning_roots) || 0
+  };
+};
+const observabilityService = createObservabilityService({
+  checks: [
+    { name: "database", run: createDatabaseCheck({ database }) },
+    { name: "content_root", run: createDirectoryCheck({ directory: storage.contentRoot, name: "content_root" }) },
+    { name: "jobs_worker", run: createWorkerCheck({ snapshot: jobsWorker.snapshot }) },
+    { name: "catalog", run: createCatalogCheck({ snapshot: catalogReadinessSnapshot }) },
+    { name: "content_disk", run: createDiskCheck({ directory: storage.contentRoot, name: "content_disk" }) },
+    { name: "cache_disk", run: createDiskCheck({ directory: deliveryCacheRoot, name: "cache_disk" }) }
+  ]
+});
+const handleObservability = createObservabilityRoutes({
+  isAdmin: (request, url) => {
+    const context = authGuard.resolve(request, url);
+    return context?.kind !== "media-ticket" && authGuard.hasCapability(context, "server.admin");
+  },
+  service: observabilityService
+});
 const handleApi = createApiHandler(storage, accountStore, authGuard, {
+  backup: backupService,
   catalog: { probeReader, repository: catalogRepository, scan: scanCatalog },
   jobs: jobsService,
   playback: playbackService,
@@ -106,14 +158,19 @@ const vite = await createViteServer({
 });
 
 const httpServer = createHttpServer(async (request, response) => {
-  if (request.url?.startsWith("/api/")) {
+  const url = new URL(request.url ?? "/", "http://nebula.local");
+
+  if (await handleObservability(request, response, url)) {
+    return;
+  }
+
+  if (url.pathname.startsWith("/api/")) {
     applyApiCorsHeaders(request, response);
 
     if (handleApiPreflight(request, response)) {
       return;
     }
 
-    const url = new URL(request.url ?? "/", "http://nebula.local");
     if (!(await authGuard.authorize(request, response, url))) {
       return;
     }
@@ -131,6 +188,8 @@ httpServer.listen(port, host, () => {
   console.log(`Nebula Dashboard running at http://${host}:${port}`);
   console.log(`Content root: ${storage.contentRoot}`);
   console.log(`Account store: ${storage.accountDatabasePath}`);
+  console.log(`Backup root: ${backupRoot}`);
+  console.log(`Offline restore staging root: ${restoreStagingRoot}`);
 });
 
 let shuttingDown = false;

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { copyFile, link, mkdir, open, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { copyFile, link, mkdir, open, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { backup as sqliteBackup, DatabaseSync } from "node:sqlite";
 import { BackupError, throwIfAborted } from "./errors.mjs";
@@ -108,6 +108,31 @@ export const createBackupService = ({ database, databasePath, dataRoot, backupRo
     }
   };
 
+  const list = async ({ signal } = {}) => {
+    throwIfAborted(signal);
+    const entries = await readdir(backupRoot, { withFileTypes: true }).catch((error) => {
+      if (error?.code === "ENOENT") return [];
+      throw error;
+    });
+    const backups = [];
+    for (const entry of entries) {
+      throwIfAborted(signal);
+      if (!entry.isDirectory() || !safeId(entry.name)) continue;
+      try {
+        const manifest = await readAndValidateManifest(path.join(backupRoot, entry.name));
+        backups.push(manifest);
+      } catch {
+        backups.push({ backupId: entry.name, createdAt: null, files: [], format: null, formatVersion: null, includesContentMedia: false, invalid: true, migrations: [] });
+      }
+    }
+    return backups.sort((left, right) => {
+      const leftCreated = left.createdAt ? Date.parse(left.createdAt) : -Infinity;
+      const rightCreated = right.createdAt ? Date.parse(right.createdAt) : -Infinity;
+      if (rightCreated !== leftCreated) return rightCreated - leftCreated;
+      return String(right.backupId).localeCompare(String(left.backupId));
+    });
+  };
+
   const restore = async ({ backupId, destinationDatabasePath, destinationDataRoot = dataRoot, restoreMetadataCache = true, signal } = {}) => {
     if (!path.isAbsolute(destinationDatabasePath ?? "") || !path.isAbsolute(destinationDataRoot ?? "")) throw new TypeError("Restore destinations must be absolute paths.");
     const { manifest } = await inspect({ backupId, signal });
@@ -130,5 +155,5 @@ export const createBackupService = ({ database, databasePath, dataRoot, backupRo
     }
   };
 
-  return { create, inspect, restore };
+  return { create, inspect, list, restore };
 };

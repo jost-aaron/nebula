@@ -79,6 +79,36 @@ test("worker bounds concurrency and leaves additional work queued", async (t) =>
   assert.equal(peak, 2);
 });
 
+test("worker lifecycle snapshots expose only running state, heartbeat, and aggregate activity", async (t) => {
+  let clock = 1_000;
+  const { db, repository } = fixture({ now: () => clock });
+  t.after(() => db.close());
+  repository.enqueue({ type: "cleanup", payload: { batch: 1 } });
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const worker = createJobsWorker({
+    now: () => clock,
+    repository,
+    handlers: {
+      cleanup: async () => {
+        clock += 5;
+        await gate;
+      }
+    }
+  });
+
+  assert.deepEqual(worker.snapshot(), { active: 0, heartbeatAt: 1_000, running: false });
+  worker.start({ pollIntervalMs: 10 });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(worker.snapshot().running, true);
+  assert.equal(worker.snapshot().active, 1);
+  assert.ok(worker.snapshot().heartbeatAt >= 1_005);
+  release();
+  await worker.stop();
+  assert.equal(worker.snapshot().running, false);
+  assert.equal(worker.snapshot().active, 0);
+});
+
 test("retry policy requeues with delay and records terminal failure", async (t) => {
   let clock = Date.parse("2026-07-11T00:00:00.000Z");
   const { db, repository } = fixture({ now: () => clock });

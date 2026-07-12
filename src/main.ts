@@ -8,6 +8,7 @@ import { collectDiagnostics } from "./diagnostics/collectDiagnostics";
 import { createPerformanceMonitor } from "./diagnostics/performanceMonitor";
 import type { RendererRuntimeState } from "./diagnostics/types";
 import { bindFileBrowser, renderFileBrowserShell } from "./files/fileBrowser";
+import { bindJobsAdmin } from "./jobs-admin/renderJobsAdmin";
 import { filterApps, renderSearchResults, renderSearchView } from "./search/renderSearchView";
 import { renderSettingsPanel } from "./settings/renderSettingsPanel";
 import { bindStudioView, renderStudioView } from "./studio/renderStudioView";
@@ -33,6 +34,7 @@ let rendererState: RendererRuntimeState = {
   adapterName: "Checking GPU",
   mode: "checking"
 };
+let disposeActiveApp: (() => void) | null = null;
 
 const performanceMonitor = createPerformanceMonitor();
 
@@ -196,6 +198,8 @@ const closeActiveApp = () => {
     return;
   }
 
+  disposeActiveApp?.();
+  disposeActiveApp = null;
   appSurface.classList.remove("open");
   appSurface.classList.add("closing");
 
@@ -207,13 +211,14 @@ const closeActiveApp = () => {
   }, 240);
 };
 
-const bindSettingsTabs = () => {
-  const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-diagnostic-tab]"));
-  const sections = Array.from(document.querySelectorAll<HTMLElement>("[data-diagnostic-section]"));
+const bindSettingsTabs = (container: ParentNode) => {
+  const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>("[data-diagnostic-tab]"));
+  const sections = Array.from(container.querySelectorAll<HTMLElement>("[data-diagnostic-section]"));
 
   const sectionGroups: Record<string, string[]> = {
     all: [],
     account: ["account"],
+    jobs: ["jobs"],
     apps: ["apps"],
     display: ["display"],
     performance: ["performance"],
@@ -302,6 +307,8 @@ const launchApp = async (app: DashboardApp) => {
   const isCinemaApp = app.id === "cinema";
   const isStudioApp = app.id === "studio";
 
+  disposeActiveApp?.();
+  disposeActiveApp = null;
   activeApp = app;
   launchedApp = null;
   detailPanel.classList.remove("system-panel", "search-panel", "library-panel");
@@ -365,10 +372,13 @@ const launchApp = async (app: DashboardApp) => {
   }
 
   if (isSettingsApp) {
-    document.querySelector<HTMLButtonElement>("#close-panel")?.addEventListener("click", closeActiveApp);
-    bindSettingsTabs();
+    appSurface.querySelector<HTMLButtonElement>("#close-panel")?.addEventListener("click", closeActiveApp);
+    bindSettingsTabs(appSurface);
     bindClientSettings(appSurface);
     bindAccountSettings(appSurface);
+    if (accountSession.user.role === "owner") {
+      disposeActiveApp = bindJobsAdmin(appSurface);
+    }
   }
 
   if (isFilesApp) {
