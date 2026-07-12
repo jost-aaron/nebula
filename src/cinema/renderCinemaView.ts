@@ -53,6 +53,12 @@ interface CinemaCatalogState {
   probeState: string;
 }
 
+interface PendingCinemaPlayback {
+  entry: CinemaEntry;
+  fullscreen: boolean;
+  resume: ContinueWatchingEntry;
+}
+
 const escapeHtml = (value: string) =>
   value
     .replaceAll("&", "&amp;")
@@ -567,6 +573,36 @@ const renderCinemaSheet = (title: string, eyebrow: string, body: string) => `
   </section>
 `;
 
+const renderResumeSheet = (entry: CinemaEntry, resume: ContinueWatchingEntry) => {
+  const progress = Math.max(0, Math.min(100, Math.round(resume.progress * 100)));
+  const position = formatTime(resume.positionSeconds);
+
+  return `
+    <section class="cinema-editor-sheet cinema-resume-sheet" data-cinema-resume-sheet>
+      <div class="cinema-resume-dialog" role="dialog" aria-modal="true" aria-labelledby="cinema-resume-title" aria-describedby="cinema-resume-description">
+        <button class="cinema-resume-close" type="button" data-cinema-action="close-resume" aria-label="Close resume dialog">${renderCinemaIcon("X")}</button>
+        <span class="cinema-resume-mark">${renderCinemaIcon("History")}</span>
+        <div class="cinema-resume-copy">
+          <p class="eyebrow">Continue Watching</p>
+          <h3 id="cinema-resume-title">Resume ${escapeHtml(displayTitle(entry))}?</h3>
+          <p id="cinema-resume-description">Pick up where you left off at <strong>${position}</strong>, or start again from the beginning.</p>
+        </div>
+        <div class="cinema-resume-progress" role="progressbar" aria-label="${progress}% watched" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}">
+          <i style="width: ${progress}%"></i>
+        </div>
+        <div class="cinema-resume-meta">
+          <span>${position} watched</span>
+          <span>${progress}% complete</span>
+        </div>
+        <div class="cinema-resume-actions">
+          <button class="primary" type="button" data-cinema-action="resume-play" autofocus>${renderCinemaIcon("Play")} Resume at ${position}</button>
+          <button type="button" data-cinema-action="restart-play">${renderCinemaIcon("RotateCcw")} Start over</button>
+        </div>
+      </div>
+    </section>
+  `;
+};
+
 const renderTmdbSheet = (entry: CinemaEntry, status: CinemaTmdbStatusResponse | null, candidates: CinemaTmdbCandidate[] = [], message = "") =>
   renderCinemaSheet("Match with TMDB", entry.episode?.seriesTitle || entry.title, renderTmdbPanel(entry, status, candidates, message));
 
@@ -714,6 +750,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   let deliveryGeneration = 0;
   let playlists: MediaList[] = [];
   let collections: MediaList[] = [];
+  let pendingPlayback: PendingCinemaPlayback | null = null;
 
   const deliveryCapabilities = (player: HTMLVideoElement) => {
     const mp4 = Boolean(player.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"'));
@@ -964,14 +1001,12 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     if (!subtitlePreference) void getSubtitlePreference().then((value) => { subtitlePreference = value; if (selected?.id === entry.id) render(); }).catch(() => {});
   };
 
-  const openPlayer = (fullscreen = false) => {
+  const openPlayer = (fullscreen = false, startPosition: number | null = null) => {
     if (!selected) {
       return;
     }
 
     const playingEntry = selected;
-    const resume = playingEntry.id ? playback.get(playingEntry.id) : undefined;
-    const shouldResume = resume ? window.confirm(`Resume ${playingEntry.title} at ${formatTime(resume.positionSeconds)}?`) : false;
     view = "player";
     render();
 
@@ -1077,7 +1112,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         }
       });
       player.addEventListener("loadedmetadata", () => {
-        if (shouldResume && resume && resume.positionSeconds < player.duration) player.currentTime = resume.positionSeconds;
+        if (startPosition !== null && startPosition < player.duration) player.currentTime = Math.max(0, startPosition);
       }, { once: true });
       const stopPlayback = () => {
         deliveryGeneration += 1;
@@ -1269,8 +1304,42 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   } as CinemaEntry);
 
   const closeSheet = () => {
+    pendingPlayback = null;
     editorHost.hidden = true;
     editorHost.innerHTML = "";
+  };
+
+  const closeResumePrompt = () => {
+    closeSheet();
+    queueMicrotask(() => content.querySelector<HTMLButtonElement>(".cinema-actions [data-cinema-action='play']")?.focus());
+  };
+
+  const requestPlayer = (fullscreen = false) => {
+    if (!selected) {
+      return;
+    }
+
+    const resume = selected.id ? playback.get(selected.id) : undefined;
+    if (!resume || resume.positionSeconds <= 0) {
+      openPlayer(fullscreen);
+      return;
+    }
+
+    const request = { entry: selected, fullscreen, resume };
+    openSheet(renderResumeSheet(request.entry, request.resume));
+    pendingPlayback = request;
+    queueMicrotask(() => editorHost.querySelector<HTMLButtonElement>("[data-cinema-action='resume-play']")?.focus());
+  };
+
+  const continuePendingPlayback = (resume: boolean) => {
+    const request = pendingPlayback;
+    if (!request) {
+      return;
+    }
+
+    closeSheet();
+    selected = request.entry;
+    openPlayer(request.fullscreen, resume ? request.resume.positionSeconds : 0);
   };
 
   const closeEditor = () => {
@@ -1403,11 +1472,49 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     }
   };
 
+  app.addEventListener("keydown", (event) => {
+    if (!pendingPlayback) {
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeResumePrompt();
+      return;
+    }
+
+    if (event.key !== "Tab") {
+      return;
+    }
+
+    const focusable = Array.from(editorHost.querySelectorAll<HTMLButtonElement>("button:not([disabled])"));
+    if (focusable.length === 0) {
+      return;
+    }
+
+    const activeIndex = focusable.indexOf(document.activeElement as HTMLButtonElement);
+    const next = event.shiftKey
+      ? activeIndex <= 0 ? focusable.at(-1) : null
+      : activeIndex === -1 || activeIndex === focusable.length - 1 ? focusable[0] : null;
+
+    if (next) {
+      event.preventDefault();
+      next.focus();
+    }
+  });
+
   app.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
+    const resumeBackdrop = target.closest<HTMLElement>("[data-cinema-resume-sheet]");
     const categoryButton = target.closest<HTMLButtonElement>("[data-cinema-category]");
     const pathButton = target.closest<HTMLButtonElement>("[data-cinema-path]");
     const actionButton = target.closest<HTMLButtonElement>("[data-cinema-action]");
+
+    if (resumeBackdrop && target === resumeBackdrop) {
+      closeResumePrompt();
+      return;
+    }
 
     if (categoryButton) {
       activeCategory = (categoryButton.dataset.cinemaCategory as CinemaCategory | undefined) ?? "movies";
@@ -1432,6 +1539,22 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     }
 
     const action = actionButton.dataset.cinemaAction;
+
+    if (action === "close-resume") {
+      closeResumePrompt();
+      return;
+    }
+
+    if (action === "resume-play") {
+      continuePendingPlayback(true);
+      return;
+    }
+
+    if (action === "restart-play") {
+      continuePendingPlayback(false);
+      return;
+    }
+
     const active =
       (view === "watchlist" ? currentWatchlistEntries()[0] : selected ?? currentVisibleEntries()[0]) ??
       entries.find((entry) => entry.watchlisted) ??
@@ -1486,7 +1609,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
 
     if ((action === "play" || action === "play-featured") && active) {
       selected = active;
-      openPlayer(false);
+      requestPlayer(false);
     }
 
     if (action === "player-fullscreen") {
@@ -1591,9 +1714,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     if (action === "chapter" && selected) {
       const chapterTime = Number(actionButton.dataset.cinemaChapterTime);
       closeSheet();
-      openPlayer(false);
-      const player = content.querySelector<HTMLMediaElement>("[data-cinema-player]");
-      if (player && Number.isFinite(chapterTime)) player.addEventListener("loadedmetadata", () => { player.currentTime = chapterTime; }, { once: true });
+      openPlayer(false, Number.isFinite(chapterTime) ? chapterTime : 0);
     }
 
     if (action === "servers") {

@@ -2043,6 +2043,184 @@ h1 {
   backdrop-filter: blur(18px);
 }
 
+.cinema-editor-sheet.cinema-resume-sheet {
+  z-index: 6;
+  align-items: center;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(85, 223, 243, 0.12), transparent 38%),
+    rgba(1, 5, 8, 0.82);
+  backdrop-filter: blur(24px) saturate(1.15);
+}
+
+.cinema-resume-dialog {
+  position: relative;
+  width: min(540px, 100%);
+  max-height: calc(100dvh - 64px);
+  border: 1px solid rgba(112, 225, 239, 0.28);
+  border-radius: 20px;
+  display: grid;
+  gap: 18px;
+  overflow-y: auto;
+  padding: clamp(24px, 4vw, 36px);
+  color: #f3f8fa;
+  background:
+    linear-gradient(145deg, rgba(18, 39, 45, 0.98), rgba(5, 11, 15, 0.99) 56%),
+    #071014;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 32px 100px rgba(0, 0, 0, 0.68),
+    0 0 70px rgba(42, 198, 216, 0.08);
+}
+
+.cinema-resume-dialog::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 58%;
+  height: 2px;
+  background: linear-gradient(90deg, var(--cinema-cyan), transparent);
+}
+
+.cinema-resume-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: #dce9ed;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.cinema-resume-mark {
+  width: 54px;
+  height: 54px;
+  border: 1px solid rgba(85, 223, 243, 0.34);
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  color: var(--cinema-cyan);
+  background: var(--cinema-cyan-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.cinema-resume-mark .cinema-ui-icon {
+  width: 25px;
+  height: 25px;
+}
+
+.cinema-resume-copy {
+  display: grid;
+  gap: 8px;
+  padding-right: 26px;
+}
+
+.cinema-resume-copy h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: clamp(1.65rem, 4vw, 2.35rem);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+}
+
+.cinema-resume-copy > p:last-child {
+  margin: 0;
+  color: #aebfc6;
+  line-height: 1.55;
+}
+
+.cinema-resume-copy strong {
+  color: #f8fcfd;
+}
+
+.cinema-resume-progress {
+  height: 7px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.cinema-resume-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--cinema-cyan), #8ee9d0);
+  box-shadow: 0 0 16px rgba(85, 223, 243, 0.38);
+}
+
+.cinema-resume-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #83989f;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cinema-resume-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.9fr);
+  gap: 10px;
+}
+
+.cinema-resume-actions button {
+  min-width: 0;
+  min-height: 50px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 11px;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 16px;
+  color: #e9f0f2;
+  background: rgba(255, 255, 255, 0.07);
+  font-weight: 850;
+}
+
+.cinema-resume-actions button.primary {
+  border-color: rgba(152, 239, 247, 0.64);
+  color: #041114;
+  background: linear-gradient(135deg, #f4fdff, #83e7f1);
+  box-shadow: 0 10px 30px rgba(65, 208, 224, 0.18);
+}
+
+.cinema-resume-actions button:hover,
+.cinema-resume-actions button:focus-visible,
+.cinema-resume-close:hover,
+.cinema-resume-close:focus-visible {
+  border-color: rgba(85, 223, 243, 0.64);
+  outline: 3px solid rgba(85, 223, 243, 0.16);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .cinema-editor-sheet.cinema-resume-sheet {
+    align-items: center;
+    padding: 12px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  .cinema-resume-dialog {
+    max-height: calc(100dvh - max(24px, env(safe-area-inset-top)) - max(24px, env(safe-area-inset-bottom)));
+    border-radius: 18px;
+    gap: 15px;
+    padding: 24px 18px max(22px, env(safe-area-inset-bottom));
+  }
+
+  .cinema-resume-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .cinema-resume-actions button.primary {
+    order: -1;
+  }
+}
+
 .cinema-editor-dialog {
   width: min(920px, 100%);
   max-height: min(780px, calc(100vh - 96px));
