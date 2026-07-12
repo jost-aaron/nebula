@@ -40,11 +40,15 @@ curl -s http://127.0.0.1:5173/api/cinema/library
 curl -s http://127.0.0.1:5173/api/music/library
 curl -s http://127.0.0.1:5173/api/catalog/items
 curl -s http://127.0.0.1:5173/api/playback/continue-watching
+curl -s http://127.0.0.1:5173/healthz
+curl -s -i http://127.0.0.1:5173/readyz
 curl -s -I -H "Range: bytes=0-1023" "http://127.0.0.1:5173/api/cinema/media?path=South%20Park%20The%20Streaming%20Wars.mp4"
 ```
 
 The Cinema media range request should return `206 Partial Content` when that
 test file is present.
+`/healthz` should always return `200 {"live":true}` and `/readyz` should return
+only `{ "ready": true|false }` with no component details.
 
 ## Auth Smoke Check
 
@@ -68,7 +72,25 @@ Then verify `401` without the token and `200` with it:
 curl -i http://127.0.0.1:5173/api/server/info
 curl -i -H 'Authorization: Bearer replace-with-a-long-random-token' \
   http://127.0.0.1:5173/api/server/info
+curl -i -H 'Authorization: Bearer replace-with-a-long-random-token' \
+  http://127.0.0.1:5173/api/admin/observability/readiness
+curl -i -H 'Authorization: Bearer replace-with-a-long-random-token' \
+  http://127.0.0.1:5173/metrics
 ```
+
+Owner/service admin backup smoke:
+
+```sh
+curl -i -H 'Authorization: Bearer replace-with-a-long-random-token' \
+  http://127.0.0.1:5173/api/admin/backups
+curl -i -H 'Authorization: Bearer replace-with-a-long-random-token' \
+  -H 'Content-Type: application/json' \
+  -d '{"backupId":"smoke-backup"}' \
+  http://127.0.0.1:5173/api/admin/backups
+```
+
+There is intentionally no online restore endpoint. Restore stays an offline
+maintenance flow that stages a separate data root while the server is stopped.
 
 ## Host Clean Check
 
@@ -104,6 +126,9 @@ Check:
 - Close button hides the panel.
 - The Search app filters apps by name and Enter launches the active result.
 - Settings opens from the Applications strip and shows diagnostics.
+- Owner Settings includes a Jobs category with refresh, filtering, maintenance
+  enqueue actions, and cancellation confirmation.
+- Member Settings does not show the Jobs category or owner-only admin controls.
 - Cinema opens the local video browser and shows supported videos from
   `content/`.
 - Cinema has a visible Dashboard command that returns to the main dashboard.
@@ -185,6 +210,9 @@ At a phone-like viewport, for example `390 x 844`:
 - Files layout keeps the list and preview usable on phone-sized viewports.
 - App strip scrolls horizontally.
 - Status pills wrap without text overlap.
+- At `390 x 844`, the owner Jobs category keeps the enqueue actions in a
+  two-column grid, filters stretch full width, and confirmation controls stay
+  reachable without horizontal overflow.
 
 ## iOS Safe-Area Test
 

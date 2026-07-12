@@ -12,11 +12,24 @@ export const createJobsWorker = ({ repository, handlers, concurrency = 2, retryD
   if (!repository || typeof repository.claimNext !== "function") throw new TypeError("A jobs repository is required.");
   let stopping = false;
   let loops = [];
+  const snapshot = {
+    active: 0,
+    heartbeatAt: now(),
+    running: false
+  };
+
+  const heartbeat = () => {
+    snapshot.heartbeatAt = now();
+  };
 
   const runJob = async (job) => {
+    snapshot.active += 1;
+    heartbeat();
     const handler = handlers?.[job.type];
     if (typeof handler !== "function") {
       repository.failAttempt(job.id, { code: "NO_HANDLER", message: `No handler is registered for ${job.type}.`, retryAt: now() });
+      snapshot.active = Math.max(0, snapshot.active - 1);
+      heartbeat();
       return;
     }
     const throwIfCancelled = () => {
@@ -44,6 +57,9 @@ export const createJobsWorker = ({ repository, handlers, concurrency = 2, retryD
         message: error instanceof Error ? error.message : String(error),
         retryAt: now() + retryDelay(job.attempt)
       });
+    } finally {
+      snapshot.active = Math.max(0, snapshot.active - 1);
+      heartbeat();
     }
   };
 
@@ -61,9 +77,12 @@ export const createJobsWorker = ({ repository, handlers, concurrency = 2, retryD
   const start = ({ pollIntervalMs = 250 } = {}) => {
     if (loops.length) return;
     stopping = false;
+    snapshot.running = true;
+    heartbeat();
     repository.recoverInterrupted();
     loops = Array.from({ length: concurrency }, async () => {
       while (!stopping) {
+        heartbeat();
         const job = repository.claimNext();
         if (job) await runJob(job);
         else await sleep(pollIntervalMs);
@@ -75,7 +94,15 @@ export const createJobsWorker = ({ repository, handlers, concurrency = 2, retryD
     stopping = true;
     await Promise.all(loops);
     loops = [];
+    snapshot.running = false;
+    heartbeat();
   };
 
-  return { recover: repository.recoverInterrupted, runOnce, start, stop };
+  return {
+    recover: repository.recoverInterrupted,
+    runOnce,
+    snapshot: () => ({ ...snapshot }),
+    start,
+    stop
+  };
 };

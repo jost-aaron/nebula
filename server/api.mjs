@@ -6,10 +6,12 @@ import { createAccountRoutes } from "./accounts.mjs";
 import { createCatalogRoutes } from "./catalog/routes.mjs";
 import { createPlaybackRoutes } from "./playback/routes.mjs";
 import { createJobsRoutes } from "./jobs/routes.mjs";
+import { createBackupRoutes } from "./backup/routes.mjs";
 
 export const createApiHandler = (storage, accountStore, authGuard, options = {}) => {
   const routeHandlers = [
     createAccountRoutes(accountStore, authGuard),
+    ...(options.backup ? [createBackupRoutes(options.backup)] : []),
     ...(options.catalog ? [createCatalogRoutes(options.catalog)] : []),
     ...(options.playback ? [createPlaybackRoutes(options.playback, options.playbackPlanner, options.playbackDelivery)] : []),
     ...(options.jobs ? [createJobsRoutes(options.jobs)] : []),

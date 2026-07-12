@@ -18,13 +18,13 @@ export const createObservabilityRoutes = ({ service, isAdmin = () => false } = {
     return true;
   }
   if (request.method === "GET" && url.pathname === "/api/admin/observability/readiness") {
-    if (!await isAdmin(request)) { forbidden(response); return true; }
+    if (!await isAdmin(request, url)) { forbidden(response); return true; }
     const state = await service.readiness();
     json(response, state.ready ? 200 : 503, state);
     return true;
   }
   if (request.method === "GET" && url.pathname === "/metrics") {
-    if (!await isAdmin(request)) { forbidden(response); return true; }
+    if (!await isAdmin(request, url)) { forbidden(response); return true; }
     const readiness = await service.readiness();
     response.writeHead(200, { "cache-control": "no-store", "content-type": "text/plain; version=0.0.4; charset=utf-8" });
     response.end(renderPrometheusMetrics({ readiness, uptimeSeconds: service.uptimeSeconds() }));
@@ -32,4 +32,3 @@ export const createObservabilityRoutes = ({ service, isAdmin = () => false } = {
   }
   return false;
 };
-

@@ -193,6 +193,15 @@ flowchart TD
   catalog-backed format, stream, HDR, subtitle, and chapter persistence.
 - Startup scan jobs fan out revision-keyed probe jobs without blocking Cinema.
 
+`server/backup/` and `server/observability/`
+
+- Export integrity-checked admin backups of the shared SQLite database plus
+  catalog-referenced metadata cache files without copying `content/`.
+- Keep restore explicitly offline and staged into alternate roots so live
+  SQLite state is never overwritten through an online request.
+- Expose public liveness and opaque readiness endpoints while protecting
+  detailed readiness and Prometheus metrics behind owner/service admin auth.
+
 `server/playback-planner/`, `server/remux/`, `server/transcode/`, and
 `server/playback/delivery.mjs`
 
