@@ -16,7 +16,7 @@ const authResponse = (request, response, status, result, native) => {
   });
 };
 
-export const createAccountRoutes = (accountStore, authGuard) => async (request, response, url) => {
+export const createAccountRoutes = (accountStore, authGuard, libraryPermissions = null) => async (request, response, url) => {
   if (request.method === "GET" && url.pathname === "/api/auth/status") {
     const context = request.nebulaAuth;
     json(response, 200, {
@@ -149,6 +149,11 @@ export const createAccountRoutes = (accountStore, authGuard) => async (request, 
     return true;
   }
 
+  if (request.method === "GET" && url.pathname === "/api/auth/accounts/library-permissions" && libraryPermissions) {
+    json(response, 200, libraryPermissions.listAdministration());
+    return true;
+  }
+
   if (request.method === "POST" && url.pathname === "/api/auth/accounts") {
     const body = await readBody(request, { limit: 32 * 1024 });
     json(response, 201, { user: await accountStore.createMember(body) });
@@ -159,6 +164,13 @@ export const createAccountRoutes = (accountStore, authGuard) => async (request, 
   if (request.method === "PATCH" && accountMatch) {
     const body = await readBody(request, { limit: 8 * 1024 });
     json(response, 200, { user: accountStore.setMemberDisabled(accountMatch[1], Boolean(body.disabled)) });
+    return true;
+  }
+
+  const libraryPermissionsMatch = url.pathname.match(/^\/api\/auth\/accounts\/([a-f0-9-]{36})\/library-permissions$/i);
+  if (request.method === "PATCH" && libraryPermissionsMatch && libraryPermissions) {
+    const body = await readBody(request, { limit: 32 * 1024 });
+    json(response, 200, { member: libraryPermissions.setMemberAccess(libraryPermissionsMatch[1], body) });
     return true;
   }
 

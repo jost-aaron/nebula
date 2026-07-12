@@ -1,5 +1,6 @@
 import { apiJson, getApiBaseUrl, setAccountSessionToken, setCsrfToken } from "./http";
 import type { AccountSession, AccountSessionState, AccountUser, AuthSessionResponse, AuthStatus } from "../shared/accountTypes";
+import type { LibraryAccessMode, LibraryPermissionsAdministration, MemberLibraryAccess } from "../shared/libraryPermissionTypes";
 
 const bearerClient = () => {
   if (window.location.protocol === "capacitor:") return true;
@@ -58,6 +59,15 @@ export const createMemberAccount = (body: { displayName: string; password: strin
 
 export const setMemberDisabled = (id: string, disabled: boolean) =>
   apiJson<{ user: AccountUser }>(`/api/auth/accounts/${encodeURIComponent(id)}`, { body: JSON.stringify({ disabled }), method: "PATCH" });
+
+export const getLibraryPermissionsAdministration = () =>
+  apiJson<LibraryPermissionsAdministration>("/api/auth/accounts/library-permissions", { method: "GET" });
+
+export const saveMemberLibraryPermissions = (id: string, body: { libraryIds: string[]; mode: LibraryAccessMode }) =>
+  apiJson<{ member: MemberLibraryAccess }>(`/api/auth/accounts/${encodeURIComponent(id)}/library-permissions`, {
+    body: JSON.stringify(body),
+    method: "PATCH"
+  });
 
 export type TmdbServerSettingStatus = { configured: boolean; source: "admin" | "environment" | "none" };
 

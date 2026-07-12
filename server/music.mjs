@@ -5,11 +5,12 @@ import { readMetadata, scanMediaLibrary } from "./mediaLibrary.mjs";
 import { isAudioFile, mimeType } from "./storage.mjs";
 import { parseByteRange } from "./ranges.mjs";
 
-export const createMusicRoutes = (storage, accountStore) => {
+export const createMusicRoutes = (storage, accountStore, { libraryPermissions = null } = {}) => {
   const listMusicLibrary = async (request, response) => {
     const metadata = await readMetadata(storage.cinemaMetadataPath);
-    const entries = await scanMediaLibrary(storage, metadata, { mediaKind: "audio" });
+    const scanned = await scanMediaLibrary(storage, metadata, { mediaKind: "audio" });
     const context = request.nebulaAuth;
+    const entries = libraryPermissions ? scanned.filter((entry) => libraryPermissions.canAccessPath(context, entry.path, "audio")) : scanned;
     if (context) {
       entries.forEach((entry) => {
         const ticket = accountStore.issueMediaTicket({
@@ -27,10 +28,12 @@ export const createMusicRoutes = (storage, accountStore) => {
 
   const streamMusicMedia = async (request, response, url) => {
     const requestedPath = url.searchParams.get("path") ?? "";
+    const contentPath = storage.relativePath(requestedPath);
     const absolutePath = storage.resolveContentPath(requestedPath);
     const stats = await stat(absolutePath).catch(() => null);
 
-    if (!stats || !stats.isFile() || !isAudioFile(absolutePath)) {
+    if (!stats || !stats.isFile() || !isAudioFile(absolutePath)
+      || (libraryPermissions && !libraryPermissions.canAccessPath(request.nebulaAuth, contentPath, "audio"))) {
       json(response, 404, { error: "Audio file not found." });
       return;
     }

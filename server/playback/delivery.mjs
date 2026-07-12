@@ -10,7 +10,7 @@ const ownerId = (principal) => {
 
 export const createDeliveryService = ({
   contentRoot, planner, remuxService, resolveSource, transcodeService,
-  now = () => Date.now(), ttlMs = 30 * 60 * 1000, uuid = randomUUID
+  authorize = null, now = () => Date.now(), ttlMs = 30 * 60 * 1000, uuid = randomUUID
 }) => {
   const sessions = new Map();
   let closed = false;
@@ -18,6 +18,9 @@ export const createDeliveryService = ({
   const find = (id, principal) => {
     const entry = sessions.get(id);
     if (!entry || entry.ownerId !== ownerId(principal)) throw httpError(404, "Delivery session not found.", "session_not_found");
+    if (authorize && !authorize({ itemId: entry.plan.itemId, sourceId: entry.plan.sourceId }, principal)) {
+      throw httpError(404, "Delivery session not found.", "session_not_found");
+    }
     if (now() >= entry.expiresAt) {
       void expire(entry);
       throw httpError(410, "Delivery session expired.", "session_expired");
@@ -57,6 +60,9 @@ export const createDeliveryService = ({
     if (closed) throw httpError(503, "Playback delivery is shutting down.", "service_closed");
     const accountId = ownerId(principal);
     const plannerRequest = { capabilities: request?.capabilities, itemId: request?.itemId, sourceId: request?.sourceId };
+    if (authorize && !authorize({ itemId: plannerRequest.itemId, sourceId: plannerRequest.sourceId }, principal)) {
+      throw httpError(404, "Media source not found.", "source_not_found");
+    }
     const plan = await planner.plan(plannerRequest, principal);
     if (plan.decision === "unsupported") throw Object.assign(httpError(422, "No compatible playback delivery is available.", "unsupported_playback"), { plan });
     if (plan.decision === "remux" && plan.output?.container !== "mp4") throw httpError(422, "The planned remux target is not available.", "unsupported_delivery");

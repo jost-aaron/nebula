@@ -75,11 +75,13 @@ const googleVisionWebDetection = async (frames) => {
 };
 
 export const createCinemaRoutes = (storage, accountStore, options = {}) => {
+  const libraryPermissions = options.libraryPermissions ?? null;
   const handleTmdb = createCinemaTmdbRoutes(storage, accountStore, options);
   const listCinemaLibrary = async (request, response) => {
     const metadata = await readMetadata(storage.cinemaMetadataPath);
-    const entries = await scanMediaLibrary(storage, metadata, { mediaKind: "video" });
+    const scanned = await scanMediaLibrary(storage, metadata, { mediaKind: "video" });
     const context = request.nebulaAuth;
+    const entries = libraryPermissions ? scanned.filter((entry) => libraryPermissions.canAccessPath(context, entry.path, "video")) : scanned;
 
     if (context?.user) {
       const legacyPaths = Object.entries(metadata).filter(([, value]) => Boolean(value?.watchlisted)).map(([contentPath]) => contentPath);
@@ -150,7 +152,8 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
     const absolutePath = storage.resolveContentPath(contentPath);
     const stats = await stat(absolutePath).catch(() => null);
 
-    if (!stats || !stats.isFile() || !isVideoFile(absolutePath)) {
+    if (!stats || !stats.isFile() || !isVideoFile(absolutePath)
+      || (libraryPermissions && !libraryPermissions.canAccessPath(request.nebulaAuth, contentPath, "video"))) {
       json(response, 404, { error: "Media file not found." });
       return;
     }
@@ -214,10 +217,12 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
 
   const streamCinemaMedia = async (request, response, url) => {
     const requestedPath = url.searchParams.get("path") ?? "";
+    const contentPath = storage.relativePath(requestedPath);
     const absolutePath = storage.resolveContentPath(requestedPath);
     const stats = await stat(absolutePath).catch(() => null);
 
-    if (!stats || !stats.isFile() || !isVideoFile(absolutePath)) {
+    if (!stats || !stats.isFile() || !isVideoFile(absolutePath)
+      || (libraryPermissions && !libraryPermissions.canAccessPath(request.nebulaAuth, contentPath, "video"))) {
       json(response, 404, { error: "Media file not found." });
       return;
     }

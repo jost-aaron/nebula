@@ -107,7 +107,8 @@ flowchart TD
 
 - Renders the blocking first-run/sign-in stage before shell construction.
 - Owns dashboard identity, Account Settings, member management, password
-  rotation, session revocation, and sign out.
+  rotation, session revocation, sign out, and responsive owner library-access
+  administration.
 
 `src/shared/`
 
@@ -184,6 +185,16 @@ flowchart TD
   exposes additive catalog APIs without replacing current path-based clients.
 - Playback records idempotent per-user lifecycle events and exposes Continue
   Watching independently of Cinema UI integration.
+
+`server/permissions/`
+
+- Owns the provider-neutral per-member media access policy and library grants.
+- Defaults absent policies to all libraries so upgrades and new members retain
+  the previous behavior; selected policies fail closed for future libraries.
+- Enforces current grants at catalog, compatibility, media-ticket/path,
+  playback-state, planner, and delivery-session boundaries. Owners and service
+  administration retain all media access, while Files capabilities are
+  unchanged.
 
 `server/jobs/` and `server/probe/`
 

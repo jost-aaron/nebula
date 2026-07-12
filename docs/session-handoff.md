@@ -84,8 +84,10 @@ Accounts:
 - Browser sessions use HttpOnly cookies plus CSRF. Capacitor/cross-origin
   sessions use bearer auth, with an acknowledged local-storage limitation.
 - Account SQLite data is separate from `content/` at `/app/data/nebula.sqlite`.
-- Owners can add/disable members. Members have shared media and Files read
-  access but not Files mutations or shared Cinema metadata editing.
+- Owners can add/disable members and choose all or selected media-library
+  access per member. Existing and new members default to all libraries.
+  Members retain shared Files read access but not Files mutations or shared
+  Cinema metadata editing.
 - Legacy `NEBULA_API_TOKEN` remains an owner-capability service path.
 - See `docs/accounts.md` and `docs/account-design/README.md`.
 
@@ -134,6 +136,9 @@ Media platform contracts:
   in Cinema while path playback remains as a compatibility fallback.
 - Cinema now prefers `/api/playback/delivery-sessions` for same-origin stable-ID
   playback and falls back to its existing ticketed path URL if planning fails.
+- `server/permissions/` persists provider-neutral member library policies and
+  enforces them across catalog, Cinema/Studio compatibility APIs, direct media,
+  playback state/planning, and delivery sessions without changing Files.
 
 Studio:
 

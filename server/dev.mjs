@@ -18,6 +18,7 @@ import { createPlaybackPlanner } from "./playback-planner/index.mjs";
 import { createRemuxService } from "./remux/index.mjs";
 import { createTranscodeService } from "./transcode/index.mjs";
 import { createDeliveryService } from "./playback/delivery.mjs";
+import { createLibraryPermissionsService, libraryPermissionsMigration } from "./permissions/index.mjs";
 import { createBackupService } from "./backup/index.mjs";
 import {
   createCatalogCheck,
@@ -40,8 +41,9 @@ const host = process.env.HOST ?? "0.0.0.0";
 const storage = await createStorage({ contentRoot, dataRoot });
 const database = await openNebulaDatabase(storage.accountDatabasePath);
 const accountStore = await createAccountStore({ database });
-applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration]);
+applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, libraryPermissionsMigration]);
 const catalogRepository = createCatalogRepository(database);
+const libraryPermissions = createLibraryPermissionsService({ database });
 const probeReader = createProbeCatalogReader(database);
 const { root: catalogRoot } = bootstrapSharedContentRoot(catalogRepository, { contentRoot: storage.contentRoot });
 const scanCatalog = async () => {
@@ -51,17 +53,19 @@ const scanCatalog = async () => {
 };
 const playbackRepository = createPlaybackRepository({ db: database });
 const playbackService = createPlaybackService({
-  identityValidator: ({ itemId, sourceId }) => {
+  identityValidator: ({ itemId, sourceId }, principal) => {
     const source = catalogRepository.getSource(sourceId);
-    return source?.itemId === itemId && source.availability === "available";
+    return source?.itemId === itemId && source.availability === "available" && libraryPermissions.canAccessItem(principal, itemId);
   },
-  repository: playbackRepository
+  repository: playbackRepository,
+  visibilityFilter: ({ itemId }, principal) => libraryPermissions.canAccessItem(principal, itemId)
 });
 const resolveCatalogSource = ({ itemId, sourceId }, principal) => {
   if (principal?.type !== "user" || !principal.userId) throw Object.assign(new Error("Account playback access is required."), { status: 403 });
   const item = catalogRepository.getItem(itemId);
   const source = catalogRepository.getSource(sourceId);
-  if (!item || !source || source.itemId !== itemId || source.availability !== "available" || source.rootId !== catalogRoot.id || item.libraryId !== catalogRoot.library_id) return null;
+  if (!item || !source || source.itemId !== itemId || source.availability !== "available" || source.rootId !== catalogRoot.id
+    || item.libraryId !== catalogRoot.library_id || !libraryPermissions.canAccessLibrary(principal, item.libraryId)) return null;
   return source;
 };
 const playbackPlanner = createPlaybackPlanner({ resolveMedia: async (ids, principal) => {
@@ -72,7 +76,14 @@ const deliveryCacheRoot = path.join(storage.dataRoot, "delivery-cache");
 const remuxService = createRemuxService({ contentRoot: storage.contentRoot, outputRoot: path.join(deliveryCacheRoot, "remux"), resolveSource: resolveCatalogSource, concurrency: 2 });
 const transcodeService = createTranscodeService({ contentRoot: storage.contentRoot, outputRoot: path.join(deliveryCacheRoot, "transcode"), resolveSource: resolveCatalogSource, concurrency: 1 });
 await Promise.all([remuxService.initialize(), transcodeService.initialize()]);
-const playbackDelivery = createDeliveryService({ contentRoot: storage.contentRoot, planner: playbackPlanner, remuxService, resolveSource: resolveCatalogSource, transcodeService });
+const playbackDelivery = createDeliveryService({
+  authorize: ({ itemId }, principal) => libraryPermissions.canAccessItem(principal, itemId),
+  contentRoot: storage.contentRoot,
+  planner: playbackPlanner,
+  remuxService,
+  resolveSource: resolveCatalogSource,
+  transcodeService
+});
 const probeService = createProbeService({
   catalogWriter: createProbeCatalogWriter(database),
   contentRoot: storage.contentRoot,
@@ -137,8 +148,9 @@ const handleObservability = createObservabilityRoutes({
 });
 const handleApi = createApiHandler(storage, accountStore, authGuard, {
   backup: backupService,
-  catalog: { probeReader, repository: catalogRepository, scan: scanCatalog },
+  catalog: { libraryPermissions, probeReader, repository: catalogRepository, scan: scanCatalog },
   jobs: jobsService,
+  libraryPermissions,
   playback: playbackService,
   playbackPlanner,
   playbackDelivery

@@ -1,6 +1,7 @@
 import { changePassword, clearTmdbServerSetting, createMemberAccount, getTmdbServerSetting, listAccountSessions, listAccounts, login, logout, revokeAccountSession, saveTmdbServerSetting, setMemberDisabled, setupOwner, updateProfile } from "../api/accountApi";
 import { getApiBaseUrl, setApiBaseUrl } from "../api/http";
 import type { AccountSessionState, AccountUser } from "../shared/accountTypes";
+import { bindLibraryPermissionsPanel, renderLibraryPermissionsPanel } from "./libraryPermissionsUi";
 
 const escapeHtml = (value: string) => value
   .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
@@ -157,12 +158,14 @@ export const renderAccountSettings = (session: AccountSessionState) => `
             <span data-tmdb-setting-status>Loading status...</span>
           </form>
         </section>
-        <section class="account-members-panel"><p class="eyebrow">Server administration</p><h4>Accounts</h4><div data-account-members><p>Loading accounts...</p></div><form data-create-member-form><label><span>Account name</span><input name="username" required minlength="3" maxlength="32" /></label><label><span>Display name</span><input name="displayName" required maxlength="80" /></label><label><span>Temporary password</span><input name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password" /></label><button type="submit">Add member</button><span data-member-status></span></form></section>` : ""}
+        <section class="account-members-panel"><p class="eyebrow">Server administration</p><h4>Accounts</h4><div data-account-members><p>Loading accounts...</p></div><form data-create-member-form><label><span>Account name</span><input name="username" required minlength="3" maxlength="32" /></label><label><span>Display name</span><input name="displayName" required maxlength="80" /></label><label><span>Temporary password</span><input name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password" /></label><button type="submit">Add member</button><span data-member-status></span></form></section>
+        ${renderLibraryPermissionsPanel()}` : ""}
       <section class="account-signout-panel"><p><strong>Leave this dashboard</strong><span>Server and client connection settings stay on this device.</span></p><button class="destructive" type="button" data-settings-sign-out>Sign out</button></section>
     </div>
   </section>`;
 
 export const bindAccountSettings = (container: ParentNode) => {
+  bindLibraryPermissionsPanel(container);
   const profile = container.querySelector<HTMLFormElement>("[data-account-profile-form]");
   profile?.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -217,6 +220,7 @@ export const bindAccountSettings = (container: ParentNode) => {
     if (!button) return;
     await setMemberDisabled(button.dataset.memberId ?? "", button.dataset.memberDisabled !== "true");
     await loadMembers();
+    container.dispatchEvent(new CustomEvent("nebula:members-changed"));
   });
   const createMember = container.querySelector<HTMLFormElement>("[data-create-member-form]");
   createMember?.addEventListener("submit", async (event) => {
@@ -228,6 +232,7 @@ export const bindAccountSettings = (container: ParentNode) => {
       createMember.reset();
       if (status) status.textContent = "Member added.";
       await loadMembers();
+      container.dispatchEvent(new CustomEvent("nebula:members-changed"));
     } catch (error) { if (status) status.textContent = error instanceof Error ? error.message : "Unable to add member."; }
   });
   void loadMembers();

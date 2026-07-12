@@ -10,13 +10,13 @@ import { createBackupRoutes } from "./backup/routes.mjs";
 
 export const createApiHandler = (storage, accountStore, authGuard, options = {}) => {
   const routeHandlers = [
-    createAccountRoutes(accountStore, authGuard),
+    createAccountRoutes(accountStore, authGuard, options.libraryPermissions),
     ...(options.backup ? [createBackupRoutes(options.backup)] : []),
     ...(options.catalog ? [createCatalogRoutes(options.catalog)] : []),
     ...(options.playback ? [createPlaybackRoutes(options.playback, options.playbackPlanner, options.playbackDelivery)] : []),
     ...(options.jobs ? [createJobsRoutes(options.jobs)] : []),
-    createCinemaRoutes(storage, accountStore, options.cinema),
-    createMusicRoutes(storage, accountStore),
+    createCinemaRoutes(storage, accountStore, { ...options.cinema, libraryPermissions: options.libraryPermissions }),
+    createMusicRoutes(storage, accountStore, { libraryPermissions: options.libraryPermissions }),
     createFilesRoutes(storage)
   ];
 
@@ -29,7 +29,7 @@ export const createApiHandler = (storage, accountStore, authGuard, options = {})
           name: "Nebula Server",
           status: "online",
           serverTime: new Date().toISOString(),
-          capabilities: ["background-jobs", "catalog", "cinema-library", "cinema-identify", "files", "metadata-editing", "music-library", "playback-delivery", "playback-state", "probe"]
+          capabilities: ["background-jobs", "catalog", "cinema-library", "cinema-identify", "files", "library-permissions", "metadata-editing", "music-library", "playback-delivery", "playback-state", "probe"]
         });
         return true;
       }
