@@ -277,8 +277,9 @@ visible to users who can inspect the container; Docker access is root-equivalent
 - **Media missing:** confirm the host content path, file read permissions, regular
   files rather than escaping symlinks, and supported extensions. Trigger a scan.
 - **Probe/remux/transcode fails:** verify `docker compose ... exec dashboard
-  ffprobe -version` and `ffmpeg -version`; inspect logs and free space. There is
-  no hardware acceleration guarantee.
+  ffprobe -version` and `ffmpeg -version`; inspect logs and free space. Hardware
+  acceleration is optional, defaults to software-only, and is available only
+  after a real container self-test. See `docs/hardware-transcoding.md`.
 - **Subtitle missing:** only adjacent `.vtt`/`.srt` sidecars up to 10 MiB and
   probed embedded streams are discovered. Unsafe names/symlinks are ignored;
   no external subtitle download provider is shipped.
@@ -313,6 +314,7 @@ visible to users who can inspect the container; Docker access is root-equivalent
 - Inspect tracked files and built/generated iOS assets for secrets, tokens,
   absolute paths, usernames, media names, SQLite/WAL, `content`, `data`, `dist`,
   `node_modules`, Playwright output, and `ios/App/App/public` leakage.
-- Confirm no claims or implied support for hardware acceleration, external
-  subtitle acquisition, live TV, DVR, DLNA, casting, plugins, HA, or public
-  internet hardening. Do not publish or push an image from this checklist.
+- Confirm hardware status claims are backed by a real in-container self-test;
+  do not imply external subtitle acquisition, live TV, DVR, DLNA, casting,
+  plugins, HA, or public internet hardening. Do not publish or push an image
+  from this checklist.

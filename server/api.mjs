@@ -11,6 +11,7 @@ import { createPlaybackPolicyRoutes } from "./playbackPolicy/routes.mjs";
 import { createAuditRoutes } from "./audit/routes.mjs";
 import { createMediaListsRoutes } from "./mediaLists/routes.mjs";
 import { createSubtitleRoutes } from "./subtitles/routes.mjs";
+import { createAccelerationRoutes } from "./transcode/routes.mjs";
 
 export const createApiHandler = (storage, accountStore, authGuard, options = {}) => {
   const routeHandlers = [
@@ -18,6 +19,7 @@ export const createApiHandler = (storage, accountStore, authGuard, options = {})
     ...(options.audit ? [createAuditRoutes(options.audit)] : []),
     ...(options.backup ? [createBackupRoutes(options.backup, options.audit)] : []),
     ...(options.playbackPolicy ? [createPlaybackPolicyRoutes(options.playbackPolicy)] : []),
+    ...(options.transcodeAcceleration ? [createAccelerationRoutes(options.transcodeAcceleration)] : []),
     ...(options.catalog ? [createCatalogRoutes(options.catalog, options.audit)] : []),
     ...(options.mediaLists ? [createMediaListsRoutes(options.mediaLists, options.audit)] : []),
     ...(options.subtitles ? [createSubtitleRoutes(options.subtitles)] : []),
@@ -37,7 +39,7 @@ export const createApiHandler = (storage, accountStore, authGuard, options = {})
           name: "Nebula Server",
           status: "online",
           serverTime: new Date().toISOString(),
-          capabilities: ["audit-history", "background-jobs", "catalog", "cinema-library", "cinema-identify", "collections", "files", "library-permissions", "metadata-editing", "music-library", "playback-delivery", "playback-policy", "playback-state", "playlists", "probe", "subtitles"]
+          capabilities: ["audit-history", "background-jobs", "catalog", "cinema-library", "cinema-identify", "collections", "files", "hardware-transcode", "library-permissions", "metadata-editing", "music-library", "playback-delivery", "playback-policy", "playback-state", "playlists", "probe", "subtitles"]
         });
         return true;
       }

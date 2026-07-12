@@ -3,6 +3,10 @@
 Nebula Dashboard is currently a small framework-free TypeScript app served by
 Vite. It is intentionally simple while the shell concepts are still forming.
 
+`server/transcode/` includes a provider-neutral acceleration model beside the
+HLS runner. Detection is bounded, cached, optional, and fail-open to software;
+selection remains downstream of playback planning and policy admission.
+
 ## Layers
 
 ```mermaid
