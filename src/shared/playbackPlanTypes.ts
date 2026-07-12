@@ -1,4 +1,5 @@
 import type { CatalogId } from "./catalogTypes";
+import type { PlaybackQualityPreference, RenditionProfileId } from "./renditionTypes";
 
 export interface PlaybackClientCapabilities {
   audioCodecs: string[];
@@ -18,6 +19,7 @@ export type PlaybackDecision = "direct-play" | "remux" | "transcode" | "unsuppor
 export interface PlaybackPlanRequest {
   capabilities: PlaybackClientCapabilities;
   itemId: CatalogId;
+  quality?: PlaybackQualityPreference;
   sourceId: CatalogId;
 }
 
@@ -34,8 +36,11 @@ export interface PlaybackPlanResponse {
     audioCodec: string | null;
     bitrate: number | null;
     container: string | null;
+    height?: number | null;
+    profileId?: RenditionProfileId | null;
     protocol: "file" | "hls" | null;
     videoCodec: string | null;
+    width?: number | null;
     subtitle?: { id: string; delivery: "sidecar" | "embedded" | "burn-in"; format: string | null } | null;
   };
   reasons: PlaybackPlanReason[];

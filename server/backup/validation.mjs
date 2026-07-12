@@ -11,6 +11,7 @@ export const DATABASE_ENTRY = "database/nebula.sqlite";
 export const REQUIRED_TABLES = Object.freeze([
   "users", "sessions", "login_attempts", "cinema_watchlist", "user_migrations", "media_tickets", "server_settings",
   "nebula_domain_migrations", "media_libraries", "media_library_roots", "media_items",
+  "media_renditions",
   "media_sources", "media_external_ids", "media_artwork", "media_scan_runs",
   "playback_states", "playback_sessions", "playback_events", "background_jobs",
   "media_probe_results", "media_streams", "media_chapters", "playback_policy_config"

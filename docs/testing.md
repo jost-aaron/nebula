@@ -341,6 +341,13 @@ argument arrays. The Docker suite runs a real software fixture. A real hardware
 fixture is reported passed only when the running container detects a backend
 and completes it; otherwise the result is explicitly skipped/unavailable.
 
+Rendition-contract coverage verifies fixed profile IDs and versions, bounded
+H.264/AAC targets, fail-closed quality preferences, no-upscale profile
+availability, idempotent central migration, source-revision uniqueness, schema
+constraints, and source-delete cascading. Later runtime waves must add real
+FFmpeg dimension/bitrate verification, progressive HLS readiness, persistent
+reuse, source-revision invalidation, and scheduled-job lifecycle tests.
+
 Good next additions:
 
 - DOM tests for app-first navigation and panel state transitions.

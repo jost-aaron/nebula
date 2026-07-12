@@ -13,6 +13,7 @@ import { jobsMigration } from "../server/jobs/schema.mjs";
 import { probeMigration } from "../server/probe/catalogAdapter.mjs";
 import { playbackPolicyMigration } from "../server/playbackPolicy/index.mjs";
 import { auditMigration } from "../server/audit/schema.mjs";
+import { renditionsMigration } from "../server/renditions/index.mjs";
 
 const fixture = async (t) => {
   const root = await import("node:fs/promises").then(({ mkdtemp }) => mkdtemp(path.join(os.tmpdir(), "nebula-backup-")));
@@ -21,7 +22,7 @@ const fixture = async (t) => {
   const databasePath = path.join(dataRoot, "nebula.sqlite");
   const database = await openNebulaDatabase(databasePath);
   migrateAccountSchema(database);
-  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, playbackPolicyMigration, auditMigration]);
+  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, playbackPolicyMigration, auditMigration, renditionsMigration]);
   t.after(() => database.close());
   return { backupRoot: path.join(root, "backups"), dataRoot, database, databasePath, root };
 };
@@ -39,6 +40,9 @@ test("online backup captures WAL state and restores every persisted domain", asy
     VALUES ('item', 'lib', 'movie', 'video', 'Example', 'Example', ?, ?)`).run(now, now);
   scope.database.prepare(`INSERT INTO media_sources (id, item_id, root_id, content_path, media_kind, size_bytes, modified_ms, first_seen_at, last_seen_at, created_at, updated_at)
     VALUES ('source', 'item', 'root', 'Movies/example.mp4', 'video', 10, 1, ?, ?, ?, ?)`).run(now, now, now, now);
+  scope.database.prepare(`INSERT INTO media_renditions
+    (id, source_id, source_revision, profile_id, profile_version, state, retention, origin, storage_key, width, height, bitrate, video_bitrate, audio_bitrate, size_bytes, checksum, created_at, updated_at, completed_at, last_accessed_at)
+    VALUES ('rendition', 'source', 1, '720p', 1, 'ready', 'pinned', 'scheduled', 'renditions/source/1/720p/v1', 1280, 720, 4000000, 3600000, 128000, 1234, 'abc', ?, ?, ?, ?)`).run(now, now, now, now);
   scope.database.prepare("INSERT INTO playback_states (user_id, item_id, source_id, position_seconds, updated_at) VALUES ('owner', 'item', 'source', 42, ?)").run(now);
   scope.database.prepare(`INSERT INTO background_jobs (id, type, state, payload_json, progress, attempt, max_attempts, available_at, created_at, updated_at)
     VALUES ('job', 'probe', 'queued', '{}', 0, 0, 3, ?, ?, ?)`).run(now, now, now);
@@ -62,6 +66,11 @@ test("online backup captures WAL state and restores every persisted domain", asy
   assert.equal(db.prepare("SELECT state FROM background_jobs WHERE id = 'job'").get().state, "queued");
   assert.equal(db.prepare("SELECT format_name FROM media_probe_results WHERE source_id = 'source'").get().format_name, "mp4");
   assert.equal(db.prepare("SELECT event_type FROM audit_events WHERE id = 'audit'").get().event_type, "job.enqueued");
+  assert.deepEqual({ ...db.prepare("SELECT profile_id, state, retention FROM media_renditions WHERE id = 'rendition'").get() }, {
+    profile_id: "720p",
+    retention: "pinned",
+    state: "ready"
+  });
 });
 
 test("backup includes only safe catalog-referenced metadata cache files", async (t) => {

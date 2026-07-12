@@ -7,6 +7,10 @@ Vite. It is intentionally simple while the shell concepts are still forming.
 HLS runner. Detection is bounded, cached, optional, and fail-open to software;
 selection remains downstream of playback planning and policy admission.
 
+`server/renditions/` owns versioned, server-authored quality profiles and the
+catalog-linked persistence contract for reusable interactive or scheduled
+outputs. See `docs/renditions.md`.
+
 ## Layers
 
 ```mermaid
@@ -242,6 +246,14 @@ flowchart TD
   MP4 remux, or software HLS output through path-safe asset boundaries.
 - Treat generated output as disposable cache cleaned on cancel, expiry,
   restart, and shutdown; absolute paths never cross the HTTP boundary.
+
+`server/renditions/`
+
+- Defines trusted 480p, 720p, and 1080p H.264/AAC HLS profiles.
+- Persists rendition identity by catalog source revision and profile version so
+  changed originals cannot reuse stale generated output.
+- Keeps storage identifiers server-internal and leaves FFmpeg execution,
+  delivery authorization, and background scheduling to their existing domains.
 
 `server/playbackPolicy/`
 

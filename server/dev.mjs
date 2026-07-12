@@ -26,6 +26,7 @@ import { createBackupService } from "./backup/index.mjs";
 import { auditMigration, createAuditService } from "./audit/index.mjs";
 import { createMediaListsService, mediaListsMigration } from "./mediaLists/index.mjs";
 import { createSubtitleService, subtitleMigration } from "./subtitles/index.mjs";
+import { renditionsMigration } from "./renditions/index.mjs";
 import {
   createCatalogCheck,
   createDatabaseCheck,
@@ -50,7 +51,7 @@ const database = await openNebulaDatabase(storage.accountDatabasePath);
 const accountStore = await createAccountStore({ database });
 const guestService = createGuestService({ accountStore });
 accountStore.setOwnerCreatedHook(() => guestService.revokeAll());
-applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration]);
+applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration, renditionsMigration]);
 const auditService = createAuditService({
   db: database,
   maxEvents: Number(process.env.NEBULA_AUDIT_MAX_EVENTS ?? 10_000),
