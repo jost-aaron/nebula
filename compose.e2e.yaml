@@ -1,0 +1,33 @@
+services:
+  dashboard:
+    volumes:
+      - ./index.html:/app/index.html
+      - ./package.json:/app/package.json
+      - ./server:/app/server
+      - ./tests:/app/tests
+      - ./tsconfig.json:/app/tsconfig.json
+      - ./src:/app/src
+      - ${E2E_CONTENT_DIR:?Set E2E_CONTENT_DIR}:/app/content
+      - ${E2E_DATA_DIR:?Set E2E_DATA_DIR}:/app/data
+    environment:
+      TMDB_API_TOKEN: ""
+      GOOGLE_VISION_API_KEY: ""
+      NEBULA_DATA_ROOT: /app/data
+      NEBULA_REQUIRE_AUTH: "true"
+      NEBULA_AUTH_ALLOW_LOCALHOST: "false"
+      NEBULA_VITE_ALLOWED_HOSTS: dashboard
+
+  playwright:
+    build:
+      context: .
+      dockerfile: Dockerfile.playwright
+    depends_on:
+      - dashboard
+    environment:
+      PLAYWRIGHT_BASE_URL: http://dashboard:5173
+      CI: "true"
+    init: true
+    ipc: host
+    volumes:
+      - ./playwright-report:/app/playwright-report
+      - ./test-results:/app/test-results

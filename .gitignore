@@ -8,3 +8,6 @@ data/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+.tmp/
+playwright-report/
+test-results/
