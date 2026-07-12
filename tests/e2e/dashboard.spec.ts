@@ -50,4 +50,12 @@ test("Cinema attaches the selected WebVTT subtitle without blocking playback", a
   await page.locator(".cinema-actions [data-cinema-action='play']").click();
   await expect(page.locator("video[data-cinema-player] track[kind='subtitles']")).toHaveCount(1);
   await expect(page.locator("[data-cinema-player-subtitle]")).toHaveValue(/sub_/);
+  const video = page.locator("video[data-cinema-player]");
+  await expect(video).toHaveAttribute("src", /delivery-sessions|cinema\/media/);
+  await page.waitForTimeout(500);
+  if (await video.evaluate((element: HTMLVideoElement) => element.paused)) {
+    await expect(page.locator(".cinema-play-orb")).toBeVisible();
+    await page.locator(".cinema-play-orb").click();
+  }
+  await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0);
 });

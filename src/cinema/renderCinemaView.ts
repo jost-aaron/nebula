@@ -459,6 +459,9 @@ const renderVideoPlayerView = (entry: CinemaEntry, subtitles?: SubtitleTracksRes
     </header>
     <section class="cinema-video-stage">
       <video class="cinema-player" data-cinema-player controls autoplay playsinline preload="metadata" crossorigin="anonymous"></video>
+      <div class="cinema-player-overlay">
+        <button class="cinema-play-orb" type="button" data-cinema-action="play" aria-label="Play">${renderCinemaIcon("Play")}</button>
+      </div>
       <label class="cinema-player-subtitles">Subtitles <select data-cinema-player-subtitle><option value="">Off</option>${subtitles?.tracks.map((track) => `<option value="${escapeHtml(track.id)}"${track.id === subtitles.selectedSubtitleId ? " selected" : ""}>${escapeHtml(track.label || track.language || "Unknown")}</option>`).join("") ?? ""}</select></label>
       <div class="cinema-player-statusbar">
         <span><i class="cinema-status-dot ${currentServerInfo().online ? "online" : "offline"}"></i>${currentServerInfo().online ? "Server Online" : "Server Offline"}</span>
@@ -1045,6 +1048,9 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
 
       player.addEventListener("play", () => {
         renderPlaybackState();
+        if (status) {
+          delete status.dataset.cinemaPlaybackError;
+        }
         setStatus("Playback requested.");
         if (!lifecycleStarted) report("start");
       });
@@ -1083,7 +1089,6 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         if (deliveryId) void cancelCinemaDelivery(deliveryId).catch(() => {});
       };
       stopActivePlayback = stopPlayback;
-      player.addEventListener("emptied", stopPlayback, { once: true });
       window.addEventListener("pagehide", stopPlayback, { once: true });
       player.addEventListener("stalled", () => setStatus("Playback is waiting for more data from the server."));
       player.addEventListener("error", () => setStatus("This video could not be played here."));
@@ -1094,7 +1099,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         setStatus("Using local compatibility playback.");
         player.src = playingEntry.streamUrl;
         player.load();
-        void player.play().catch(() => {});
+        void player.play().catch(() => setStatus("Ready. Press Play to start playback."));
       };
       const prepareDelivery = async () => {
         if (!(player instanceof HTMLVideoElement) || !playingEntry.id || !playingEntry.sourceId || getApiConnectionMode() !== "Same origin") return useFallback();
@@ -1111,8 +1116,9 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
           if (delivery.status !== "ready" || generation !== deliveryGeneration) throw new Error("Delivery did not become ready.");
           player.src = apiUrl(delivery.deliveryUrl);
           player.load();
-          void player.play().catch(() => {});
-          setStatus(created.plan.decision === "direct-play" ? "Direct play ready." : created.plan.decision === "remux" ? "Compatible MP4 ready." : "HLS stream ready.");
+          const readyMessage = created.plan.decision === "direct-play" ? "Direct play ready." : created.plan.decision === "remux" ? "Compatible MP4 ready." : "HLS stream ready.";
+          setStatus(readyMessage);
+          void player.play().catch(() => setStatus(`${readyMessage} Press Play to start playback.`));
         } catch {
           if (deliveryId) { void cancelCinemaDelivery(deliveryId).catch(() => {}); deliveryId = null; }
           useFallback();
@@ -1461,7 +1467,19 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       const player = content.querySelector<HTMLMediaElement>("[data-cinema-player]");
 
       if (player) {
-        void player.play();
+        void player.play().catch((error: unknown) => {
+          const status = content.querySelector<HTMLElement>("[data-cinema-player-status]");
+          const code = error instanceof DOMException ? error.name : "PlaybackError";
+
+          if (status) {
+            status.dataset.cinemaPlaybackError = code;
+            status.textContent = code === "NotSupportedError"
+              ? "This browser cannot decode the selected video."
+              : code === "NotAllowedError"
+                ? "Playback is ready. Press Play again to allow audio."
+                : "Playback could not start. Try Play again.";
+          }
+        });
       }
       return;
     }

@@ -26,13 +26,18 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 mkdir -p "$E2E_CONTENT_DIR/Movies" "$E2E_CONTENT_DIR/Music" "$E2E_DATA_DIR" "$root_dir/playwright-report" "$root_dir/test-results"
-printf 'deterministic video fixture\n' > "$E2E_CONTENT_DIR/Movies/E2E Movie.mp4"
 printf 'WEBVTT\n\n00:00.000 --> 00:01.000\nNebula subtitle fixture\n' > "$E2E_CONTENT_DIR/Movies/E2E Movie.en.default.vtt"
 printf 'deterministic audio fixture\n' > "$E2E_CONTENT_DIR/Music/E2E Track.mp3"
 printf 'Nebula Playwright fixture\n' > "$E2E_CONTENT_DIR/fixture-note.txt"
 
 echo "Playwright dashboard: http://127.0.0.1:$DASHBOARD_PORT"
-compose up --build --detach dashboard
+compose build dashboard
+compose run --rm --no-deps dashboard ffmpeg -nostdin -v error \
+  -f lavfi -i color=c=blue:s=320x180:r=24:d=4 \
+  -f lavfi -i sine=frequency=440:sample_rate=48000:duration=4 \
+  -c:v libvpx-vp9 -pix_fmt yuv420p -c:a libopus -y \
+  "/app/content/Movies/E2E Movie.webm"
+compose up --detach dashboard
 
 attempt=0
 until compose exec -T dashboard node -e "fetch('http://127.0.0.1:5173/api/auth/status').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"; do
