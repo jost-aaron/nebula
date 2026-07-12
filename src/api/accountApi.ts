@@ -9,9 +9,9 @@ const bearerClient = () => {
   try { return new URL(base).origin !== window.location.origin; } catch { return false; }
 };
 
-const acceptSession = (session: AuthSessionResponse) => {
+const acceptSession = async (session: AuthSessionResponse) => {
   setCsrfToken(session.csrfToken);
-  if (session.transport === "bearer" && session.sessionToken) setAccountSessionToken(session.sessionToken);
+  if (session.transport === "bearer" && session.sessionToken) await setAccountSessionToken(session.sessionToken);
   return session;
 };
 
@@ -36,9 +36,12 @@ export const login = (body: { password: string; username: string }) =>
   }).then(acceptSession);
 
 export const logout = async () => {
-  await apiJson<{ ok: boolean }>("/api/auth/logout", { body: "{}", method: "POST" });
-  setCsrfToken(null);
-  setAccountSessionToken("");
+  try {
+    await apiJson<{ ok: boolean }>("/api/auth/logout", { body: "{}", method: "POST" });
+  } finally {
+    setCsrfToken(null);
+    await setAccountSessionToken("");
+  }
 };
 
 export const updateProfile = (body: { displayName: string }) =>
@@ -49,8 +52,11 @@ export const changePassword = (body: { currentPassword: string; newPassword: str
 
 export const listAccountSessions = () => apiJson<{ sessions: AccountSession[] }>("/api/auth/sessions", { method: "GET" });
 
-export const revokeAccountSession = (id: string) =>
-  apiJson<{ currentRevoked: boolean; ok: boolean }>(`/api/auth/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+export const revokeAccountSession = async (id: string) => {
+  const result = await apiJson<{ currentRevoked: boolean; ok: boolean }>(`/api/auth/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (result.currentRevoked) await setAccountSessionToken("");
+  return result;
+};
 
 export const listAccounts = () => apiJson<{ accounts: AccountUser[] }>("/api/auth/accounts", { method: "GET" });
 

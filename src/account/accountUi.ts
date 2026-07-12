@@ -26,11 +26,11 @@ export const renderServerConnection = (message = "Connect this client to your Ne
 
 export const bindServerConnection = (container: ParentNode) => {
   const form = container.querySelector<HTMLFormElement>("[data-server-connect-form]");
-  form?.addEventListener("submit", (event) => {
+  form?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const input = form.querySelector<HTMLInputElement>("[data-server-url]");
     if (!input) return;
-    setApiBaseUrl(input.value);
+    await setApiBaseUrl(input.value);
     window.location.reload();
   });
 };

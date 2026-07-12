@@ -1,7 +1,8 @@
 const API_BASE_STORAGE_KEY = "nebula.apiBaseUrl";
 const API_TOKEN_STORAGE_KEY = "nebula.apiToken";
-const ACCOUNT_SESSION_STORAGE_KEY = "nebula.accountSessionToken";
+import { nativeSessionStorage } from "../native/nativeSessionStorage";
 let csrfToken = "";
+let accountSessionToken = "";
 
 const configuredApiBase = () => {
   const stored = window.localStorage.getItem(API_BASE_STORAGE_KEY);
@@ -38,7 +39,8 @@ export const getApiConnectionMode = () => {
   return "Needs server URL";
 };
 
-export const setApiBaseUrl = (url: string) => {
+export const setApiBaseUrl = async (url: string) => {
+  const previous = configuredApiBase() || window.location.origin;
   const normalized = url.trim().replace(/\/+$/, "");
 
   if (normalized) {
@@ -46,16 +48,29 @@ export const setApiBaseUrl = (url: string) => {
   } else {
     window.localStorage.removeItem(API_BASE_STORAGE_KEY);
   }
+  const next = configuredApiBase() || window.location.origin;
+  if (previous !== next) {
+    await nativeSessionStorage.clear(previous).catch(() => undefined);
+    accountSessionToken = "";
+  }
 };
 
 export const apiUrl = (path: string) => `${configuredApiBase()}${path}`;
 
 export const getApiToken = () => window.localStorage.getItem(API_TOKEN_STORAGE_KEY) ?? "";
-const accountSessionStorageKey = () => `${ACCOUNT_SESSION_STORAGE_KEY}:${configuredApiBase() || window.location.origin}`;
-export const getAccountSessionToken = () => window.localStorage.getItem(accountSessionStorageKey()) ?? "";
-export const setAccountSessionToken = (token: string) => {
-  if (token) window.localStorage.setItem(accountSessionStorageKey(), token);
-  else window.localStorage.removeItem(accountSessionStorageKey());
+const accountSessionServer = () => configuredApiBase() || window.location.origin;
+export const initializeAccountSession = async () => {
+  accountSessionToken = await nativeSessionStorage.initialize(accountSessionServer());
+};
+export const getAccountSessionToken = () => accountSessionToken;
+export const setAccountSessionToken = async (token: string) => {
+  accountSessionToken = token;
+  try {
+    await nativeSessionStorage.set(accountSessionServer(), token);
+  } catch {
+    accountSessionToken = "";
+    throw new Error("Secure session storage is unavailable. Unlock the device and sign in again.");
+  }
 };
 export const setCsrfToken = (token: string | null) => { csrfToken = token ?? ""; };
 

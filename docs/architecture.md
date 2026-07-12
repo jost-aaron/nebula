@@ -101,7 +101,8 @@ flowchart TD
 - Applies `VITE_API_BASE_URL` through `src/api/http.ts`, so the frontend can
   later point at a separate API origin without rewriting app surfaces.
 - Also supports a runtime Server URL saved in local storage for native/mobile
-  client shells.
+  client shells; iOS account bearer sessions are stored only through the native
+  Keychain bridge.
 - Applies cookie credentials, account bearer sessions, CSRF headers, expiration
   handling, and legacy service-token fallback.
 
