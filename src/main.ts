@@ -1,7 +1,7 @@
 import { renderAppIcon } from "./appIcons";
 import { getAuthStatus, getCurrentAccount } from "./api/accountApi";
 import { apiJson, getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken, initializeAccountSession, setAccountSessionToken, setApiBaseUrl, setApiToken } from "./api/http";
-import { bindAccountGate, bindAccountIdentity, bindAccountSettings, bindServerConnection, renderAccountGate, renderAccountIdentity, renderAccountLoading, renderServerConnection } from "./account/accountUi";
+import { bindAccountGate, bindAccountIdentity, bindAccountSettings, bindServerConnection, renderAccountGate, renderAccountIdentity, renderAccountLoading, renderGuestIdentity, renderServerConnection } from "./account/accountUi";
 import { dashboardApps, type DashboardApp } from "./apps";
 import { bindCinemaView, renderCinemaView } from "./cinema/renderCinemaView";
 import { collectDiagnostics } from "./diagnostics/collectDiagnostics";
@@ -15,7 +15,7 @@ import { renderSettingsPanel } from "./settings/renderSettingsPanel";
 import { bindPlaybackPolicyAdmin } from "./settings/playbackPolicyAdmin";
 import { bindStudioView, renderStudioView } from "./studio/renderStudioView";
 import { startRenderer } from "./webgpuRenderer";
-import type { AccountSessionState } from "./shared/accountTypes";
+import type { AccountSessionState, CurrentSessionState } from "./shared/accountTypes";
 import "./styles.css";
 import "./cinema/tmdb.css";
 
@@ -28,7 +28,9 @@ if (!root || !canvas) {
 
 root.innerHTML = renderAccountLoading();
 
-const startDashboard = (accountSession: AccountSessionState) => {
+const startDashboard = (accountSession: CurrentSessionState) => {
+const isGuest = accountSession.principal === "guest" || !accountSession.user;
+const availableApps = isGuest ? dashboardApps.filter((app) => ["cinema", "studio", "search"].includes(app.id)) : dashboardApps;
 let focusedIndex = 0;
 let launchedApp: DashboardApp | null = null;
 let activeApp: DashboardApp | null = null;
@@ -51,7 +53,7 @@ root.innerHTML = `
         <div class="status-cluster">
           <span id="gpu-status" class="system-pill">Checking GPU</span>
           <span class="system-pill">Controller Ready</span>
-          ${renderAccountIdentity(accountSession.user)}
+          ${isGuest ? renderGuestIdentity() : renderAccountIdentity(accountSession.user!)}
           <time id="clock" class="clock"></time>
         </div>
       </header>
@@ -71,7 +73,7 @@ root.innerHTML = `
       <section class="app-strip" aria-label="Applications">
         <div class="section-heading">
           <h2>Applications</h2>
-          <span>${dashboardApps.length} installed</span>
+          <span>${availableApps.length} available</span>
         </div>
         <div id="app-grid" class="app-grid"></div>
       </section>
@@ -97,7 +99,7 @@ if (!grid || !featuredTitle || !featuredDescription || !launchButton || !details
 }
 
 const renderGrid = () => {
-  grid.innerHTML = dashboardApps
+  grid.innerHTML = availableApps
     .map((app, index) => {
       const isFocused = index === focusedIndex;
       return `
@@ -134,7 +136,7 @@ const scrollFocusedTileIntoView = () => {
 };
 
 const renderFocus = ({ scroll = true }: { scroll?: boolean } = {}) => {
-  const app = dashboardApps[focusedIndex];
+  const app = availableApps[focusedIndex];
   document.documentElement.dataset.focusIndex = String(focusedIndex);
   featuredTitle.textContent = app.name;
   featuredDescription.textContent = app.description;
@@ -147,7 +149,7 @@ const renderFocus = ({ scroll = true }: { scroll?: boolean } = {}) => {
 };
 
 const selectAppIndex = (index: number, options?: { scroll?: boolean }) => {
-  const nextIndex = Math.max(0, Math.min(index, dashboardApps.length - 1));
+  const nextIndex = Math.max(0, Math.min(index, availableApps.length - 1));
 
   if (nextIndex === focusedIndex) {
     return false;
@@ -295,13 +297,13 @@ const createSettingsContent = async () =>
   renderSettingsPanel(
     await collectDiagnostics({
       activeNavigation: "Applications",
-      apps: dashboardApps,
+      apps: availableApps,
       focusedIndex,
       launchedApp,
       performance: performanceMonitor.snapshot(),
       renderer: rendererState
     }),
-    accountSession
+    accountSession as AccountSessionState
   );
 
 const launchApp = async (app: DashboardApp) => {
@@ -319,7 +321,7 @@ const launchApp = async (app: DashboardApp) => {
   renderPanel();
 
   const body = isSearchApp
-    ? renderSearchView(dashboardApps, "app")
+    ? renderSearchView(availableApps, "app")
     : isSettingsApp
       ? await createSettingsContent()
       : isFilesApp
@@ -380,7 +382,7 @@ const launchApp = async (app: DashboardApp) => {
     bindSettingsTabs(appSurface);
     bindClientSettings(appSurface);
     bindAccountSettings(appSurface);
-    if (accountSession.user.role === "owner") {
+    if (accountSession.user?.role === "owner") {
       const disposeJobs = bindJobsAdmin(appSurface);
       const disposePlaybackPolicy = bindPlaybackPolicyAdmin(appSurface);
       const disposeActivity = bindActivityAdmin(appSurface);
@@ -391,7 +393,7 @@ const launchApp = async (app: DashboardApp) => {
   if (isFilesApp) {
     bindFileBrowser(appSurface, {
       onOpenSettings: () => {
-        const settingsApp = dashboardApps.find((candidate) => candidate.id === "settings");
+        const settingsApp = availableApps.find((candidate) => candidate.id === "settings");
 
         if (settingsApp) {
           void launchApp(settingsApp);
@@ -423,11 +425,11 @@ const bindSearchControls = (container: ParentNode) => {
     return;
   }
 
-  let visibleApps = [...dashboardApps];
+  let visibleApps = [...availableApps];
   let activeIndex = 0;
 
   const renderResults = () => {
-    visibleApps = filterApps(dashboardApps, input.value);
+    visibleApps = filterApps(availableApps, input.value);
     activeIndex = Math.min(activeIndex, Math.max(visibleApps.length - 1, 0));
     results.innerHTML = renderSearchResults(visibleApps);
     summary.textContent =
@@ -483,7 +485,7 @@ const bindSearchControls = (container: ParentNode) => {
       return;
     }
 
-    const app = dashboardApps.find((candidate) => candidate.id === button.dataset.searchResult);
+    const app = availableApps.find((candidate) => candidate.id === button.dataset.searchResult);
 
     if (app) {
       void launchApp(app);
@@ -496,12 +498,12 @@ const bindSearchControls = (container: ParentNode) => {
 
 const openFocusedApp = () => {
   detailPanel.classList.remove("system-panel", "search-panel", "library-panel");
-  launchedApp = dashboardApps[focusedIndex];
+  launchedApp = availableApps[focusedIndex];
   renderPanel();
 };
 
 const launchFocusedApp = () => {
-  const app = dashboardApps[focusedIndex];
+  const app = availableApps[focusedIndex];
   void launchApp(app);
 };
 
@@ -660,7 +662,7 @@ launchButton.addEventListener("click", launchFocusedApp);
 detailsButton.addEventListener("click", openFocusedApp);
 closeAccountMenu = bindAccountIdentity(root, {
   onOpenSettings: () => {
-    const settingsApp = dashboardApps.find((candidate) => candidate.id === "settings");
+    const settingsApp = availableApps.find((candidate) => candidate.id === "settings");
     if (settingsApp) {
       void launchApp(settingsApp).then(() => {
         appSurface.querySelector<HTMLButtonElement>("[data-diagnostic-tab='account']")?.click();
@@ -752,13 +754,13 @@ const bootAccount = async () => {
 
   try {
     const status = await getAuthStatus();
-    if (status.setupRequired) {
-      root.innerHTML = renderAccountGate(true);
-      bindAccountGate(root);
+    if (status.authenticated && (status.user || status.principal === "guest")) {
+      startDashboard(await getCurrentAccount());
       return;
     }
-    if (status.authenticated && status.user) {
-      startDashboard(await getCurrentAccount());
+    if (status.setupRequired) {
+      root.innerHTML = renderAccountGate(true, "", status.guestAvailable);
+      bindAccountGate(root);
       return;
     }
     root.innerHTML = renderAccountGate(false);

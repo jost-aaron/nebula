@@ -18,6 +18,9 @@ It also includes native-session source contracts for Keychain accessibility,
 legacy local-storage removal, server scoping, and fail-closed cleanup.
 
 Account coverage also includes salted scrypt verification, setup exactly once,
+first-run guest eligibility, irreversible owner initialization, local-only
+entry, in-memory expiration/restart loss, guest capability denial, media-ticket
+isolation, and atomic guest revocation during owner setup,
 SQLite persistence, generic/throttled login failure, disabled members, cookie
 and native bearer sessions, expiration/logout/revocation/password rotation,
 CSRF, owner/member capabilities, legacy service tokens, protected JSON and
@@ -126,6 +129,9 @@ http://127.0.0.1:5173
 Check:
 
 - A fresh volume shows owner setup before any dashboard content.
+- A fresh eligible volume offers Create Owner Account and Continue as Guest;
+  guest mode shows only Cinema, Studio, and Search plus a persistent Create
+  Owner Account identity-menu command at desktop and 390x844.
 - Failed sign-in is generic; successful sign-in and reload restore identity.
 - The identity menu opens Account Settings and closes cleanly with Escape.
 - Profile, password, member, session revocation, and sign-out controls work.

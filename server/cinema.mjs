@@ -76,6 +76,7 @@ const googleVisionWebDetection = async (frames) => {
 
 export const createCinemaRoutes = (storage, accountStore, options = {}) => {
   const libraryPermissions = options.libraryPermissions ?? null;
+  const guestService = options.guestService ?? null;
   const handleTmdb = createCinemaTmdbRoutes(storage, accountStore, options);
   const listCinemaLibrary = async (request, response) => {
     const metadata = await readMetadata(storage.cinemaMetadataPath);
@@ -92,7 +93,7 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
 
     if (context) {
       entries.forEach((entry) => {
-        const ticket = accountStore.issueMediaTicket({
+        const ticket = context.kind === "guest" ? guestService.issueMediaTicket({ contentPath: entry.path, mediaKind: "video", sessionId: context.sessionId }) : accountStore.issueMediaTicket({
           contentPath: entry.path,
           mediaKind: "video",
           principalId: context.user?.id ?? context.principalId,

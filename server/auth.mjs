@@ -6,11 +6,21 @@ const localhostAddresses = new Set(["127.0.0.1", "::1"]);
 const publicAuthRoutes = new Set([
   "GET /api/auth/status",
   "POST /api/auth/setup",
-  "POST /api/auth/login"
+  "POST /api/auth/login",
+  "POST /api/auth/guest"
 ]);
 
 const normalizedRemoteAddress = (request) =>
   (request.socket.remoteAddress ?? "").toLowerCase().replace(/^::ffff:/, "").split("%")[0];
+
+export const isTrustedLocalAddress = (address) => {
+  const value = String(address ?? "").toLowerCase().replace(/^::ffff:/, "").split("%")[0];
+  if (localhostAddresses.has(value) || value === "::") return true;
+  if (/^10\./.test(value) || /^192\.168\./.test(value) || /^169\.254\./.test(value)) return true;
+  const match = /^172\.(\d{1,3})\./.exec(value);
+  if (match && Number(match[1]) >= 16 && Number(match[1]) <= 31) return true;
+  return /^f[cd][0-9a-f]{2}:/.test(value) || /^fe[89ab][0-9a-f]:/.test(value);
+};
 
 const decodeCookie = (value) => {
   try { return decodeURIComponent(value); } catch { return ""; }
@@ -35,8 +45,10 @@ const constantTimeTokenMatch = (actual, expected) => {
 };
 
 export const capabilitiesForRole = (role) => new Set(role === "owner"
-  ? ["account.use", "dashboard.use", "files.read", "files.write", "media.manage", "media.read", "server.admin", "watchlist.write"]
-  : ["account.use", "dashboard.use", "files.read", "media.read", "watchlist.write"]);
+  ? ["account.use", "dashboard.use", "files.read", "files.write", "media.manage", "media.read", "playback.persist", "server.admin", "watchlist.write"]
+  : ["account.use", "dashboard.use", "files.read", "media.read", "playback.persist", "watchlist.write"]);
+
+export const guestCapabilities = () => new Set(["account.use", "dashboard.use", "media.read"]);
 
 const capabilityForRoute = (request, url) => {
   const method = request.method ?? "GET";
@@ -50,7 +62,7 @@ const capabilityForRoute = (request, url) => {
   if (path === "/api/server/info") return "dashboard.use";
   if (path.startsWith("/api/files")) return ["GET", "HEAD"].includes(method) ? "files.read" : "files.write";
   if (path.startsWith("/api/catalog")) return ["GET", "HEAD"].includes(method) ? "media.read" : "media.manage";
-  if (path.startsWith("/api/playback")) return "media.read";
+  if (path.startsWith("/api/playback")) return "playback.persist";
   if (path.startsWith("/api/jobs")) return "media.manage";
   if (path === "/api/cinema/watchlist") return "watchlist.write";
   if (path === "/api/cinema/metadata" || path === "/api/cinema/identify" || path.startsWith("/api/cinema/tmdb/")) return "media.manage";
@@ -71,7 +83,7 @@ export const createAuthGuard = (accountStore = {
   authenticateMediaTicket: () => null,
   authenticateSession: () => null,
   countUsers: () => 1
-}, { audit = null } = {}) => {
+}, { audit = null, guestService = null } = {}) => {
   const serviceAuthRequired = process.env.NEBULA_REQUIRE_AUTH === "true";
   const serviceToken = process.env.NEBULA_API_TOKEN ?? "";
   const allowLocalhost = process.env.NEBULA_AUTH_ALLOW_LOCALHOST !== "false";
@@ -93,13 +105,17 @@ export const createAuthGuard = (accountStore = {
         mediaKind: url.pathname.includes("cinema") ? "video" : "audio",
         token: url.searchParams.get("ticket")
       });
-      if (ticket) return { ...serviceContext, kind: "media-ticket", principalId: ticket.principalId, principalType: ticket.principalType };
+      const guestTicket = guestService?.authenticateMediaTicket({ contentPath, mediaKind: url.pathname.includes("cinema") ? "video" : "audio", token: url.searchParams.get("ticket") });
+      const resolvedTicket = ticket ?? guestTicket;
+      if (resolvedTicket) return { ...serviceContext, kind: "media-ticket", principalId: resolvedTicket.principalId, principalType: resolvedTicket.principalType };
       return null;
     }
 
     const bearer = bearerToken(request);
     const cookieToken = parseCookies(request)[SESSION_COOKIE] ?? "";
     for (const [token, transport] of [[bearer, "bearer"], [cookieToken, "cookie"]]) {
+      const guest = guestService?.authenticateSession(token);
+      if (guest) return { capabilities: guestCapabilities(), csrfToken: guest.csrfToken, expiresAt: guest.expiresAt, kind: "guest", principalId: guest.sessionId, sessionId: guest.sessionId, transport, user: null };
       const session = accountStore.authenticateSession(token);
       if (session) {
         return {
@@ -140,7 +156,7 @@ export const createAuthGuard = (accountStore = {
       if (!context) {
         audit?.recordBestEffort({ actor: { kind: "anonymous" }, eventType: "auth.access_denied", outcome: "denied" });
         json(response, 401, {
-          code: accountStore.countUsers() === 0 ? "setup_required" : "unauthorized",
+          code: accountStore.countUsers() === 0 && !accountStore.isOwnerInitialized?.() ? "setup_required" : "unauthorized",
           error: "Authentication required."
         });
         return false;

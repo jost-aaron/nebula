@@ -350,6 +350,14 @@ That can be used to make background motion react to app focus.
 
 ## Boundaries
 
+First-run guest access is isolated in `server/guest/`. Its sessions and media
+tickets are memory-only, while account schema v3 owns the irreversible
+`server_state.owner_initialized` marker. Shared integration hooks are limited to
+`server/dev.mjs`, `server/auth.mjs`, `server/accounts.mjs`, and the Cinema/Music
+ticket issuers. Those auth/account initialization files are the most likely
+merge conflicts with parallel session-storage work; preserve the guest
+principal and marker transaction when resolving them.
+
 Avoid pushing application logic into the shader renderer. The renderer should
 know enough to draw a background, not own shell state.
 

@@ -7,6 +7,7 @@ import { createAuthGuard } from "./auth.mjs";
 import { applyApiCorsHeaders, handleApiPreflight } from "./cors.mjs";
 import { createStorage } from "./storage.mjs";
 import { createAccountStore } from "./accountStore.mjs";
+import { createGuestService } from "./guest/service.mjs";
 import { catalogMigration, bootstrapSharedContentRoot, createCatalogRepository, importLegacyCinemaMetadata, scanLocalRoot } from "./catalog/index.mjs";
 import { openNebulaDatabase, applyDomainMigrations } from "./database.mjs";
 import { createPlaybackRepository } from "./playback/repository.mjs";
@@ -44,6 +45,8 @@ const host = process.env.HOST ?? "0.0.0.0";
 const storage = await createStorage({ contentRoot, dataRoot });
 const database = await openNebulaDatabase(storage.accountDatabasePath);
 const accountStore = await createAccountStore({ database });
+const guestService = createGuestService({ accountStore });
+accountStore.setOwnerCreatedHook(() => guestService.revokeAll());
 applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration]);
 const auditService = createAuditService({
   db: database,
@@ -118,7 +121,7 @@ const jobsWorker = createJobsWorker({
   }),
   repository: jobsRepository
 });
-const authGuard = createAuthGuard(accountStore, { audit: auditService });
+const authGuard = createAuthGuard(accountStore, { audit: auditService, guestService });
 const backupService = createBackupService({
   backupRoot,
   dataRoot: storage.dataRoot,
@@ -162,6 +165,7 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   backup: backupService,
   catalog: { libraryPermissions, probeReader, repository: catalogRepository, scan: scanCatalog },
   jobs: jobsService,
+  guestService,
   libraryPermissions,
   mediaLists,
   playback: playbackService,
