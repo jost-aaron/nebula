@@ -28,6 +28,7 @@ Roles map to centralized capabilities:
 | Upload, rename, create, and delete Files | Yes | No |
 | Edit shared Cinema metadata or run identification | Yes | No |
 | Administer server | Yes | No |
+| Browse/play media libraries | All | Owner-selected libraries |
 
 The first account is always `owner`. Owners can create and enable/disable member
 accounts after setup. Version one does not support promoting another owner,
@@ -46,6 +47,13 @@ creates users, sessions, login-attempt throttling, personal watchlists, and
 media access tickets. Version 2 adds owner-managed server settings. Database,
 WAL, and SHM files are ignored and must never be
 committed or copied into a client bundle.
+
+Media-domain migrations are tracked separately in
+`nebula_domain_migrations`. The library-permissions migration adds an explicit
+`all` or `selected` member policy plus provider-neutral library grants. An
+absent policy means `all`, preserving member access when upgrading an existing
+database. Once a member uses `selected`, future libraries are denied until an
+owner grants them.
 
 ## Authentication Flow
 
@@ -125,6 +133,8 @@ request therefore receives narrow media URLs containing random, hashed,
 revocable tickets bound to one user, media kind, and content path. Tickets have
 a limited lifetime and authorize only GET/HEAD byte-range streaming; they are
 not session credentials and cannot call JSON or Files APIs.
+Tickets are re-authorized against current library grants on every media
+request, so removing a grant also invalidates previously issued playback URLs.
 
 CORS stays API-only and allowlisted. Credentials are enabled only for an
 explicitly allowed origin, and no arbitrary origin is reflected.
@@ -139,6 +149,9 @@ explicitly allowed origin, and no arbitrary origin is reflected.
 - Studio queue/history remain client-memory state in version one.
 - Files remain a shared namespace. Members may browse/download; owners may
   mutate it.
+- Owners choose whether each member receives every current/future media library
+  or only a selected set in Settings / Account. The same grant governs browse,
+  stable-item lookup, playback state, planning, and delivery.
 - Search history is not persisted.
 - Server URL and legacy API token remain device-local client settings. Native
   account session tokens are also device-local until Keychain integration.
@@ -176,7 +189,7 @@ provide encrypted database-at-rest support.
 | Brute force / enumeration | Generic failure, dummy hash, persisted throttling | Distributed low-rate attacks remain possible |
 | Database disclosure | Scrypt passwords; hashed sessions/tickets | Profile and activity metadata remain readable |
 | Stolen session | Expiration, device list, revocation, password rotation | No automated anomaly detection |
-| Media URL leakage | Narrow, expiring, path-bound ticket | Ticket works until expiry/revocation for its one file |
+| Media URL leakage | Narrow, expiring, path-bound ticket rechecked against current library grants | Ticket works until expiry/revocation for its one permitted file |
 | Privilege escalation | Central route capabilities, server-side checks | Owner compromise grants full local administration |
 | Setup race | SQLite immediate transaction and unique owner invariant | Physical database access remains trusted |
 | CORS abuse | Explicit allowlist, API-only headers | A compromised allowed origin is trusted |
@@ -187,7 +200,8 @@ provide encrypted database-at-rest support.
 - No account deletion, role changes, or second-owner promotion.
 - Member passwords are owner-assigned at creation; forced first-login password
   change is not yet implemented.
-- One role per account; no library/folder-level ACLs.
+- One role per account; media permissions are library-level, with no folder- or
+  item-level ACLs.
 - No encrypted database-at-rest support.
 - Native bearer storage is not yet Keychain-backed.
 - Direct HTTP development cannot set a Secure cookie; production should use

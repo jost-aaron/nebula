@@ -35,12 +35,15 @@ export const createPlaybackRepository = ({ db, migrate = false } = {}) => {
     db.prepare("SELECT * FROM playback_sessions WHERE id = ?").get(sessionId)
   );
 
-  const listContinueWatching = (userId, limit = 20) => db.prepare(`
+  const continueWatchingSql = `
     SELECT * FROM playback_states
     WHERE user_id = ? AND completed = 0 AND position_seconds > 0
       AND duration_seconds IS NOT NULL AND position_seconds < duration_seconds
-    ORDER BY last_played_at DESC, item_id ASC LIMIT ?
-  `).all(userId, limit).map((row) => ({
+    ORDER BY last_played_at DESC, item_id ASC`;
+
+  const listContinueWatching = (userId, limit = 20) => db.prepare(
+    limit === null ? continueWatchingSql : `${continueWatchingSql} LIMIT ?`
+  ).all(...(limit === null ? [userId] : [userId, limit])).map((row) => ({
     itemId: row.item_id,
     lastPlayedAt: row.last_played_at,
     positionSeconds: row.position_seconds,

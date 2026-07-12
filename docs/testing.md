@@ -20,7 +20,10 @@ SQLite persistence, generic/throttled login failure, disabled members, cookie
 and native bearer sessions, expiration/logout/revocation/password rotation,
 CSRF, owner/member capabilities, legacy service tokens, protected JSON and
 media ranges, Files streaming/resumable uploads, per-user watchlists, legacy
-watchlist migration, and media-ticket revocation.
+watchlist migration, media-ticket revocation, provider-neutral library policy
+migration, owner-only library administration, cross-member library isolation,
+non-disclosing catalog/compatibility denials, ticket re-authorization, and
+unchanged Files reads.
 
 Media-platform coverage includes centrally composed migrations, stable catalog
 UUIDs, duplicate/change/rename/missing/restore reconciliation, legacy metadata
@@ -31,6 +34,9 @@ Wave 2 coverage also includes persistent job recovery and FIFO claiming,
 container FFprobe availability, bounded subprocess failures, path/symlink
 safety, normalized stream metadata, enriched catalog responses, and explicit
 watched-state updates without synthetic sessions.
+Wave 4 library-permission coverage additionally exercises playback-state
+filtering and writes, planner denial, delivery admission, and active-session
+denial after a grant is removed.
 
 ## API Smoke Checks
 
@@ -129,6 +135,8 @@ Check:
 - Owner Settings includes a Jobs category with refresh, filtering, maintenance
   enqueue actions, and cancellation confirmation.
 - Member Settings does not show the Jobs category or owner-only admin controls.
+- Owner Account Settings can switch each member between all libraries and a
+  responsive selected-library checklist; member Settings never shows it.
 - Cinema opens the local video browser and shows supported videos from
   `content/`.
 - Cinema has a visible Dashboard command that returns to the main dashboard.

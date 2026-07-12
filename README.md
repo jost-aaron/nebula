@@ -14,7 +14,8 @@ Studio scans local audio into a dedicated music player.
 Nebula starts with deliberate local owner setup and requires an account for the
 dashboard. Browser sessions use cookies and CSRF protection; Capacitor uses
 revocable bearer sessions. Owners can add or disable members, and Cinema
-watchlists are personal while the media library stays server-shared.
+watchlists are personal. Owners can also limit each member to selected media
+libraries without changing the shared Files permission model.
 
 ## Run
 

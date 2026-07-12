@@ -91,7 +91,7 @@ export const createAuthGuard = (accountStore = {
         mediaKind: url.pathname.includes("cinema") ? "video" : "audio",
         token: url.searchParams.get("ticket")
       });
-      if (ticket) return { ...serviceContext, kind: "media-ticket", principalId: ticket.principalId };
+      if (ticket) return { ...serviceContext, kind: "media-ticket", principalId: ticket.principalId, principalType: ticket.principalType };
       return null;
     }
 

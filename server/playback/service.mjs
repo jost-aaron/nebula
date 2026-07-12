@@ -23,6 +23,7 @@ export const createPlaybackService = ({
   progressIntervalMs = 10_000,
   progressPositionDelta = 10,
   repository,
+  visibilityFilter = null,
   uuid = randomUUID
 } = {}) => {
   requireMediaContract("playbackRepository", repository, PLAYBACK_REPOSITORY_METHODS);
@@ -90,7 +91,8 @@ export const createPlaybackService = ({
     const userId = requireUser(principal);
     const numericLimit = Number(limit);
     if (!Number.isInteger(numericLimit) || numericLimit < 1 || numericLimit > 100) throw badRequest("limit must be an integer from 1 to 100.");
-    return repository.listContinueWatching(userId, numericLimit);
+    const entries = repository.listContinueWatching(userId, visibilityFilter ? null : numericLimit);
+    return (visibilityFilter ? entries.filter((entry) => visibilityFilter(entry, principal)) : entries).slice(0, numericLimit);
   };
 
   const setWatched = async (request, principal) => {
