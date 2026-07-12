@@ -28,6 +28,8 @@ import type {
 import type { CinemaTmdbCandidate, CinemaTmdbStatusResponse } from "../shared/cinemaTmdbTypes";
 import type { MediaChapter } from "../shared/catalogTypes";
 import type { ContinueWatchingEntry, PlaybackEventKind } from "../shared/playbackTypes";
+import { addMediaListItem, createMediaList, listMediaLists } from "../api/mediaListsApi";
+import type { MediaList } from "../shared/mediaListTypes";
 
 type CinemaView = "library" | "watchlist" | "title-detail" | "player" | "metadata-editor" | "servers" | "identify";
 
@@ -407,6 +409,7 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: C
           <button type="button" data-cinema-action="play">${renderCinemaIcon("Play")} ${playback ? `Resume at ${formatTime(playback.positionSeconds)}` : "Play"}</button>
           ${entry.id && entry.sourceId ? `<button type="button" data-cinema-action="played">${renderCinemaIcon("BadgeCheck")} Mark watched</button><button type="button" data-cinema-action="unplayed">Mark unwatched</button>` : ""}
           ${renderWatchlistButton(entry)}
+          ${entry.id ? `<button type="button" data-cinema-action="save-playlist">${renderCinemaIcon("ListPlus")} Save to playlist</button>` : ""}
           <button type="button" data-cinema-action="more">${renderCinemaIcon("MoreHorizontal")} More</button>
         </div>
         <button class="cinema-edit-command" type="button" data-cinema-action="edit">${renderCinemaIcon("Pencil")} Edit Details</button>
@@ -695,6 +698,8 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
   const catalogState = new Map<string, CinemaCatalogState>();
   let stopActivePlayback: (() => void) | null = null;
   let deliveryGeneration = 0;
+  let playlists: MediaList[] = [];
+  let collections: MediaList[] = [];
 
   const deliveryCapabilities = (player: HTMLVideoElement) => {
     const mp4 = Boolean(player.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"'));
@@ -890,6 +895,20 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
 
     renderFooter();
     hydratePosters();
+  };
+
+  const saveSelectedToPlaylist = async (entry: CinemaEntry, button: HTMLButtonElement) => {
+    if (!entry.id) return;
+    button.disabled = true;
+    try {
+      let playlist = playlists[0];
+      if (!playlist) playlist = (await createMediaList("playlist", "Cinema Favorites", "video")).list;
+      playlist = (await addMediaListItem("playlist", playlist.id, entry.id)).list;
+      playlists = [playlist, ...playlists.filter(({ id }) => id !== playlist.id)];
+      button.textContent = "Saved to playlist";
+    } catch (error) {
+      button.textContent = error instanceof Error && /already/i.test(error.message) ? "Already in playlist" : "Could not save";
+    } finally { button.disabled = false; }
   };
 
   const loadCatalogDetail = async (entry: CinemaEntry) => {
@@ -1448,6 +1467,8 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
       openSheet(renderQueueSheet(entries, selected ?? active));
     }
 
+    if (action === "save-playlist" && active) void saveSelectedToPlaylist(active, actionButton);
+
     if (action === "queue" && active) {
       const targetPath = actionButton.dataset.cinemaWatchlistPath ?? active.path;
       const targetEntry = entries.find((entry) => entry.path === targetPath) ?? active;
@@ -1560,5 +1581,10 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
   });
 
   render();
+  void Promise.all([listMediaLists("playlist", "video"), listMediaLists("collection", "video")]).then(([personal, shared]) => {
+    playlists = personal.lists; collections = shared.lists;
+    catalogMessage = `${catalogMessage} · ${playlists.length} playlists · ${collections.length} collections`;
+    render();
+  }).catch(() => {});
   void loadLibrary();
 };

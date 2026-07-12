@@ -2,6 +2,8 @@ import { createElement, icons } from "lucide";
 import { getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken } from "../api/http";
 import { listMusicLibrary } from "../api/musicApi";
 import type { MusicEntry } from "../shared/musicTypes";
+import { addMediaListItem, createMediaList, listMediaLists } from "../api/mediaListsApi";
+import type { MediaList } from "../shared/mediaListTypes";
 
 interface StudioServerInfo {
   address: string;
@@ -398,6 +400,7 @@ const renderNowPlaying = (entry: MusicEntry, entries: MusicEntry[]) => {
             <p class="studio-player-status" data-studio-player-status>Ready from ${escapeHtml(server.name)}.</p>
             <button type="button" data-studio-action="next" aria-label="Next track" ${hasNext ? "" : "disabled"}>${renderStudioIcon("SkipForward")}</button>
           </div>
+          ${entry.id ? `<button class="studio-playlist-command" type="button" data-studio-action="save-playlist">${renderStudioIcon("ListPlus")} Save to playlist</button>` : ""}
         </div>
       </section>
       ${renderQueue(entries, entry)}
@@ -426,7 +429,7 @@ export const renderStudioView = () => {
           <button class="active" type="button" data-studio-tab="library" aria-pressed="true">Library</button>
           <button type="button" data-studio-tab="artists" aria-pressed="false">Artists</button>
           <button type="button" data-studio-tab="albums" aria-pressed="false">Albums</button>
-          <span aria-disabled="true" title="Playlists are planned">Playlists <small>Soon</small></span>
+          <span aria-disabled="true" data-studio-list-summary>Playlists</span>
         </nav>
         <label class="studio-search">
           ${renderStudioIcon("Search")}
@@ -466,6 +469,8 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
   let isScanning = false;
   let loadError = "";
   let playerCleanup: (() => void) | null = null;
+  let playlists: MediaList[] = [];
+  let collections: MediaList[] = [];
 
   const visibleEntries = () =>
     query
@@ -494,6 +499,21 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
       button.classList.toggle("active", isActive);
       button.setAttribute("aria-pressed", String(isActive));
     });
+    const summary = app.querySelector<HTMLElement>("[data-studio-list-summary]");
+    if (summary) summary.textContent = `${playlists.length} playlists / ${collections.length} collections`;
+  };
+
+  const saveSelectedToPlaylist = async (button: HTMLButtonElement) => {
+    if (!selected?.id) return;
+    button.disabled = true;
+    try {
+      let playlist = playlists[0];
+      if (!playlist) playlist = (await createMediaList("playlist", "Studio Favorites", "audio")).list;
+      playlist = (await addMediaListItem("playlist", playlist.id, selected.id)).list;
+      playlists = [playlist, ...playlists.filter(({ id }) => id !== playlist.id)];
+      button.textContent = "Saved to playlist";
+    } catch (error) { button.textContent = error instanceof Error && /already/i.test(error.message) ? "Already in playlist" : "Could not save"; }
+    finally { button.disabled = false; }
   };
 
   const bindPlayer = () => {
@@ -880,6 +900,8 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
       return;
     }
 
+    if (actionButton?.dataset.studioAction === "save-playlist") { void saveSelectedToPlaylist(actionButton); return; }
+
     const groupButton = target.closest<HTMLButtonElement>("[data-studio-group]");
 
     if (groupButton) {
@@ -927,5 +949,8 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
   });
 
   render();
+  void Promise.all([listMediaLists("playlist", "audio"), listMediaLists("collection", "audio")]).then(([personal, shared]) => {
+    playlists = personal.lists; collections = shared.lists; render();
+  }).catch(() => {});
   void loadLibrary();
 };

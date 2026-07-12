@@ -247,6 +247,14 @@ flowchart TD
 - Does not redesign planner, remux, or transcode ownership; it supplies the
   admitted bitrate ceiling to the existing software HLS runner.
 
+`server/mediaLists/`
+
+- Persists per-account ordered playlists and owner-managed shared collections
+  using Catalog item UUIDs only.
+- Filters every collection projection through current library permissions and
+  retains missing-source entries as unavailable without exposing paths.
+- See `docs/playlists-collections.md` for ordering, deletion, and API rules.
+
 `server/files.mjs`
 
 - Owns local file browsing, creation, upload, resumable upload, rename, and

@@ -5,7 +5,7 @@ export const AUDIT_EVENT_TYPES = Object.freeze([
   "account.password_changed", "account.member_created", "account.member_status_changed",
   "account.session_revoked", "account.server_setting_changed", "auth.access_denied",
   "catalog.scan_requested", "job.enqueued", "job.cancel_requested",
-  "backup.created", "backup.inspected"
+  "backup.created", "backup.inspected", "media_list.playlist_created", "media_list.collection_created"
 ]);
 
 export const AUDIT_OUTCOMES = Object.freeze(["success", "failure", "denied"]);
