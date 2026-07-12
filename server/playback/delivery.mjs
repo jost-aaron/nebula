@@ -9,7 +9,7 @@ const ownerId = (principal) => {
 };
 
 export const createDeliveryService = ({
-  contentRoot, planner, remuxService, resolveSource, transcodeService,
+  contentRoot, planner, policy = null, remuxService, resolveSource, transcodeService,
   now = () => Date.now(), ttlMs = 30 * 60 * 1000, uuid = randomUUID
 }) => {
   const sessions = new Map();
@@ -42,8 +42,12 @@ export const createDeliveryService = ({
     entry.status = finalStatus;
     entry.cleanupPromise = (async () => {
       entry.worker?.cancel?.();
-      await entry.worker?.cleanup?.();
-      sessions.delete(entry.id);
+      try {
+        await entry.worker?.cleanup?.();
+      } finally {
+        entry.policyLease?.release();
+        sessions.delete(entry.id);
+      }
     })();
     return entry.cleanupPromise;
   };
@@ -61,24 +65,35 @@ export const createDeliveryService = ({
     if (plan.decision === "unsupported") throw Object.assign(httpError(422, "No compatible playback delivery is available.", "unsupported_playback"), { plan });
     if (plan.decision === "remux" && plan.output?.container !== "mp4") throw httpError(422, "The planned remux target is not available.", "unsupported_delivery");
     const createdAt = now();
-    const entry = { id: uuid(), ownerId: accountId, plan, createdAt, expiresAt: createdAt + ttlMs, status: "ready", worker: null, source: null, cleanupPromise: null };
-    if (plan.decision === "direct-play") {
-      entry.source = await resolveSource({ itemId: plan.itemId, sourceId: plan.sourceId }, principal);
-      if (!entry.source) throw httpError(404, "Media source not found.", "source_not_found");
-    } else if (plan.decision === "remux") {
-      entry.worker = await remuxService.createSession(plan, principal);
-    } else if (plan.decision === "transcode") {
-      entry.worker = await transcodeService.createSession(plan, principal);
+    const id = uuid();
+    const policyLease = policy?.admit({ decision: plan.decision, producedBitrate: plan.output?.bitrate, requestedBitrate: request?.capabilities?.maxBitrate, sessionId: id, userId: accountId }) ?? null;
+    const governedPlan = plan.decision === "transcode" && policyLease?.maxProducedBitrate
+      ? { ...plan, output: { ...plan.output, bitrate: Math.min(plan.output?.bitrate ?? policyLease.maxProducedBitrate, policyLease.maxProducedBitrate) } }
+      : plan;
+    const entry = { id, ownerId: accountId, plan: governedPlan, createdAt, expiresAt: createdAt + ttlMs, status: "ready", worker: null, source: null, cleanupPromise: null, policyLease };
+    try {
+      if (governedPlan.decision === "direct-play") {
+        entry.source = await resolveSource({ itemId: governedPlan.itemId, sourceId: governedPlan.sourceId }, principal);
+        if (!entry.source) throw httpError(404, "Media source not found.", "source_not_found");
+      } else if (governedPlan.decision === "remux") {
+        entry.worker = await remuxService.createSession(governedPlan, principal);
+      } else if (governedPlan.decision === "transcode") {
+        entry.worker = await transcodeService.createSession(governedPlan, principal);
+      }
+    } catch (error) {
+      policyLease?.release();
+      throw error;
     }
     sessions.set(entry.id, entry);
-    entry.worker?.completion.catch(() => {});
-    return { plan, session: publicSession(entry) };
+    entry.worker?.completion.catch(() => cleanup(entry, "failed"));
+    return { plan: governedPlan, session: publicSession(entry) };
   };
 
   return {
     create,
     get: (id, principal) => publicSession(find(id, principal)),
     cancel: async (id, principal) => cleanup(find(id, principal), "cancelled"),
+    complete: async (id, principal) => cleanup(find(id, principal), "completed"),
     async resolveFile(id, principal) {
       const entry = find(id, principal);
       if (entry.plan.decision === "transcode") throw httpError(404, "Delivery asset not found.", "asset_not_found");

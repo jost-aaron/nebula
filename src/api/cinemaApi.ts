@@ -69,6 +69,9 @@ export const getCinemaDelivery = (id: string) => apiJson<PlaybackDeliveryStatusR
 export const cancelCinemaDelivery = (id: string) => apiFetch(`/api/playback/delivery-sessions/${encodeURIComponent(id)}`, { method: "DELETE" }).then((response) => {
   if (!response.ok && response.status !== 404) throw new Error(`Delivery cancellation failed: ${response.status}`);
 });
+export const completeCinemaDelivery = (id: string) => apiFetch(`/api/playback/delivery-sessions/${encodeURIComponent(id)}/complete`, { method: "POST" }).then((response) => {
+  if (!response.ok && response.status !== 404) throw new Error(`Delivery completion failed: ${response.status}`);
+});
 
 export const identifyCinemaFrames = (body: CinemaIdentifyRequest) =>
   apiJson<CinemaIdentifyResponse>("/api/cinema/identify", {

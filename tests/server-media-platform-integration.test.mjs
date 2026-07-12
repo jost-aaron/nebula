@@ -92,7 +92,8 @@ test("delivery routes forward the authenticated principal to the trusted deliver
       return { plan: { decision: "direct-play" }, session: { id: "delivery-a", status: "ready" } };
     },
     get(id, principal) { calls.push({ id, principal }); return { id, status: "ready" }; },
-    async cancel(id, principal) { calls.push({ cancel: id, principal }); }
+    async cancel(id, principal) { calls.push({ cancel: id, principal }); },
+    async complete(id, principal) { calls.push({ complete: id, principal }); }
   };
   const route = createPlaybackRoutes({}, null, delivery);
   const body = { itemId: "item-a", sourceId: "source-a", capabilities: { deviceId: "web" }, plan: { decision: "transcode" } };
@@ -111,4 +112,7 @@ test("delivery routes forward the authenticated principal to the trusted deliver
   const cancelResponse = responseCapture();
   await route({ headers: {}, method: "DELETE", nebulaAuth: request.nebulaAuth }, cancelResponse, new URL("http://nebula/api/playback/delivery-sessions/delivery-a"));
   assert.equal(cancelResponse.status(), 204);
+  const completeResponse = responseCapture();
+  await route({ headers: {}, method: "POST", nebulaAuth: request.nebulaAuth }, completeResponse, new URL("http://nebula/api/playback/delivery-sessions/delivery-a/complete"));
+  assert.equal(completeResponse.status(), 204);
 });

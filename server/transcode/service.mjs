@@ -66,7 +66,7 @@ export const createTranscodeService = ({
       state.status = "running"; await mkdir(directory, { recursive: false });
       try {
         if (controller.signal.aborted) throw new TranscodeError("cancelled", "Transcode was cancelled.");
-        const result = await runner(inputPath, directory, { ...runnerOptions, signal: controller.signal });
+        const result = await runner(inputPath, directory, { ...runnerOptions, maxBitrate: plan.output.bitrate ?? runnerOptions?.maxBitrate ?? null, signal: controller.signal });
         state.status = "ready"; state.playlistPath = result.masterPlaylist; return session;
       } finally { signal?.removeEventListener("abort", forwardAbort); }
     }, controller.signal).catch(async (error) => {

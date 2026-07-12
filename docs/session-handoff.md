@@ -37,6 +37,8 @@ The current app includes:
   explicit per-user watched state.
 - Wave 3 account-bound playback delivery with server-authored direct, MP4 remux,
   and software HLS decisions plus expiring cache cleanup.
+- Wave 4 owner-configurable global/account concurrent stream and bitrate policy
+  for trusted remux and HLS/transcode delivery, with aggregate Settings status.
 
 The latest user direction is to keep building toward a modern console/Plex-like
 media dashboard.
@@ -134,6 +136,10 @@ Media platform contracts:
   in Cinema while path playback remains as a compatibility fallback.
 - Cinema now prefers `/api/playback/delivery-sessions` for same-origin stable-ID
   playback and falls back to its existing ticketed path URL if planning fails.
+- Generated delivery admission passes through `server/playbackPolicy/`.
+  Unlimited defaults preserve prior behavior. Direct byte-range playback is not
+  counted because it lacks a reliable lifecycle boundary; see
+  `docs/playback-policies.md`.
 
 Studio:
 

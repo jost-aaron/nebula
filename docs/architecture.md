@@ -212,6 +212,15 @@ flowchart TD
 - Treat generated output as disposable cache cleaned on cancel, expiry,
   restart, and shutdown; absolute paths never cross the HTTP boundary.
 
+`server/playbackPolicy/`
+
+- Persists unlimited-by-default global and per-user stream/bitrate limits.
+- Reserves generated delivery slots synchronously at the trusted admission
+  boundary and releases them idempotently across terminal lifecycle paths.
+- Keeps active leases process-local so restart cannot resurrect stale counts.
+- Does not redesign planner, remux, or transcode ownership; it supplies the
+  admitted bitrate ceiling to the existing software HLS runner.
+
 `server/files.mjs`
 
 - Owns local file browsing, creation, upload, resumable upload, rename, and

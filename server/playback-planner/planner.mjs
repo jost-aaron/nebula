@@ -12,6 +12,10 @@ const normalize = (value) => {
   const normalized = value.trim().toLowerCase();
   return normalized ? aliases.get(normalized) ?? normalized : null;
 };
+const finiteMin = (...values) => {
+  const finite = values.filter((value) => Number.isFinite(value));
+  return finite.length ? Math.min(...finite) : null;
+};
 
 const list = (values) => new Set(values.map(normalize).filter(Boolean));
 const reason = (code, message, streamIndex = null) => ({ code, message, streamIndex });
@@ -40,7 +44,7 @@ const validateCapabilities = (capabilities) => {
 
 const unsupported = (request, reasons) => ({
   decision: "unsupported", itemId: request?.itemId ?? "", sourceId: request?.sourceId ?? "",
-  output: { audioCodec: null, container: null, protocol: null, videoCodec: null }, reasons
+  output: { audioCodec: null, bitrate: null, container: null, protocol: null, videoCodec: null }, reasons
 });
 
 const REMUX_COMPATIBILITY = Object.freeze({
@@ -95,7 +99,7 @@ export const planPlayback = (request, media) => {
 
   if (incompatibilities.length === 0) return {
     decision: "direct-play", itemId: request.itemId, sourceId: request.sourceId,
-    output: { audioCodec: normalize(audio?.codec), container: originalContainer, protocol: "file", videoCodec: normalize(video?.codec) },
+    output: { audioCodec: normalize(audio?.codec), bitrate: Number.isFinite(bitrate) ? bitrate : null, container: originalContainer, protocol: "file", videoCodec: normalize(video?.codec) },
     reasons: [reason("DIRECT_PLAY_COMPATIBLE", "The original container and selected streams satisfy all client capabilities.")]
   };
 
@@ -103,7 +107,7 @@ export const planPlayback = (request, media) => {
   const targetContainer = onlyContainer ? remuxContainer(containers, video, audio) : null;
   if (onlyContainer && targetContainer) return {
     decision: "remux", itemId: request.itemId, sourceId: request.sourceId,
-    output: { audioCodec: normalize(audio?.codec), container: targetContainer, protocol: "file", videoCodec: normalize(video?.codec) },
+    output: { audioCodec: normalize(audio?.codec), bitrate: Number.isFinite(bitrate) ? bitrate : null, container: targetContainer, protocol: "file", videoCodec: normalize(video?.codec) },
     reasons: [...incompatibilities, reason("REMUX_PRESERVES_STREAMS", `The selected streams can be copied into the supported ${targetContainer} container.`)]
   };
 
@@ -111,7 +115,7 @@ export const planPlayback = (request, media) => {
   const canTranscodeAudio = !audio || audioCodecs.has(SOFTWARE_AUDIO_CODEC);
   if (capabilities.supportsHls && canTranscodeVideo && canTranscodeAudio) return {
     decision: "transcode", itemId: request.itemId, sourceId: request.sourceId,
-    output: { audioCodec: audio ? SOFTWARE_AUDIO_CODEC : null, container: HLS_CONTAINER, protocol: "hls", videoCodec: video ? SOFTWARE_VIDEO_CODEC : null },
+    output: { audioCodec: audio ? SOFTWARE_AUDIO_CODEC : null, bitrate: finiteMin(capabilities.maxBitrate, bitrate), container: HLS_CONTAINER, protocol: "hls", videoCodec: video ? SOFTWARE_VIDEO_CODEC : null },
     reasons: [...incompatibilities, reason("HLS_SOFTWARE_TRANSCODE", "A software HLS rendition can satisfy the declared client capabilities.")]
   };
 

@@ -14,7 +14,7 @@ const fixture = async (decision = "direct-play", options = {}) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "nebula-delivery-"));
   await mkdir(path.join(root, "Movies"));
   await writeFile(path.join(root, "Movies", "movie.mp4"), "movie-bytes");
-  let plannedRequest; let cleaned = 0;
+  let plannedRequest; let cleaned = 0; let released = 0;
   const worker = {
     status: "ready", outputPath: path.join(root, "Movies", "movie.mp4"), completion: Promise.resolve(),
     cancel() {}, async cleanup() { cleaned += 1; }, async resolveAsset(name) { return path.join(root, name); }
@@ -22,12 +22,13 @@ const fixture = async (decision = "direct-play", options = {}) => {
   const service = createDeliveryService({
     contentRoot: root,
     planner: { async plan(value) { plannedRequest = value; return plan(decision); } },
+    policy: options.policy ?? { admit() { let done = false; return { maxProducedBitrate: null, release() { if (!done) { done = true; released += 1; } } }; } },
     remuxService: { async createSession() { return worker; } },
     resolveSource: async () => ({ availability: "available", id: "source-1", itemId: "item-1", path: "Movies/movie.mp4" }),
     transcodeService: { async createSession() { return worker; } },
     ttlMs: options.ttlMs ?? 60_000, now: options.now, uuid: () => "delivery-1"
   });
-  return { cleaned: () => cleaned, plannedRequest: () => plannedRequest, root, service };
+  return { cleaned: () => cleaned, plannedRequest: () => plannedRequest, released: () => released, root, service };
 };
 
 test("delivery replans from IDs and capabilities, binds ownership, and exposes no filesystem paths", async (t) => {
@@ -52,7 +53,16 @@ test("remux and transcode sessions route through only the server-produced plan",
     if (decision === "transcode") assert.equal(await value.service.resolveHlsAsset("delivery-1", "segment-00000.ts", user("alice")), path.join(value.root, "segment-00000.ts"));
     await value.service.cancel("delivery-1", user("alice"));
     assert.equal(value.cleaned(), 1);
+    assert.equal(value.released(), 1);
   }
+});
+
+test("explicit playback completion releases generated policy accounting", async (t) => {
+  const value = await fixture("transcode"); t.after(() => rm(value.root, { recursive: true, force: true }));
+  await value.service.create(request, user("alice"));
+  await value.service.complete("delivery-1", user("alice"));
+  assert.equal(value.released(), 1);
+  assert.throws(() => value.service.get("delivery-1", user("alice")), { code: "session_not_found" });
 });
 
 test("expiry and shutdown cancel generated delivery artifacts", async (t) => {
@@ -63,7 +73,32 @@ test("expiry and shutdown cancel generated delivery artifacts", async (t) => {
   assert.throws(() => value.service.get("delivery-1", user("alice")), { status: 410 });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(value.cleaned(), 1);
+  assert.equal(value.released(), 1);
   await value.service.shutdown();
+});
+
+test("worker failure and server shutdown release generated policy accounting exactly once", async (t) => {
+  const failed = await fixture("transcode"); t.after(() => rm(failed.root, { recursive: true, force: true }));
+  const rejection = Promise.reject(Object.assign(new Error("worker failed"), { code: "ffmpeg_failed" }));
+  const failingService = createDeliveryService({
+    contentRoot: failed.root,
+    planner: { async plan() { return plan("transcode"); } },
+    policy: { admit() { let done = false; return { maxProducedBitrate: null, release() { if (!done) { done = true; failed.serviceRelease = (failed.serviceRelease ?? 0) + 1; } } }; } },
+    resolveSource: async () => null,
+    remuxService: {},
+    transcodeService: { async createSession() { return { status: "running", completion: rejection, cancel() {}, async cleanup() { await rejection.catch(() => {}); } }; } },
+    uuid: () => "failed-delivery"
+  });
+  await failingService.create(request, user("alice"));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(failed.serviceRelease, 1);
+  await failingService.shutdown();
+  assert.equal(failed.serviceRelease, 1);
+
+  const active = await fixture("remux"); t.after(() => rm(active.root, { recursive: true, force: true }));
+  await active.service.create(request, user("alice"));
+  await active.service.shutdown();
+  assert.equal(active.released(), 1);
 });
 
 test("service principals and unsupported plans cannot create account delivery sessions", async (t) => {

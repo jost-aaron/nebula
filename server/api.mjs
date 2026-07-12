@@ -7,11 +7,13 @@ import { createCatalogRoutes } from "./catalog/routes.mjs";
 import { createPlaybackRoutes } from "./playback/routes.mjs";
 import { createJobsRoutes } from "./jobs/routes.mjs";
 import { createBackupRoutes } from "./backup/routes.mjs";
+import { createPlaybackPolicyRoutes } from "./playbackPolicy/routes.mjs";
 
 export const createApiHandler = (storage, accountStore, authGuard, options = {}) => {
   const routeHandlers = [
     createAccountRoutes(accountStore, authGuard),
     ...(options.backup ? [createBackupRoutes(options.backup)] : []),
+    ...(options.playbackPolicy ? [createPlaybackPolicyRoutes(options.playbackPolicy)] : []),
     ...(options.catalog ? [createCatalogRoutes(options.catalog)] : []),
     ...(options.playback ? [createPlaybackRoutes(options.playback, options.playbackPlanner, options.playbackDelivery)] : []),
     ...(options.jobs ? [createJobsRoutes(options.jobs)] : []),
@@ -29,7 +31,7 @@ export const createApiHandler = (storage, accountStore, authGuard, options = {})
           name: "Nebula Server",
           status: "online",
           serverTime: new Date().toISOString(),
-          capabilities: ["background-jobs", "catalog", "cinema-library", "cinema-identify", "files", "metadata-editing", "music-library", "playback-delivery", "playback-state", "probe"]
+          capabilities: ["background-jobs", "catalog", "cinema-library", "cinema-identify", "files", "metadata-editing", "music-library", "playback-delivery", "playback-policy", "playback-state", "probe"]
         });
         return true;
       }
@@ -44,6 +46,7 @@ export const createApiHandler = (storage, accountStore, authGuard, options = {})
     } catch (error) {
       const status = error.status ?? 500;
       json(response, status, {
+        ...(error.code ? { code: error.code } : {}),
         error: status >= 500 && !error.expose ? "Server operation failed." : error.message
       });
       return true;

@@ -38,7 +38,8 @@ test("settings integrates jobs admin only for owners and adds a Jobs category", 
 test("settings app binds and disposes jobs admin lifecycle work", () => {
   assert.match(main, /import \{ bindJobsAdmin \} from "\.\/jobs-admin\/renderJobsAdmin"/);
   assert.match(main, /disposeActiveApp\?\.\(\);/);
-  assert.match(main, /disposeActiveApp = bindJobsAdmin\(appSurface\)/);
+  assert.match(main, /const disposeJobs = bindJobsAdmin\(appSurface\)/);
+  assert.match(main, /disposeJobs\(\)/);
 });
 
 test("390x844 jobs layout keeps filters full-width and the enqueue grid in two columns", () => {

@@ -32,6 +32,7 @@ export interface PlaybackPlanResponse {
   itemId: CatalogId;
   output: {
     audioCodec: string | null;
+    bitrate: number | null;
     container: string | null;
     protocol: "file" | "hls" | null;
     videoCodec: string | null;

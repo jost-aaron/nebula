@@ -43,7 +43,7 @@ const capabilityForRoute = (request, url) => {
   const path = url.pathname;
   if (path === "/api/auth/server-settings/tmdb") return "server.admin";
   if (path === "/api/auth/accounts" || path.startsWith("/api/auth/accounts/")) return "server.admin";
-  if (path === "/api/admin/observability/readiness" || path === "/api/admin/backups" || path.startsWith("/api/admin/backups/")) return "server.admin";
+  if (path === "/api/admin/observability/readiness" || path === "/api/admin/backups" || path.startsWith("/api/admin/backups/") || path.startsWith("/api/admin/playback-policy")) return "server.admin";
   if (path.startsWith("/api/auth/")) return "account.use";
   if (path === "/api/server/info") return "dashboard.use";
   if (path.startsWith("/api/files")) return ["GET", "HEAD"].includes(method) ? "files.read" : "files.write";

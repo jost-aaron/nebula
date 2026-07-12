@@ -18,6 +18,7 @@ import { createPlaybackPlanner } from "./playback-planner/index.mjs";
 import { createRemuxService } from "./remux/index.mjs";
 import { createTranscodeService } from "./transcode/index.mjs";
 import { createDeliveryService } from "./playback/delivery.mjs";
+import { createPlaybackPolicyRepository, createPlaybackPolicyService, playbackPolicyMigration } from "./playbackPolicy/index.mjs";
 import { createBackupService } from "./backup/index.mjs";
 import {
   createCatalogCheck,
@@ -40,7 +41,7 @@ const host = process.env.HOST ?? "0.0.0.0";
 const storage = await createStorage({ contentRoot, dataRoot });
 const database = await openNebulaDatabase(storage.accountDatabasePath);
 const accountStore = await createAccountStore({ database });
-applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration]);
+applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, playbackPolicyMigration]);
 const catalogRepository = createCatalogRepository(database);
 const probeReader = createProbeCatalogReader(database);
 const { root: catalogRoot } = bootstrapSharedContentRoot(catalogRepository, { contentRoot: storage.contentRoot });
@@ -72,7 +73,8 @@ const deliveryCacheRoot = path.join(storage.dataRoot, "delivery-cache");
 const remuxService = createRemuxService({ contentRoot: storage.contentRoot, outputRoot: path.join(deliveryCacheRoot, "remux"), resolveSource: resolveCatalogSource, concurrency: 2 });
 const transcodeService = createTranscodeService({ contentRoot: storage.contentRoot, outputRoot: path.join(deliveryCacheRoot, "transcode"), resolveSource: resolveCatalogSource, concurrency: 1 });
 await Promise.all([remuxService.initialize(), transcodeService.initialize()]);
-const playbackDelivery = createDeliveryService({ contentRoot: storage.contentRoot, planner: playbackPlanner, remuxService, resolveSource: resolveCatalogSource, transcodeService });
+const playbackPolicy = createPlaybackPolicyService({ repository: createPlaybackPolicyRepository(database) });
+const playbackDelivery = createDeliveryService({ contentRoot: storage.contentRoot, planner: playbackPlanner, policy: playbackPolicy, remuxService, resolveSource: resolveCatalogSource, transcodeService });
 const probeService = createProbeService({
   catalogWriter: createProbeCatalogWriter(database),
   contentRoot: storage.contentRoot,
@@ -141,7 +143,8 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   jobs: jobsService,
   playback: playbackService,
   playbackPlanner,
-  playbackDelivery
+  playbackDelivery,
+  playbackPolicy
 });
 jobsWorker.start();
 jobsService.enqueue({ type: "scan", payload: { rootId: catalogRoot.id }, dedupeKey: `startup:${catalogRoot.id}` });
@@ -199,6 +202,7 @@ const shutdown = async () => {
   await new Promise((resolve) => httpServer.close(resolve));
   await jobsWorker.stop();
   await playbackDelivery.shutdown();
+  playbackPolicy.shutdown();
   await Promise.allSettled([remuxService.shutdown(), transcodeService.shutdown(), vite.close()]);
   database.close();
 };

@@ -33,6 +33,8 @@ export const createPlaybackRoutes = (service, planner = null, delivery = null) =
   const sessionMatch = /^\/api\/playback\/delivery-sessions\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
   if (sessionMatch && delivery && request.method === "GET") { json(response, 200, { session: delivery.get(sessionMatch[1], principal) }); return true; }
   if (sessionMatch && delivery && request.method === "DELETE") { await delivery.cancel(sessionMatch[1], principal); response.writeHead(204); response.end(); return true; }
+  const completeMatch = /^\/api\/playback\/delivery-sessions\/([A-Za-z0-9_-]+)\/complete$/.exec(url.pathname);
+  if (completeMatch && delivery && request.method === "POST") { await delivery.complete(completeMatch[1], principal); response.writeHead(204); response.end(); return true; }
 
   const fileMatch = /^\/api\/playback\/delivery-sessions\/([A-Za-z0-9_-]+)\/file$/.exec(url.pathname);
   if (fileMatch && delivery && ["GET", "HEAD"].includes(request.method)) {

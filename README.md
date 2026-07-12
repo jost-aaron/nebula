@@ -16,6 +16,11 @@ dashboard. Browser sessions use cookies and CSRF protection; Capacitor uses
 revocable bearer sessions. Owners can add or disable members, and Cinema
 watchlists are personal while the media library stays server-shared.
 
+Owners can set global and per-account concurrent stream and bitrate limits in
+Settings / Playback. Limits default to unlimited and govern trusted remux and
+HLS/transcode delivery. Direct byte-range playback remains outside reliable
+stream accounting; see [docs/playback-policies.md](docs/playback-policies.md).
+
 ## Run
 
 ```sh
@@ -73,6 +78,8 @@ without either configuration source.
 - `server/accountStore.mjs` - SQLite accounts, credentials, sessions,
   throttling, watchlists, and media tickets.
 - `server/accounts.mjs` - account and session API routes.
+- `server/playbackPolicy/` - persisted generated-stream limits, race-safe
+  admission accounting, aggregate status, and stable policy denials.
 - `content/` - ignored local content root for Files and Cinema.
 - `ios/` - Capacitor iOS shell.
 - `scripts/ios-sync*.sh` - Docker-first Capacitor web asset sync helpers.
@@ -100,6 +107,7 @@ Start with:
 - [docs/library.md](docs/library.md)
 - [docs/search.md](docs/search.md)
 - [docs/settings-diagnostics.md](docs/settings-diagnostics.md)
+- [docs/playback-policies.md](docs/playback-policies.md)
 - [docs/development.md](docs/development.md)
 - [docs/testing.md](docs/testing.md)
 - [docs/roadmap.md](docs/roadmap.md)

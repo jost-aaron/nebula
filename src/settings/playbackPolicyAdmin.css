@@ -1,0 +1,18 @@
+.playback-policy-admin { grid-column: 1 / -1; display: grid; gap: 14px; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 14px; background: rgba(255,255,255,.06); }
+.playback-policy-admin h3, .playback-policy-admin h4, .playback-policy-admin p { margin: 0; }
+.playback-policy-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.playback-policy-heading > div, .playback-policy-users, .playback-policy-users > div, .playback-policy-user-title { display: grid; gap: 4px; }
+.playback-policy-heading p, .playback-policy-users p, .playback-policy-user-title span, .playback-policy-user-title small, .playback-policy-note { color: #9aa8b7; font-size: .84rem; }
+.playback-policy-note { border-left: 3px solid #eabf78; padding: 9px 11px; background: rgba(234,191,120,.08); line-height: 1.45; }
+.playback-policy-summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
+.playback-policy-summary span { display: grid; gap: 4px; border-radius: 8px; padding: 12px; background: rgba(0,0,0,.18); }
+.playback-policy-summary small { color: #9aa8b7; }
+.playback-policy-summary strong { font-size: 1.2rem; }
+.playback-policy-form { display: grid; grid-template-columns: minmax(180px,1.4fr) repeat(2,minmax(140px,1fr)) auto; align-items: end; gap: 10px; border-radius: 8px; padding: 13px; background: rgba(0,0,0,.18); }
+.playback-policy-form label { display: grid; gap: 5px; color: #aebbc8; font-size: .78rem; }
+.playback-policy-admin input, .playback-policy-admin button { min-height: 40px; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; padding: 0 11px; color: #f6f8fb; background: rgba(255,255,255,.08); font: inherit; }
+.playback-policy-admin button { cursor: pointer; }
+.playback-policy-admin input:focus, .playback-policy-admin button:focus-visible { border-color: #62d5e6; outline: none; box-shadow: 0 0 0 3px rgba(98,213,230,.12); }
+.playback-policy-users { gap: 8px; }
+.playback-policy-message { min-height: 20px; color: #9dcdd5; font-size: .86rem; }
+@media (max-width: 760px) { .playback-policy-summary { grid-template-columns: 1fr; } .playback-policy-form { grid-template-columns: 1fr; } .playback-policy-form button, .playback-policy-heading button { width: 100%; } .playback-policy-heading { flex-direction: column; } }

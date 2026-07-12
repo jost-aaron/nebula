@@ -3,6 +3,7 @@ import { apiUrl, getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken } fro
 import {
   getCinemaCatalogItem,
   cancelCinemaDelivery,
+  completeCinemaDelivery,
   createCinemaDelivery,
   getCinemaDelivery,
   identifyCinemaFrames,
@@ -993,6 +994,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
         renderPlaybackState();
         setStatus("Finished.");
         report("complete");
+        if (deliveryId) { void completeCinemaDelivery(deliveryId).catch(() => {}); deliveryId = null; }
       });
       player.addEventListener("timeupdate", () => {
         if (sessionId && Date.now() - lastProgressAt >= 10_000) {
