@@ -3,15 +3,23 @@ import path from "node:path";
 import { readdir, stat, writeFile } from "node:fs/promises";
 import { TranscodeError, transcodeFailure } from "./errors.mjs";
 
-export const buildTranscodeArguments = (inputPath, outputDirectory, { segmentDuration = 6 } = {}) => [
-  "-nostdin", "-v", "error", "-n", "-i", inputPath,
-  "-map", "0:v:0?", "-map", "0:a:0?", "-sn",
-  "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-  "-c:a", "aac", "-ac", "2", "-f", "hls", "-hls_time", String(segmentDuration),
-  "-hls_list_size", "0", "-hls_playlist_type", "vod", "-hls_segment_type", "mpegts",
-  "-hls_segment_filename", path.join(outputDirectory, "segment-%05d.ts"),
-  "--", path.join(outputDirectory, "media.m3u8")
-];
+export const buildTranscodeArguments = (inputPath, outputDirectory, { maxBitrate = null, segmentDuration = 6 } = {}) => {
+  const rate = Number.isFinite(maxBitrate) ? Math.floor(maxBitrate) : null;
+  const elementaryBudget = rate === null ? null : Math.floor(rate * 0.95);
+  const audioRate = elementaryBudget === null ? null : Math.max(16_000, Math.min(128_000, Math.floor(elementaryBudget * 0.12)));
+  const videoRate = elementaryBudget === null ? null : Math.max(16_000, elementaryBudget - audioRate);
+  return [
+    "-nostdin", "-v", "error", "-n", "-i", inputPath,
+    "-map", "0:v:0?", "-map", "0:a:0?", "-sn",
+    "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+    ...(videoRate === null ? [] : ["-b:v", String(videoRate), "-maxrate", String(videoRate), "-bufsize", String(videoRate * 2)]),
+    "-c:a", "aac", "-ac", "2", ...(audioRate === null ? [] : ["-b:a", String(audioRate)]),
+    "-f", "hls", "-hls_time", String(segmentDuration), "-hls_list_size", "0",
+    "-hls_playlist_type", "vod", "-hls_segment_type", "mpegts",
+    "-hls_segment_filename", path.join(outputDirectory, "segment-%05d.ts"),
+    "--", path.join(outputDirectory, "media.m3u8")
+  ];
+};
 
 const inspectOutput = async (outputDirectory) => {
   let bytes = 0; let segments = 0;
@@ -25,13 +33,13 @@ const inspectOutput = async (outputDirectory) => {
 
 export const runFfmpegTranscode = (inputPath, outputDirectory, {
   binary = "ffmpeg", maxOutputBytes = 64 * 1024 * 1024 * 1024, maxSegments = 20_000,
-  maxStderrBytes = 256 * 1024, outputCheckMs = 250, segmentDuration = 6,
+  maxBitrate = null, maxStderrBytes = 256 * 1024, outputCheckMs = 250, segmentDuration = 6,
   signal, timeoutMs = 2 * 60 * 60 * 1000
 } = {}) => new Promise((resolve, reject) => {
   if (!Number.isFinite(maxOutputBytes) || maxOutputBytes <= 0) throw new RangeError("maxOutputBytes must be positive.");
   if (!Number.isInteger(maxSegments) || maxSegments < 1) throw new RangeError("maxSegments must be a positive integer.");
   if (!Number.isFinite(segmentDuration) || segmentDuration <= 0) throw new RangeError("segmentDuration must be positive.");
-  const child = spawn(binary, buildTranscodeArguments(inputPath, outputDirectory, { segmentDuration }), {
+  const child = spawn(binary, buildTranscodeArguments(inputPath, outputDirectory, { maxBitrate, segmentDuration }), {
     shell: false, stdio: ["ignore", "ignore", "pipe"], windowsHide: true
   });
   const stderr = []; let stderrBytes = 0; let settled = false; let outcome = null;
@@ -58,7 +66,7 @@ export const runFfmpegTranscode = (inputPath, outputDirectory, {
     if (outcome === "output_limit") return finish(() => reject(new TranscodeError("output_limit", "Transcode exceeded its output limit.", { stderr: errorText })));
     if (outcome === "segment_limit") return finish(() => reject(new TranscodeError("segment_limit", "Transcode exceeded its segment limit.", { stderr: errorText })));
     if (code !== 0) return finish(() => reject(transcodeFailure({ code, stderr: errorText })));
-    writeFile(path.join(outputDirectory, "master.m3u8"), "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=5000000,CODECS=\"avc1.42e01e,mp4a.40.2\"\nmedia.m3u8\n", { flag: "wx" })
+    writeFile(path.join(outputDirectory, "master.m3u8"), `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=${maxBitrate ?? 5_000_000},CODECS=\"avc1.42e01e,mp4a.40.2\"\nmedia.m3u8\n`, { flag: "wx" })
       .then(() => finish(() => resolve({ masterPlaylist: path.join(outputDirectory, "master.m3u8"), mediaPlaylist: path.join(outputDirectory, "media.m3u8") })))
       .catch((error) => finish(() => reject(new TranscodeError("output_failed", "The HLS master playlist could not be created.", { cause: error }))));
   });

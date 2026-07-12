@@ -92,6 +92,15 @@ test("runner is shell-free, no-overwrite, bounded, and reports missing FFmpeg", 
   assert.equal(await readFile(path.join(roots.outputRoot, "media.m3u8"), "utf8"), "existing");
 });
 
+test("runner applies the server-produced bitrate ceiling without shell interpolation", () => {
+  const args = buildTranscodeArguments("/input", "/output", { maxBitrate: 4_000_000 });
+  const valueAfter = (flag) => args[args.indexOf(flag) + 1];
+  assert.equal(valueAfter("-b:v"), "3672000");
+  assert.equal(valueAfter("-maxrate"), "3672000");
+  assert.equal(valueAfter("-bufsize"), "7344000");
+  assert.equal(valueAfter("-b:a"), "128000");
+});
+
 test("runner enforces timeout, output byte, segment, and cancellation limits", async (t) => {
   const roots = await workspace(t);
   const binary = path.resolve("tests/fixtures/transcode/fake-ffmpeg.mjs");

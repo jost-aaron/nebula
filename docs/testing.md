@@ -276,6 +276,12 @@ cancel/shutdown cleanup, remux/transcode recovery, safe HLS asset resolution,
 and direct/remux byte-range delivery. Browser smoke checks should exercise
 Cinema on desktop and at 390x844 while retaining the ticket fallback.
 
+Wave 4 playback-policy tests cover unlimited defaults, migration/persistence,
+global and per-user admission races, requested/remux-produced/HLS bitrate
+enforcement, terminal cleanup, restart accounting, owner/service-admin access,
+member denial, and the responsive Settings / Playback panel. Direct byte-range
+playback is explicitly excluded; see `docs/playback-policies.md`.
+
 Good next additions:
 
 - Playwright smoke test in Docker.

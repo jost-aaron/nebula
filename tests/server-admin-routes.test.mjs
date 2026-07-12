@@ -15,6 +15,7 @@ import { catalogMigration } from "../server/catalog/index.mjs";
 import { PLAYBACK_MIGRATION } from "../server/playback/schema.mjs";
 import { probeMigration } from "../server/probe/index.mjs";
 import { createJobsRepository, createJobsService, createJobsWorker, jobsMigration } from "../server/jobs/index.mjs";
+import { createPlaybackPolicyRepository, createPlaybackPolicyService, playbackPolicyMigration } from "../server/playbackPolicy/index.mjs";
 import {
   createCatalogCheck,
   createDatabaseCheck,
@@ -64,7 +65,7 @@ const startAdminServer = async ({ serviceToken = "admin-service-secret" } = {}) 
   const storage = await createStorage({ contentRoot, dataRoot });
   const database = await openNebulaDatabase(storage.accountDatabasePath);
   const accountStore = await createAccountStore({ database });
-  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration]);
+  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, playbackPolicyMigration]);
   const jobsRepository = createJobsRepository({ db: database });
   const jobsService = createJobsService({ repository: jobsRepository });
   const jobsWorker = createJobsWorker({ handlers: {}, repository: jobsRepository });
@@ -75,6 +76,7 @@ const startAdminServer = async ({ serviceToken = "admin-service-secret" } = {}) 
     database,
     databasePath: storage.accountDatabasePath
   });
+  const playbackPolicy = createPlaybackPolicyService({ repository: createPlaybackPolicyRepository(database) });
 
   let authGuard;
   await withAuthEnvironment({
@@ -102,7 +104,7 @@ const startAdminServer = async ({ serviceToken = "admin-service-secret" } = {}) 
     },
     service: observabilityService
   });
-  const apiHandler = createApiHandler(storage, accountStore, authGuard, { backup: backupService, jobs: jobsService });
+  const apiHandler = createApiHandler(storage, accountStore, authGuard, { backup: backupService, jobs: jobsService, playbackPolicy });
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
     if (await observabilityRoutes(request, response, url)) return;
@@ -122,6 +124,7 @@ const startAdminServer = async ({ serviceToken = "admin-service-secret" } = {}) 
     close: async () => {
       await new Promise((resolve) => server.close(resolve));
       await jobsWorker.stop();
+      playbackPolicy.shutdown();
       accountStore.close();
       database.close();
       await rm(root, { force: true, recursive: true });
@@ -200,4 +203,23 @@ test("health and readiness stay public, readiness stays opaque, and online resto
     method: "POST"
   });
   assert.equal(restore.status, 404);
+});
+
+test("playback policy config and aggregate status allow owners and service admins but deny members", async (t) => {
+  const api = await startAdminServer();
+  t.after(() => api.close());
+  const owner = await setupOwner(api);
+  const memberUser = await api.accountStore.createMember({ displayName: "Member", password: memberPassword, username: "member" });
+  const member = await jsonRequest(`${api.baseUrl}/api/auth/login`, { body: { clientType: "native", password: memberPassword, username: "member" }, method: "POST" }).then((response) => response.json());
+
+  assert.equal((await jsonRequest(`${api.baseUrl}/api/admin/playback-policy`, { bearer: member.sessionToken })).status, 403);
+  const saved = await jsonRequest(`${api.baseUrl}/api/admin/playback-policy`, { bearer: owner.body.sessionToken, body: { maxBitrate: 8_000_000, maxConcurrentStreams: 3 }, method: "PUT" });
+  assert.equal(saved.status, 200);
+  const memberSaved = await jsonRequest(`${api.baseUrl}/api/admin/playback-policy/users/${memberUser.id}`, { bearer: "admin-service-secret", body: { maxBitrate: 3_000_000, maxConcurrentStreams: 1 }, method: "PUT" });
+  assert.equal(memberSaved.status, 200);
+  const status = await jsonRequest(`${api.baseUrl}/api/admin/playback-policy/status`, { bearer: owner.body.sessionToken });
+  assert.equal(status.status, 200);
+  const body = await status.json();
+  assert.equal(body.global.maxConcurrentStreams, 3);
+  assert.equal(body.users.find(({ id }) => id === memberUser.id).effective.maxBitrate, 3_000_000);
 });

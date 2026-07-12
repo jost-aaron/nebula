@@ -25,7 +25,7 @@ test("direct play preserves compatible selected streams and normalizes aliases",
   const result = planPlayback(request(), media());
   assert.deepEqual(result, {
     decision: "direct-play", ...ids,
-    output: { audioCodec: "eac3", container: "mp4", protocol: "file", videoCodec: "h264" },
+    output: { audioCodec: "eac3", bitrate: 8_000_000, container: "mp4", protocol: "file", videoCodec: "h264" },
     reasons: [{ code: "DIRECT_PLAY_COMPATIBLE", message: "The original container and selected streams satisfy all client capabilities.", streamIndex: null }]
   });
 });
@@ -35,7 +35,7 @@ test("container-only incompatibility produces an explainable stream-copy remux",
     ...media(), probe: { ...media().probe, format: { bitrate: 8_000_000, name: "matroska,webm" } }
   }));
   assert.equal(result.decision, "remux");
-  assert.deepEqual(result.output, { audioCodec: "eac3", container: "mp4", protocol: "file", videoCodec: "h264" });
+  assert.deepEqual(result.output, { audioCodec: "eac3", bitrate: 8_000_000, container: "mp4", protocol: "file", videoCodec: "h264" });
   assert.deepEqual(result.reasons.map(({ code }) => code), ["CONTAINER_UNSUPPORTED", "REMUX_PRESERVES_STREAMS"]);
 });
 
@@ -44,7 +44,7 @@ test("codec incompatibility chooses the deterministic software HLS target", () =
   incompatible.probe.streams[0].codec = "vp9";
   const result = planPlayback(request(), incompatible);
   assert.equal(result.decision, "transcode");
-  assert.deepEqual(result.output, { audioCodec: "aac", container: "mpegts", protocol: "hls", videoCodec: "h264" });
+  assert.deepEqual(result.output, { audioCodec: "aac", bitrate: 8_000_000, container: "mpegts", protocol: "hls", videoCodec: "h264" });
   assert.deepEqual(result.reasons.map(({ code, streamIndex }) => [code, streamIndex]), [
     ["VIDEO_CODEC_UNSUPPORTED", 0], ["HLS_SOFTWARE_TRANSCODE", null]
   ]);
@@ -53,6 +53,7 @@ test("codec incompatibility chooses the deterministic software HLS target", () =
 test("resolution, bitrate, and audio channel limits are all reported in stable order", () => {
   const result = planPlayback(request({ capabilities: capabilities({ maxAudioChannels: 2, maxBitrate: 4_000_000, maxHeight: 720, maxWidth: 1280 }) }), media());
   assert.equal(result.decision, "transcode");
+  assert.equal(result.output.bitrate, 4_000_000);
   assert.deepEqual(result.reasons.map(({ code }) => code), [
     "VIDEO_WIDTH_EXCEEDED", "VIDEO_HEIGHT_EXCEEDED", "BITRATE_EXCEEDED", "AUDIO_CHANNELS_EXCEEDED", "HLS_SOFTWARE_TRANSCODE"
   ]);
@@ -72,7 +73,7 @@ test("clients without HLS receive unsupported with every deterministic blocker",
   incompatible.probe.streams[0].codec = "av1";
   const result = planPlayback(request({ capabilities: capabilities({ supportsHls: false, videoCodecs: ["av1"] , maxHeight: 720 }) }), incompatible);
   assert.equal(result.decision, "unsupported");
-  assert.deepEqual(result.output, { audioCodec: null, container: null, protocol: null, videoCodec: null });
+  assert.deepEqual(result.output, { audioCodec: null, bitrate: null, container: null, protocol: null, videoCodec: null });
   assert.deepEqual(result.reasons.map(({ code }) => code), ["VIDEO_HEIGHT_EXCEEDED", "HLS_UNSUPPORTED", "TRANSCODE_VIDEO_TARGET_UNSUPPORTED"]);
 });
 
@@ -119,5 +120,5 @@ test("audio-only sources plan without inventing a video output", () => {
   audio.probe.streams = [{ channels: 2, codec: "flac", default: true, index: 0, type: "audio" }];
   const result = planPlayback(request({ capabilities: capabilities({ audioCodecs: ["aac"], containers: ["mp4"] }) }), audio);
   assert.equal(result.decision, "transcode");
-  assert.deepEqual(result.output, { audioCodec: "aac", container: "mpegts", protocol: "hls", videoCodec: null });
+  assert.deepEqual(result.output, { audioCodec: "aac", bitrate: 8_000_000, container: "mpegts", protocol: "hls", videoCodec: null });
 });

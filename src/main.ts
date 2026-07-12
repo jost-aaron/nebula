@@ -11,6 +11,7 @@ import { bindFileBrowser, renderFileBrowserShell } from "./files/fileBrowser";
 import { bindJobsAdmin } from "./jobs-admin/renderJobsAdmin";
 import { filterApps, renderSearchResults, renderSearchView } from "./search/renderSearchView";
 import { renderSettingsPanel } from "./settings/renderSettingsPanel";
+import { bindPlaybackPolicyAdmin } from "./settings/playbackPolicyAdmin";
 import { bindStudioView, renderStudioView } from "./studio/renderStudioView";
 import { startRenderer } from "./webgpuRenderer";
 import type { AccountSessionState } from "./shared/accountTypes";
@@ -219,6 +220,7 @@ const bindSettingsTabs = (container: ParentNode) => {
     all: [],
     account: ["account"],
     jobs: ["jobs"],
+    "playback-policy": ["playback-policy"],
     apps: ["apps"],
     display: ["display"],
     performance: ["performance"],
@@ -377,7 +379,9 @@ const launchApp = async (app: DashboardApp) => {
     bindClientSettings(appSurface);
     bindAccountSettings(appSurface);
     if (accountSession.user.role === "owner") {
-      disposeActiveApp = bindJobsAdmin(appSurface);
+      const disposeJobs = bindJobsAdmin(appSurface);
+      const disposePlaybackPolicy = bindPlaybackPolicyAdmin(appSurface);
+      disposeActiveApp = () => { disposeJobs(); disposePlaybackPolicy(); };
     }
   }
 
