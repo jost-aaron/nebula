@@ -57,6 +57,35 @@ owner grants them.
 
 ## Authentication Flow
 
+### First-run guest mode
+
+On a genuinely fresh server, the welcome screen offers either deliberate owner
+setup or a temporary guest session. Eligibility requires both zero account rows
+and the irreversible `owner_initialized` server-state marker to be false. The
+account schema v3 migration initializes that marker to true when upgrading any
+database that already contains an owner. First-owner creation sets it in the
+same immediate transaction as the owner and account session, then revokes all
+active guest sessions before returning.
+
+Guest sessions and their media tickets exist only in server memory. They expire
+after eight hours by default, disappear on restart, and are never written to
+SQLite or client storage. Guests can browse and byte-range play permitted
+Cinema and Studio media. They cannot access Files, account or Settings
+administration, backups, jobs, audit history, library permissions, playback
+policy administration, TMDB credentials, member APIs, watchlists, playback
+state, playlists, preferences, or mutation endpoints. The dashboard always
+shows a Create Owner Account command during a guest session.
+
+`NEBULA_FIRST_RUN_GUEST_ENABLED` defaults to `true`, but only has an effect in
+the eligible first-run state. Set it to `false` to require immediate owner setup.
+`NEBULA_GUEST_SESSION_TTL_MS` controls the in-memory session lifetime and
+defaults to `28800000` (eight hours). Guest entry additionally requires the
+request socket address to be loopback, link-local, or an RFC1918/unique-local
+address so Docker bridge and trusted-LAN clients work; Host and forwarded
+headers are never trusted. Operators exposing Nebula through a local reverse
+proxy should disable guest mode explicitly if proxy-local traffic must not
+qualify.
+
 ```mermaid
 sequenceDiagram
   participant C as Client
@@ -164,7 +193,8 @@ compatibility, while account responses are overlaid from the personal table.
 
 ## Compatibility And Migration
 
-After upgrade, a server with no account database enters deliberate owner setup;
+After upgrade, a server with no account database enters deliberate owner setup
+with optional local first-run guest access;
 there is no default password. Public setup closes atomically after the first
 account is committed. Existing `NEBULA_API_TOKEN` credentials remain accepted
 as an owner-capability service path when configured. `NEBULA_REQUIRE_AUTH` and

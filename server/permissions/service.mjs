@@ -8,10 +8,13 @@ const publicLibrary = (row) => ({
 });
 
 const principalIdentity = (database, principal) => {
-  if (!principal) return { service: false, userId: null, role: null };
+  if (!principal) return { guest: false, service: false, userId: null, role: null };
+  if (principal.kind === "guest" || (principal.kind === "media-ticket" && principal.principalType === "guest")) {
+    return { guest: true, service: false, userId: null, role: "guest" };
+  }
   if (principal.type === "service" || principal.kind === "service"
     || (principal.kind === "media-ticket" && principal.principalType === "service")) {
-    return { service: true, userId: null, role: "owner" };
+    return { guest: false, service: true, userId: null, role: "owner" };
   }
   const userId = principal.userId ?? principal.user?.id
     ?? (principal.kind === "media-ticket" && principal.principalType === "user" ? principal.principalId : null);
@@ -19,7 +22,7 @@ const principalIdentity = (database, principal) => {
   const role = principal.role ?? principal.user?.role
     ?? database.prepare("SELECT role FROM users WHERE id = ? AND disabled = 0").get(userId)?.role
     ?? null;
-  return { service: false, userId, role };
+  return { guest: false, service: false, userId, role };
 };
 
 export const createLibraryPermissionsService = ({ database, now = () => new Date().toISOString() }) => {
@@ -35,7 +38,7 @@ export const createLibraryPermissionsService = ({ database, now = () => new Date
 
   const canAccessLibrary = (principal, libraryId) => {
     const identity = principalIdentity(database, principal);
-    if (identity.service || identity.role === "owner") return true;
+    if (identity.guest || identity.service || identity.role === "owner") return true;
     if (identity.role !== "member" || !identity.userId) return false;
     if (getPolicy(identity.userId) === "all") return true;
     return Boolean(database.prepare("SELECT 1 FROM user_library_permissions WHERE user_id = ? AND library_id = ?")
@@ -57,7 +60,7 @@ export const createLibraryPermissionsService = ({ database, now = () => new Date
 
   const canAccessPath = (principal, contentPath, mediaKind) => {
     const identity = principalIdentity(database, principal);
-    if (identity.service || identity.role === "owner") return true;
+    if (identity.guest || identity.service || identity.role === "owner") return true;
     if (identity.role !== "member" || !identity.userId) return false;
     if (getPolicy(identity.userId) === "all") return true;
     const sources = database.prepare(`

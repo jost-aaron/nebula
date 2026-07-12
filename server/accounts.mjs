@@ -1,4 +1,4 @@
-import { clearSessionCookie, sessionCookie } from "./auth.mjs";
+import { clearSessionCookie, isTrustedLocalAddress, sessionCookie } from "./auth.mjs";
 import { json, readBody } from "./http.mjs";
 import { actorFromContext } from "./audit/service.mjs";
 
@@ -17,15 +17,28 @@ const authResponse = (request, response, status, result, native) => {
   });
 };
 
-export const createAccountRoutes = (accountStore, authGuard, libraryPermissions = null, audit = null) => async (request, response, url) => {
+export const createAccountRoutes = (accountStore, authGuard, libraryPermissions = null, audit = null, guestService = null) => async (request, response, url) => {
   if (request.method === "GET" && url.pathname === "/api/auth/status") {
     const context = request.nebulaAuth;
     json(response, 200, {
       authenticated: Boolean(context),
       serviceAuthenticated: context?.kind === "service",
-      setupRequired: accountStore.countUsers() === 0,
+      guestAvailable: guestService?.eligible() ?? false,
+      principal: context?.kind === "guest" ? "guest" : context ? "account" : null,
+      setupRequired: accountStore.countUsers() === 0 && !accountStore.isOwnerInitialized(),
       user: context?.user ?? null
     });
+    return true;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/auth/guest") {
+    if (!guestService || !guestService.eligible() || !isTrustedLocalAddress(authGuard.remoteAddress(request))) {
+      json(response, 403, { code: "guest_unavailable", error: "Guest access is available only during first run from this server." });
+      return true;
+    }
+    const session = guestService.createSession();
+    response.setHeader("set-cookie", sessionCookie(request, session.token, Math.max(1, Math.floor((Date.parse(session.expiresAt) - Date.now()) / 1000))));
+    json(response, 201, { csrfToken: session.csrfToken, expiresAt: session.expiresAt, transport: "cookie", principal: "guest", user: null });
     return true;
   }
 
@@ -58,6 +71,16 @@ export const createAccountRoutes = (accountStore, authGuard, libraryPermissions 
   }
 
   const context = request.nebulaAuth;
+  if (context?.kind === "guest" && request.method === "POST" && url.pathname === "/api/auth/logout") {
+    guestService?.revokeSession(context.sessionId);
+    response.setHeader("set-cookie", clearSessionCookie(request));
+    json(response, 200, { ok: true });
+    return true;
+  }
+  if (context?.kind === "guest" && request.method === "GET" && url.pathname === "/api/auth/me") {
+    json(response, 200, { csrfToken: context.transport === "cookie" ? context.csrfToken : null, expiresAt: context.expiresAt, principal: "guest", transport: context.transport, user: null });
+    return true;
+  }
   if (!context || context.kind !== "account") {
     if (url.pathname.startsWith("/api/auth/")) {
       json(response, 403, { code: "account_required", error: "This action requires an account session." });

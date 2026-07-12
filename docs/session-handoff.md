@@ -83,6 +83,9 @@ Cinema categorizes it as a Movie. It is intentionally not tracked by Git.
 
 Accounts:
 
+- A fresh server may use local, expiring, memory-only guest access until the
+  first owner is created. Account schema v3 records irreversible owner
+  initialization so deleting/restoring account rows never re-enables it.
 - A fresh `nebula-data` volume deliberately enters owner setup; there is no
   default password.
 - Browser sessions use HttpOnly cookies plus CSRF. Capacitor/cross-origin

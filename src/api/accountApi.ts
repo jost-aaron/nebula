@@ -1,5 +1,5 @@
 import { apiJson, getApiBaseUrl, setAccountSessionToken, setCsrfToken } from "./http";
-import type { AccountSession, AccountSessionState, AccountUser, AuthSessionResponse, AuthStatus } from "../shared/accountTypes";
+import type { AccountSession, AccountSessionState, AccountUser, AuthSessionResponse, AuthStatus, CurrentSessionState } from "../shared/accountTypes";
 import type { LibraryAccessMode, LibraryPermissionsAdministration, MemberLibraryAccess } from "../shared/libraryPermissionTypes";
 
 const bearerClient = () => {
@@ -18,7 +18,7 @@ const acceptSession = (session: AuthSessionResponse) => {
 export const getAuthStatus = () => apiJson<AuthStatus>("/api/auth/status", { method: "GET" });
 
 export const getCurrentAccount = async () => {
-  const session = await apiJson<AccountSessionState>("/api/auth/me", { method: "GET" });
+  const session = await apiJson<CurrentSessionState>("/api/auth/me", { method: "GET" });
   setCsrfToken(session.csrfToken);
   return session;
 };
@@ -34,6 +34,11 @@ export const login = (body: { password: string; username: string }) =>
     body: JSON.stringify({ ...body, clientType: bearerClient() ? "native" : "browser" }),
     method: "POST"
   }).then(acceptSession);
+
+export const continueAsGuest = () => apiJson<AuthSessionResponse>("/api/auth/guest", {
+  body: "{}",
+  method: "POST"
+}).then(acceptSession);
 
 export const logout = async () => {
   await apiJson<{ ok: boolean }>("/api/auth/logout", { body: "{}", method: "POST" });

@@ -12,15 +12,15 @@ import { createAuditRoutes } from "./audit/routes.mjs";
 
 export const createApiHandler = (storage, accountStore, authGuard, options = {}) => {
   const routeHandlers = [
-    createAccountRoutes(accountStore, authGuard, options.libraryPermissions, options.audit),
+    createAccountRoutes(accountStore, authGuard, options.libraryPermissions, options.audit, options.guestService),
     ...(options.audit ? [createAuditRoutes(options.audit)] : []),
     ...(options.backup ? [createBackupRoutes(options.backup, options.audit)] : []),
     ...(options.playbackPolicy ? [createPlaybackPolicyRoutes(options.playbackPolicy)] : []),
     ...(options.catalog ? [createCatalogRoutes(options.catalog, options.audit)] : []),
     ...(options.playback ? [createPlaybackRoutes(options.playback, options.playbackPlanner, options.playbackDelivery)] : []),
     ...(options.jobs ? [createJobsRoutes(options.jobs, options.audit)] : []),
-    createCinemaRoutes(storage, accountStore, { ...options.cinema, libraryPermissions: options.libraryPermissions }),
-    createMusicRoutes(storage, accountStore, { libraryPermissions: options.libraryPermissions }),
+    createCinemaRoutes(storage, accountStore, { ...options.cinema, guestService: options.guestService, libraryPermissions: options.libraryPermissions }),
+    createMusicRoutes(storage, accountStore, { guestService: options.guestService, libraryPermissions: options.libraryPermissions }),
     createFilesRoutes(storage)
   ];
 

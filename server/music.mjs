@@ -5,7 +5,7 @@ import { readMetadata, scanMediaLibrary } from "./mediaLibrary.mjs";
 import { isAudioFile, mimeType } from "./storage.mjs";
 import { parseByteRange } from "./ranges.mjs";
 
-export const createMusicRoutes = (storage, accountStore, { libraryPermissions = null } = {}) => {
+export const createMusicRoutes = (storage, accountStore, { guestService = null, libraryPermissions = null } = {}) => {
   const listMusicLibrary = async (request, response) => {
     const metadata = await readMetadata(storage.cinemaMetadataPath);
     const scanned = await scanMediaLibrary(storage, metadata, { mediaKind: "audio" });
@@ -13,7 +13,7 @@ export const createMusicRoutes = (storage, accountStore, { libraryPermissions = 
     const entries = libraryPermissions ? scanned.filter((entry) => libraryPermissions.canAccessPath(context, entry.path, "audio")) : scanned;
     if (context) {
       entries.forEach((entry) => {
-        const ticket = accountStore.issueMediaTicket({
+        const ticket = context.kind === "guest" ? guestService.issueMediaTicket({ contentPath: entry.path, mediaKind: "audio", sessionId: context.sessionId }) : accountStore.issueMediaTicket({
           contentPath: entry.path,
           mediaKind: "audio",
           principalId: context.user?.id ?? context.principalId,

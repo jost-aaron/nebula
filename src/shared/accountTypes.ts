@@ -15,6 +15,8 @@ export interface AccountUser {
 
 export interface AuthStatus {
   authenticated: boolean;
+  guestAvailable: boolean;
+  principal: "account" | "guest" | null;
   serviceAuthenticated: boolean;
   setupRequired: boolean;
   user: AccountUser | null;
@@ -24,12 +26,21 @@ export interface AccountSessionState {
   csrfToken: string | null;
   expiresAt: string;
   transport: SessionTransport;
+  principal?: "account";
   user: AccountUser;
 }
 
-export interface AuthSessionResponse extends AccountSessionState {
-  sessionToken?: string;
+export interface GuestSessionState {
+  csrfToken: string | null;
+  expiresAt: string;
+  principal: "guest";
+  transport: SessionTransport;
+  user: null;
 }
+
+export type CurrentSessionState = AccountSessionState | GuestSessionState;
+
+export type AuthSessionResponse = CurrentSessionState & { sessionToken?: string };
 
 export interface AccountSession {
   clientLabel: string;

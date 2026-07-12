@@ -1,4 +1,4 @@
-import { changePassword, clearTmdbServerSetting, createMemberAccount, getTmdbServerSetting, listAccountSessions, listAccounts, login, logout, revokeAccountSession, saveTmdbServerSetting, setMemberDisabled, setupOwner, updateProfile } from "../api/accountApi";
+import { changePassword, clearTmdbServerSetting, continueAsGuest, createMemberAccount, getTmdbServerSetting, listAccountSessions, listAccounts, login, logout, revokeAccountSession, saveTmdbServerSetting, setMemberDisabled, setupOwner, updateProfile } from "../api/accountApi";
 import { getApiBaseUrl, setApiBaseUrl } from "../api/http";
 import type { AccountSessionState, AccountUser } from "../shared/accountTypes";
 import { bindLibraryPermissionsPanel, renderLibraryPermissionsPanel } from "./libraryPermissionsUi";
@@ -35,7 +35,7 @@ export const bindServerConnection = (container: ParentNode) => {
   });
 };
 
-export const renderAccountGate = (setupRequired: boolean, notice = "") => `
+export const renderAccountGate = (setupRequired: boolean, notice = "", guestAvailable = false) => `
   <main class="account-stage">
     <section class="account-intro">
       <p class="eyebrow">Nebula OS · Local accounts</p>
@@ -51,6 +51,7 @@ export const renderAccountGate = (setupRequired: boolean, notice = "") => `
       <label><span>Password</span><input name="password" type="password" required minlength="12" maxlength="128" autocomplete="${setupRequired ? "new-password" : "current-password"}" /></label>
       ${setupRequired ? `<label><span>Confirm password</span><input name="confirmPassword" type="password" required minlength="12" maxlength="128" autocomplete="new-password" /></label>` : ""}
       <button class="primary-command" type="submit">${setupRequired ? "Create owner" : "Enter Nebula"}</button>
+      ${setupRequired && guestAvailable ? `<button type="button" data-continue-guest>Continue as Guest</button><p class="account-detail">Guest access is temporary and limited to Cinema and Studio on this local server.</p>` : ""}
       <p class="account-message" data-account-message>${escapeHtml(notice)}</p>
     </form>
   </main>`;
@@ -82,6 +83,13 @@ export const bindAccountGate = (container: ParentNode) => {
       if (submit) submit.disabled = false;
     }
   });
+  container.querySelector<HTMLButtonElement>("[data-continue-guest]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget as HTMLButtonElement;
+    button.disabled = true;
+    if (message) message.textContent = "Opening a temporary guest session...";
+    try { await continueAsGuest(); window.location.reload(); }
+    catch (error) { if (message) message.textContent = error instanceof Error ? error.message : "Guest access is unavailable."; button.disabled = false; }
+  });
 };
 
 const initials = (user: AccountUser) => user.displayName.split(/\s+/).map((word) => word[0]).join("").slice(0, 2).toUpperCase();
@@ -96,6 +104,16 @@ export const renderAccountIdentity = (user: AccountUser) => `
       <button type="button" data-account-settings>Account settings</button>
       <button type="button" data-account-switch>Switch account</button>
       <button class="destructive" type="button" data-account-sign-out>Sign out</button>
+    </div>
+  </div>`;
+
+export const renderGuestIdentity = () => `
+  <div class="account-identity">
+    <button class="account-identity-button" type="button" data-account-menu-toggle aria-expanded="false"><span>G</span><strong>Guest</strong><small>temporary</small></button>
+    <div class="account-menu" data-account-menu hidden>
+      <div><span>G</span><p><strong>Guest session</strong><small>Cinema and Studio only · not saved</small></p></div>
+      <button type="button" data-account-sign-out>Create Owner Account</button>
+      <button class="destructive" type="button" data-account-switch>Leave guest session</button>
     </div>
   </div>`;
 

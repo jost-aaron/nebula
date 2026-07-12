@@ -94,7 +94,7 @@ export const verifyPassword = async (password, credential) => {
 export const migrateAccountSchema = (db) => {
   db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;");
   const version = db.prepare("PRAGMA user_version").get().user_version;
-  if (version > 2) throw new Error(`Account database schema ${version} is newer than this server supports.`);
+  if (version > 3) throw new Error(`Account database schema ${version} is newer than this server supports.`);
 
   if (version === 0) db.exec(`
     BEGIN IMMEDIATE;
@@ -166,6 +166,19 @@ export const migrateAccountSchema = (db) => {
     PRAGMA user_version = 2;
     COMMIT;
   `);
+
+  if (version < 3) db.exec(`
+    BEGIN IMMEDIATE;
+    CREATE TABLE server_state (
+      state_key TEXT PRIMARY KEY,
+      state_value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    INSERT INTO server_state (state_key, state_value, updated_at)
+      VALUES ('owner_initialized', CASE WHEN EXISTS(SELECT 1 FROM users WHERE role = 'owner') THEN 'true' ELSE 'false' END, datetime('now'));
+    PRAGMA user_version = 3;
+    COMMIT;
+  `);
 };
 
 export const createAccountStore = async ({ database, databasePath, now = () => Date.now() }) => {
@@ -188,12 +201,16 @@ export const createAccountStore = async ({ database, databasePath, now = () => D
     return { csrfToken, expiresAt, id, token };
   };
 
+  let ownerCreatedHook = () => {};
   const setupOwner = async ({ clientLabel, displayName, password, username }) => {
     const identity = validateIdentity({ displayName, username });
     const credential = await hashPassword(password);
     db.exec("BEGIN IMMEDIATE");
     try {
       if (db.prepare("SELECT COUNT(*) AS count FROM users").get().count !== 0) {
+        throw Object.assign(new Error("Owner setup is already complete."), { status: 409 });
+      }
+      if (db.prepare("SELECT state_value FROM server_state WHERE state_key = 'owner_initialized'").get()?.state_value === "true") {
         throw Object.assign(new Error("Owner setup is already complete."), { status: 409 });
       }
       const id = randomUUID();
@@ -203,7 +220,9 @@ export const createAccountStore = async ({ database, databasePath, now = () => D
         VALUES (?, ?, ?, ?, 'owner', ?, ?, ?)`)
         .run(id, identity.username, identity.displayName, credential, timestamp, timestamp, timestamp);
       const session = createSessionRecord(id, clientLabel);
+      db.prepare("UPDATE server_state SET state_value = 'true', updated_at = ? WHERE state_key = 'owner_initialized'").run(timestamp);
       db.exec("COMMIT");
+      ownerCreatedHook();
       return { session, user: publicUser(db.prepare("SELECT * FROM users WHERE id = ?").get(id)) };
     } catch (error) {
       db.exec("ROLLBACK");
@@ -419,6 +438,7 @@ export const createAccountStore = async ({ database, databasePath, now = () => D
     getUser: (userId) => publicUser(db.prepare("SELECT * FROM users WHERE id = ?").get(userId)),
     getWatchlist,
     issueMediaTicket,
+    isOwnerInitialized: () => db.prepare("SELECT state_value FROM server_state WHERE state_key = 'owner_initialized'").get()?.state_value === "true",
     listSessions,
     listUsers: () => db.prepare("SELECT * FROM users ORDER BY role DESC, display_name COLLATE NOCASE").all().map(publicUser),
     login,
@@ -427,6 +447,7 @@ export const createAccountStore = async ({ database, databasePath, now = () => D
     setWatchlisted,
     setServerSetting,
     setMemberDisabled,
+    setOwnerCreatedHook: (hook) => { ownerCreatedHook = typeof hook === "function" ? hook : () => {}; },
     setupOwner,
     updateProfile
   };
