@@ -186,6 +186,7 @@ jobsWorker.start();
 jobsService.enqueue({ type: "scan", payload: { rootId: catalogRoot.id }, dedupeKey: `startup:${catalogRoot.id}` });
 
 const vite = await createViteServer({
+  cacheDir: path.join(storage.dataRoot, "vite-cache"),
   server: {
     ...(viteAllowedHosts.length > 0 ? { allowedHosts: viteAllowedHosts } : {}),
     middlewareMode: true,

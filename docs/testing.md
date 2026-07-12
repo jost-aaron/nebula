@@ -1,7 +1,7 @@
 # Testing And QA
 
-There is no automated browser test suite yet. Current verification is a mix of
-TypeScript checking and manual/in-browser QA.
+Verification combines TypeScript checking, the complete Node suite, the Docker
+Playwright suite, and targeted manual/iOS QA.
 
 ## Required Check
 
@@ -337,7 +337,6 @@ playback is explicitly excluded; see `docs/playback-policies.md`.
 
 Good next additions:
 
-- Playwright smoke test in Docker.
 - DOM tests for app-first navigation and panel state transitions.
 - Visual screenshot checks for desktop and mobile.
 - A repeatable iOS simulator UI test that taps through Cinema and Files safe

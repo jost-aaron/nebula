@@ -228,6 +228,7 @@ Media platform changes must also preserve:
 ## Read Next
 
 - `docs/architecture.md`
+- `docs/deployment.md`
 - `docs/session-handoff.md`
 - `docs/cinema.md`
 - `docs/studio.md`

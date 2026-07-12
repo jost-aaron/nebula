@@ -236,7 +236,7 @@ provide encrypted database-at-rest support.
 
 | Threat | Primary mitigation | Residual risk |
 | --- | --- | --- |
-| Credential theft | HttpOnly cookie; hashed native token at rest server-side | Native token is in WebView local storage in v1 |
+| Credential theft | HttpOnly cookie; hashed native token server-side; iOS Keychain client storage | An unlocked/compromised native device can use its live session |
 | CSRF | SameSite=Lax plus per-session header token | Compromised same-origin script defeats CSRF controls |
 | Brute force / enumeration | Generic failure, dummy hash, persisted throttling | Distributed low-rate attacks remain possible |
 | Database disclosure | Scrypt passwords; hashed sessions/tickets | Profile and activity metadata remain readable |

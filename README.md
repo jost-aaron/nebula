@@ -26,13 +26,20 @@ scan/job, backup, and other server-administration actions.
 Accounts can keep ordered video and audio playlists, while owners can publish
 shared collections whose visible items follow each member's library grants.
 
-## Run
+## Local development
 
 ```sh
 docker compose up --build
 ```
 
 Open http://127.0.0.1:5173.
+
+This is the source-mounted development stack, not the recommended persistent
+deployment shape. For a single-host self-hosted preview, including storage,
+security, proxy/TLS, backup/restore, upgrades, monitoring, and release checks,
+read [docs/deployment.md](docs/deployment.md) and validate
+`compose.deploy.yaml`. The current runtime is not HA or hardened for public
+internet exposure.
 
 ## Check
 
@@ -90,10 +97,13 @@ without either configuration source.
 - `content/` - ignored local content root for Files and Cinema.
 - `ios/` - Capacitor iOS shell.
 - `scripts/ios-sync*.sh` - Docker-first Capacitor web asset sync helpers.
+- `scripts/offline-restore.mjs` - validated, no-clobber offline backup restore.
 - `src/webgpuRenderer.ts` - WebGPU full-screen shader renderer plus Canvas 2D
   fallback.
 - `src/styles.css` - responsive shell layout and visual system.
 - `compose.yaml` - container-first local development entrypoint.
+- `compose.deploy.yaml` - locally built, single-host deployment example.
+- `.env.example` - placeholder-only deployment configuration reference.
 - `Dockerfile` - Node/Vite image used by Compose.
 - `AGENTS.md` - handoff notes for another coding model or automation agent.
 - `docs/` - deeper architecture, rendering, workflow, testing, and roadmap notes.
@@ -105,6 +115,7 @@ Start with:
 - [AGENTS.md](AGENTS.md)
 - [docs/session-handoff.md](docs/session-handoff.md)
 - [docs/architecture.md](docs/architecture.md)
+- [docs/deployment.md](docs/deployment.md)
 - [docs/accounts.md](docs/accounts.md)
 - [docs/cinema.md](docs/cinema.md)
 - [docs/studio.md](docs/studio.md)
