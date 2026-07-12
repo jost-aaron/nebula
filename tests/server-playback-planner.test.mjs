@@ -122,3 +122,16 @@ test("audio-only sources plan without inventing a video output", () => {
   assert.equal(result.decision, "transcode");
   assert.deepEqual(result.output, { audioCodec: "aac", bitrate: 8_000_000, container: "mpegts", protocol: "hls", videoCodec: null });
 });
+
+test("provider-neutral sidecars stay direct while unsupported selected tracks burn in", () => {
+  const sidecar = media({ subtitleSelection: { reason: "SUBTITLE_PREFERRED_LANGUAGE", track: { id: "sub-sidecar", kind: "sidecar", format: "webvtt", language: "en", label: "English" } } });
+  const direct = planPlayback(request(), sidecar);
+  assert.equal(direct.decision, "direct-play"); assert.equal(direct.output.subtitle.delivery, "sidecar");
+  assert.equal(direct.reasons[0].code, "SUBTITLE_PREFERRED_LANGUAGE");
+  const embedded = media({ subtitleSelection: { reason: "SUBTITLE_EXPLICIT", track: { id: "sub-ass", kind: "embedded", format: "ass", streamIndex: 2, label: "Signs" } } });
+  const burned = planPlayback(request(), embedded);
+  assert.equal(burned.decision, "transcode"); assert.equal(burned.output.subtitle.delivery, "burn-in");
+  assert.deepEqual(burned.reasons.map(({ code }) => code), ["SUBTITLE_EXPLICIT", "SUBTITLE_BURN_IN_REQUIRED", "HLS_SOFTWARE_TRANSCODE"]);
+  const off = planPlayback(request(), media({ subtitleSelection: { reason: "SUBTITLES_OFF", track: null } }));
+  assert.equal(off.decision, "direct-play"); assert.equal(off.output.subtitle, null); assert.equal(off.reasons[0].code, "SUBTITLES_OFF");
+});
