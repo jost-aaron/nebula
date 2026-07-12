@@ -7,7 +7,7 @@ import { mimeType } from "../storage.mjs";
 
 const principalFor = (request) => request.nebulaAuth?.user
   ? { type: "user", userId: request.nebulaAuth.user.id }
-  : { type: "service", userId: null };
+  : request.nebulaAuth?.kind === "guest" ? { type: "guest", sessionId: request.nebulaAuth.sessionId } : { type: "service", userId: null };
 
 const sendFile = async (request, response, asset, explicitType) => {
   const details = await stat(asset);

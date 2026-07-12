@@ -24,7 +24,6 @@ const firstSelected = (streams, type) => {
   const candidates = streams.filter((stream) => stream.type === type);
   return candidates.find((stream) => stream.default) ?? candidates[0] ?? null;
 };
-const selectedSubtitles = (streams) => streams.filter((stream) => stream.type === "subtitle" && (stream.default || stream.forced));
 
 const validateCapabilities = (capabilities) => {
   if (!capabilities || typeof capabilities !== "object") return "Capabilities must be an object.";
@@ -82,7 +81,9 @@ export const planPlayback = (request, media) => {
   const streams = Array.isArray(media.probe.streams) ? media.probe.streams : [];
   const video = firstSelected(streams, "video");
   const audio = firstSelected(streams, "audio");
-  const subtitles = selectedSubtitles(streams);
+  const legacySubtitles = media.subtitleSelection ? [] : streams.filter((stream) => stream.type === "subtitle" && (stream.default || stream.forced));
+  const subtitleSelection = media.subtitleSelection ?? { track: null, reason: "NO_SUBTITLE_MATCH" };
+  const subtitle = subtitleSelection.track;
   const originalContainer = normalize(media.probe.format.name);
   const incompatibilities = [];
 
@@ -95,19 +96,22 @@ export const planPlayback = (request, media) => {
   const bitrate = media.probe.format.bitrate;
   if (capabilities.maxBitrate !== null && (!Number.isFinite(bitrate) || bitrate > capabilities.maxBitrate)) incompatibilities.push(reason("BITRATE_EXCEEDED", `Source bitrate ${bitrate ?? "unknown"} exceeds the client limit of ${capabilities.maxBitrate}.`));
   if (audio && capabilities.maxAudioChannels !== null && (!Number.isFinite(audio.channels) || audio.channels > capabilities.maxAudioChannels)) incompatibilities.push(reason("AUDIO_CHANNELS_EXCEEDED", `Audio channels ${audio.channels ?? "unknown"} exceed the client limit of ${capabilities.maxAudioChannels}.`, streamIndex(audio)));
-  for (const subtitle of subtitles) if (!subtitleFormats.has(normalize(subtitle.codec))) incompatibilities.push(reason("SUBTITLE_FORMAT_UNSUPPORTED", `Subtitle format ${normalize(subtitle.codec) ?? "unknown"} is not supported by the client.`, streamIndex(subtitle)));
+  const subtitleFormat = normalize(subtitle?.format);
+  const subtitleNative = !subtitle || (subtitle.kind === "sidecar" && subtitleFormats.has(subtitleFormat)) || (subtitle.kind === "embedded" && subtitleFormats.has(subtitleFormat));
+  if (subtitle && !subtitleNative) incompatibilities.push(reason("SUBTITLE_BURN_IN_REQUIRED", `Selected subtitle format ${subtitleFormat ?? "unknown"} requires burn-in.`, subtitle.streamIndex ?? null));
+  for (const legacySubtitle of legacySubtitles) if (!subtitleFormats.has(normalize(legacySubtitle.codec))) incompatibilities.push(reason("SUBTITLE_FORMAT_UNSUPPORTED", `Subtitle format ${normalize(legacySubtitle.codec) ?? "unknown"} is not supported by the client.`, streamIndex(legacySubtitle)));
 
   if (incompatibilities.length === 0) return {
     decision: "direct-play", itemId: request.itemId, sourceId: request.sourceId,
-    output: { audioCodec: normalize(audio?.codec), bitrate: Number.isFinite(bitrate) ? bitrate : null, container: originalContainer, protocol: "file", videoCodec: normalize(video?.codec) },
-    reasons: [reason("DIRECT_PLAY_COMPATIBLE", "The original container and selected streams satisfy all client capabilities.")]
+    output: { audioCodec: normalize(audio?.codec), bitrate: Number.isFinite(bitrate) ? bitrate : null, container: originalContainer, protocol: "file", videoCodec: normalize(video?.codec), ...(media.subtitleSelection ? { subtitle: subtitle ? { id: subtitle.id, delivery: subtitle.kind === "sidecar" ? "sidecar" : "embedded", format: subtitleFormat } : null } : {}) },
+    reasons: [...(media.subtitleSelection ? [reason(subtitleSelection.reason, subtitle ? `Selected ${subtitle.label || subtitle.language || "subtitle"}.` : "No subtitle track was selected.")] : []), reason("DIRECT_PLAY_COMPATIBLE", "The original container and selected streams satisfy all client capabilities.")]
   };
 
   const onlyContainer = incompatibilities.every(({ code }) => code === "CONTAINER_UNSUPPORTED");
   const targetContainer = onlyContainer ? remuxContainer(containers, video, audio) : null;
   if (onlyContainer && targetContainer) return {
     decision: "remux", itemId: request.itemId, sourceId: request.sourceId,
-    output: { audioCodec: normalize(audio?.codec), bitrate: Number.isFinite(bitrate) ? bitrate : null, container: targetContainer, protocol: "file", videoCodec: normalize(video?.codec) },
+    output: { audioCodec: normalize(audio?.codec), bitrate: Number.isFinite(bitrate) ? bitrate : null, container: targetContainer, protocol: "file", videoCodec: normalize(video?.codec), ...(media.subtitleSelection ? { subtitle: subtitle ? { id: subtitle.id, delivery: subtitle.kind === "sidecar" ? "sidecar" : "embedded", format: subtitleFormat } : null } : {}) },
     reasons: [...incompatibilities, reason("REMUX_PRESERVES_STREAMS", `The selected streams can be copied into the supported ${targetContainer} container.`)]
   };
 
@@ -115,8 +119,8 @@ export const planPlayback = (request, media) => {
   const canTranscodeAudio = !audio || audioCodecs.has(SOFTWARE_AUDIO_CODEC);
   if (capabilities.supportsHls && canTranscodeVideo && canTranscodeAudio) return {
     decision: "transcode", itemId: request.itemId, sourceId: request.sourceId,
-    output: { audioCodec: audio ? SOFTWARE_AUDIO_CODEC : null, bitrate: finiteMin(capabilities.maxBitrate, bitrate), container: HLS_CONTAINER, protocol: "hls", videoCodec: video ? SOFTWARE_VIDEO_CODEC : null },
-    reasons: [...incompatibilities, reason("HLS_SOFTWARE_TRANSCODE", "A software HLS rendition can satisfy the declared client capabilities.")]
+    output: { audioCodec: audio ? SOFTWARE_AUDIO_CODEC : null, bitrate: finiteMin(capabilities.maxBitrate, bitrate), container: HLS_CONTAINER, protocol: "hls", videoCodec: video ? SOFTWARE_VIDEO_CODEC : null, ...(media.subtitleSelection ? { subtitle: subtitle ? { id: subtitle.id, delivery: subtitleNative ? "sidecar" : "burn-in", format: subtitleFormat } : null } : {}) },
+    reasons: [...(media.subtitleSelection ? [reason(subtitleSelection.reason, subtitle ? `Selected ${subtitle.label || subtitle.language || "subtitle"}.` : "No subtitle track was selected.")] : []), ...incompatibilities, reason("HLS_SOFTWARE_TRANSCODE", "A software HLS rendition can satisfy the declared client capabilities.")]
   };
 
   const blockers = [];

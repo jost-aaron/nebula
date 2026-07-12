@@ -1932,6 +1932,14 @@ h1 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.cinema-subtitle-setting { min-width: 0; padding: 10px 14px; display: grid; grid-template-columns: minmax(82px,.85fr) minmax(0,1fr); align-items: center; gap: 12px; }
+.cinema-subtitle-setting span { display: flex; gap: 8px; align-items: center; }
+.cinema-subtitle-setting select, .cinema-player-subtitles select { width: 100%; min-width: 0; color: #dffaff; background: #14232d; border: 1px solid rgba(255,255,255,.18); border-radius: 6px; padding: 7px; }
+.cinema-subtitle-preferences { min-width: 0; display: grid; gap: 8px; padding: 12px; border: 1px solid rgba(255,255,255,.1); border-radius: 8px; background: rgba(255,255,255,.035); }
+.cinema-subtitle-preferences label { min-width: 0; display: grid; grid-template-columns: minmax(110px,.7fr) minmax(0,1fr); gap: 8px; align-items: center; }
+.cinema-subtitle-preferences input, .cinema-subtitle-preferences select { width: 100%; min-width: 0; box-sizing: border-box; }
+.cinema-player-subtitles { position: absolute; right: 14px; bottom: 54px; z-index: 3; max-width: min(280px, calc(100% - 28px)); display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 8px; background: rgba(4,10,15,.82); }
+@media (max-width: 520px) { .cinema-player-subtitles { left: 10px; right: 10px; max-width: none; } .cinema-subtitle-setting, .cinema-subtitle-preferences label { grid-template-columns: 1fr; } }
 
 .cinema-identify {
   min-height: 0;

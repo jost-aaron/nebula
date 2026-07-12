@@ -30,6 +30,8 @@ import type { MediaChapter } from "../shared/catalogTypes";
 import type { ContinueWatchingEntry, PlaybackEventKind } from "../shared/playbackTypes";
 import { addMediaListItem, createMediaList, listMediaLists } from "../api/mediaListsApi";
 import type { MediaList } from "../shared/mediaListTypes";
+import { getSubtitlePreference, listSubtitleTracks, saveSubtitlePreference, selectSubtitleTrack, subtitleAssetUrl } from "../api/subtitleApi";
+import type { SubtitlePreference, SubtitleTracksResponse } from "../shared/subtitleTypes";
 
 type CinemaView = "library" | "watchlist" | "title-detail" | "player" | "metadata-editor" | "servers" | "identify";
 
@@ -166,12 +168,18 @@ const renderServerCard = (server: CinemaServerInfo, compact = false) => `
   </button>
 `;
 
-const renderPlaybackSettings = (entry: CinemaEntry) => `
+const renderPlaybackSettings = (_entry: CinemaEntry, subtitles?: SubtitleTracksResponse, preference?: SubtitlePreference) => `
   <section class="cinema-playback-settings" aria-label="Playback settings">
     <button type="button"><span>${renderCinemaIcon("BadgeCheck")} Quality</span><strong>Original Quality</strong>${renderCinemaIcon("ChevronRight", "cinema-chevron-icon")}</button>
     <button type="button"><span>${renderCinemaIcon("Languages")} Audio</span><strong>English (Source)</strong>${renderCinemaIcon("ChevronRight", "cinema-chevron-icon")}</button>
-    <button type="button"><span>${renderCinemaIcon("Captions")} Subtitles</span><strong>Off</strong>${renderCinemaIcon("ChevronRight", "cinema-chevron-icon")}</button>
+    <label class="cinema-subtitle-setting"><span>${renderCinemaIcon("Captions")} Subtitles</span><select data-cinema-subtitle-select aria-label="Subtitle track"><option value="">Off</option>${subtitles?.tracks.map((track) => `<option value="${escapeHtml(track.id)}"${track.id === subtitles.selectedSubtitleId ? " selected" : ""}>${escapeHtml(track.label || track.language || "Unknown")} · ${escapeHtml(track.format)}</option>`).join("") ?? ""}</select></label>
   </section>
+  <form class="cinema-subtitle-preferences" data-cinema-subtitle-preferences>
+    <strong>Subtitle defaults</strong>
+    <label>Mode <select name="mode"><option value="off"${preference?.mode === "off" ? " selected" : ""}>Off</option><option value="forced-only"${preference?.mode === "forced-only" ? " selected" : ""}>Forced only</option><option value="preferred"${preference?.mode === "preferred" ? " selected" : ""}>Preferred languages</option></select></label>
+    <label>Languages in priority order <input name="languages" value="${escapeHtml(preference?.languages.join(", ") ?? "")}" placeholder="en, es, fr" /></label>
+    <button type="submit"${preference && !preference.persistent ? " disabled" : ""}>${preference && !preference.persistent ? "Guest choices are session-only" : "Save defaults"}</button>
+  </form>
 `;
 
 const renderWatchlistButton = (entry: CinemaEntry) => `
@@ -392,7 +400,7 @@ const renderWatchlistView = (entries: CinemaEntry[], query: string) => {
   `;
 };
 
-const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: ContinueWatchingEntry | undefined, catalog: CinemaCatalogState | undefined) => `
+const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: ContinueWatchingEntry | undefined, catalog: CinemaCatalogState | undefined, subtitles?: SubtitleTracksResponse, preference?: SubtitlePreference) => `
   <main class="cinema-title-detail" data-cinema-view="title-detail">
     <section class="cinema-player-layout">
       <div class="cinema-player-frame" data-cinema-backdrop="${escapeHtml(entry.path)}"${backdropStyle(entry)}>
@@ -416,7 +424,7 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: C
         <button class="cinema-edit-command" type="button" data-cinema-action="tmdb">${renderCinemaIcon("Database")} Match with TMDB</button>
         ${entry.tmdbId ? `<button class="cinema-edit-command" type="button" data-cinema-action="tmdb-refresh">${renderCinemaIcon("RefreshCw")} Refresh TMDB Metadata</button>` : ""}
         ${renderServerCard(currentServerInfo(), true)}
-        ${renderPlaybackSettings(entry)}
+        ${renderPlaybackSettings(entry, subtitles, preference)}
         <div class="cinema-meta-list">
           <span>Type <strong>Video</strong></span>
           ${entry.episode ? `<span>Episode <strong>S${entry.episode.seasonNumber} E${entry.episode.episodeNumber}</strong></span><span>Air date <strong>${escapeHtml(entry.episode.airDate || "Not set")}</strong></span>` : ""}
@@ -438,7 +446,7 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: C
   </main>
 `;
 
-const renderVideoPlayerView = (entry: CinemaEntry) => `
+const renderVideoPlayerView = (entry: CinemaEntry, subtitles?: SubtitleTracksResponse) => `
   <main class="cinema-watch-surface" data-cinema-view="player">
     <header class="cinema-player-header">
       <button type="button" data-cinema-action="back-title">${renderCinemaIcon("ArrowLeft")} Details</button>
@@ -451,6 +459,7 @@ const renderVideoPlayerView = (entry: CinemaEntry) => `
     </header>
     <section class="cinema-video-stage">
       <video class="cinema-player" data-cinema-player controls autoplay playsinline preload="metadata" crossorigin="anonymous"></video>
+      <label class="cinema-player-subtitles">Subtitles <select data-cinema-player-subtitle><option value="">Off</option>${subtitles?.tracks.map((track) => `<option value="${escapeHtml(track.id)}"${track.id === subtitles.selectedSubtitleId ? " selected" : ""}>${escapeHtml(track.label || track.language || "Unknown")}</option>`).join("") ?? ""}</select></label>
       <div class="cinema-player-statusbar">
         <span><i class="cinema-status-dot ${currentServerInfo().online ? "online" : "offline"}"></i>${currentServerInfo().online ? "Server Online" : "Server Offline"}</span>
         <span data-cinema-player-status>Connecting to ${escapeHtml(currentServerInfo().name)}…</span>
@@ -459,7 +468,7 @@ const renderVideoPlayerView = (entry: CinemaEntry) => `
   </main>
 `;
 
-const renderPlayerView = (entry: CinemaEntry, _entries: CinemaEntry[]) => renderVideoPlayerView(entry);
+const renderPlayerView = (entry: CinemaEntry, _entries: CinemaEntry[], subtitles?: SubtitleTracksResponse) => renderVideoPlayerView(entry, subtitles);
 
 const renderServersView = () => {
   const server = currentServerInfo();
@@ -690,6 +699,8 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   let entries: CinemaEntry[] = [];
   let activeCategory: CinemaCategory = "movies";
   let selected: CinemaEntry | null = null;
+  const subtitleState = new Map<string, SubtitleTracksResponse>();
+  let subtitlePreference: SubtitlePreference | undefined;
   let view: CinemaView = "library";
   let query = "";
   let isScanning = false;
@@ -869,11 +880,11 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     }
 
     if (view === "title-detail") {
-      content.innerHTML = selected ? renderTitleHero(selected, entries, selected.id ? playback.get(selected.id) : undefined, selected.id ? catalogState.get(selected.id) : undefined) : renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage);
+      content.innerHTML = selected ? renderTitleHero(selected, entries, selected.id ? playback.get(selected.id) : undefined, selected.id ? catalogState.get(selected.id) : undefined, selected.id ? subtitleState.get(selected.id) : undefined, subtitlePreference) : renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage);
     }
 
     if (view === "player") {
-      content.innerHTML = selected ? renderPlayerView(selected, entries) : renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage);
+      content.innerHTML = selected ? renderPlayerView(selected, entries, selected.id ? subtitleState.get(selected.id) : undefined) : renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage);
     }
 
     if (view === "servers") {
@@ -895,6 +906,22 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
 
     renderFooter();
     hydratePosters();
+    const subtitleSelect = content.querySelector<HTMLSelectElement>("[data-cinema-subtitle-select]");
+    if (subtitleSelect && selected?.id && selected.sourceId) subtitleSelect.addEventListener("change", async () => {
+      subtitleSelect.disabled = true;
+      try { await selectSubtitleTrack(selected!.id!, selected!.sourceId!, subtitleSelect.value || null); subtitleState.set(selected!.id!, await listSubtitleTracks(selected!.id!, selected!.sourceId!)); render(); }
+      catch { subtitleSelect.title = "Subtitle selection is unavailable; video playback is unaffected."; subtitleSelect.disabled = false; }
+    });
+    content.querySelector<HTMLFormElement>("[data-cinema-subtitle-preferences]")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const data = new FormData(form);
+      try {
+        subtitlePreference = await saveSubtitlePreference({ mode: String(data.get("mode")) as SubtitlePreference["mode"], languages: String(data.get("languages") ?? "").split(",").map((value) => value.trim()).filter(Boolean) });
+        if (selected?.id && selected.sourceId) subtitleState.set(selected.id, await listSubtitleTracks(selected.id, selected.sourceId));
+        render();
+      } catch (error) { form.title = error instanceof Error ? error.message : "Preferences could not be saved."; }
+    });
   };
 
   const saveSelectedToPlaylist = async (entry: CinemaEntry, button: HTMLButtonElement) => {
@@ -930,6 +957,8 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     view = "title-detail";
     render();
     void loadCatalogDetail(entry);
+    if (entry.id && entry.sourceId) void listSubtitleTracks(entry.id, entry.sourceId).then((state) => { subtitleState.set(entry.id!, state); if (selected?.id === entry.id) render(); }).catch(() => {});
+    if (!subtitlePreference) void getSubtitlePreference().then((value) => { subtitlePreference = value; if (selected?.id === entry.id) render(); }).catch(() => {});
   };
 
   const openPlayer = (fullscreen = false) => {
@@ -993,6 +1022,26 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
           status.textContent = message;
         }
       };
+      const attachSubtitle = (subtitleId: string | null) => {
+        player.querySelectorAll("track").forEach((track) => track.remove());
+        const state = playingEntry.id ? subtitleState.get(playingEntry.id) : undefined;
+        const track = state?.tracks.find((candidate) => candidate.id === subtitleId);
+        if (!track || track.kind !== "sidecar" || !playingEntry.id || !playingEntry.sourceId) return;
+        const node = document.createElement("track");
+        node.kind = "subtitles";
+        node.label = track.label;
+        node.srclang = track.language ?? "und";
+        node.src = subtitleAssetUrl(playingEntry.id, playingEntry.sourceId, track.id);
+        node.default = true;
+        player.append(node);
+        node.addEventListener("load", () => { if (node.track) node.track.mode = "showing"; });
+      };
+      const playerSubtitle = content.querySelector<HTMLSelectElement>("[data-cinema-player-subtitle]");
+      attachSubtitle(playerSubtitle?.value || null);
+      playerSubtitle?.addEventListener("change", async () => {
+        try { await selectSubtitleTrack(playingEntry.id!, playingEntry.sourceId!, playerSubtitle.value || null); attachSubtitle(playerSubtitle.value || null); }
+        catch { setStatus("Subtitles are unavailable; video playback continues."); }
+      });
 
       player.addEventListener("play", () => {
         renderPlaybackState();

@@ -36,6 +36,7 @@ export interface PlaybackPlanResponse {
     container: string | null;
     protocol: "file" | "hls" | null;
     videoCodec: string | null;
+    subtitle?: { id: string; delivery: "sidecar" | "embedded" | "burn-in"; format: string | null } | null;
   };
   reasons: PlaybackPlanReason[];
   sourceId: CatalogId;

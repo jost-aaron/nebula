@@ -39,3 +39,15 @@ test("Cinema, Studio, and Files expose deterministic smoke paths", async ({ page
   await expect(page.locator("[data-file-list]")).toContainText("fixture-note.txt");
   await expect(page.getByRole("button", { name: "Upload", exact: true })).toBeVisible();
 });
+
+test("Cinema attaches the selected WebVTT subtitle without blocking playback", async ({ page }) => {
+  await openApp(page, "Cinema");
+  await page.locator("[data-cinema-grid] .cinema-card", { hasText: "E2E Movie" }).click();
+  const selector = page.locator("[data-cinema-subtitle-select]");
+  await expect(selector).toBeVisible();
+  await expect.poll(() => selector.locator("option").count()).toBeGreaterThan(1);
+  await selector.selectOption(await selector.locator("option").nth(1).getAttribute("value") ?? "");
+  await page.locator(".cinema-actions [data-cinema-action='play']").click();
+  await expect(page.locator("video[data-cinema-player] track[kind='subtitles']")).toHaveCount(1);
+  await expect(page.locator("[data-cinema-player-subtitle]")).toHaveValue(/sub_/);
+});

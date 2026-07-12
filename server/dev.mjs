@@ -24,6 +24,7 @@ import { createPlaybackPolicyRepository, createPlaybackPolicyService, playbackPo
 import { createBackupService } from "./backup/index.mjs";
 import { auditMigration, createAuditService } from "./audit/index.mjs";
 import { createMediaListsService, mediaListsMigration } from "./mediaLists/index.mjs";
+import { createSubtitleService, subtitleMigration } from "./subtitles/index.mjs";
 import {
   createCatalogCheck,
   createDatabaseCheck,
@@ -48,7 +49,7 @@ const database = await openNebulaDatabase(storage.accountDatabasePath);
 const accountStore = await createAccountStore({ database });
 const guestService = createGuestService({ accountStore });
 accountStore.setOwnerCreatedHook(() => guestService.revokeAll());
-applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration]);
+applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration]);
 const auditService = createAuditService({
   db: database,
   maxEvents: Number(process.env.NEBULA_AUDIT_MAX_EVENTS ?? 10_000),
@@ -74,16 +75,22 @@ const playbackService = createPlaybackService({
   visibilityFilter: ({ itemId }, principal) => libraryPermissions.canAccessItem(principal, itemId)
 });
 const resolveCatalogSource = ({ itemId, sourceId }, principal) => {
-  if (principal?.type !== "user" || !principal.userId) throw Object.assign(new Error("Account playback access is required."), { status: 403 });
+  if (!(["user", "guest"].includes(principal?.type))) throw Object.assign(new Error("Account playback access is required."), { status: 403 });
   const item = catalogRepository.getItem(itemId);
   const source = catalogRepository.getSource(sourceId);
   if (!item || !source || source.itemId !== itemId || source.availability !== "available" || source.rootId !== catalogRoot.id
     || item.libraryId !== catalogRoot.library_id || !libraryPermissions.canAccessLibrary(principal, item.libraryId)) return null;
   return source;
 };
+const subtitleService = createSubtitleService({
+  database, contentRoot: storage.contentRoot, resolveSource: resolveCatalogSource, probeReader,
+  canAccessItem: (principal, itemId) => libraryPermissions.canAccessItem(principal, itemId)
+});
 const playbackPlanner = createPlaybackPlanner({ resolveMedia: async (ids, principal) => {
   const source = await resolveCatalogSource(ids, principal);
-  return source ? { item: catalogRepository.getItem(ids.itemId), probe: probeReader.get(ids.sourceId), source } : null;
+  if (!source) return null;
+  const subtitles = await subtitleService.selection(ids, principal);
+  return { item: catalogRepository.getItem(ids.itemId), probe: probeReader.get(ids.sourceId), source, subtitleSelection: subtitles };
 } });
 const deliveryCacheRoot = path.join(storage.dataRoot, "delivery-cache");
 const remuxService = createRemuxService({ contentRoot: storage.contentRoot, outputRoot: path.join(deliveryCacheRoot, "remux"), resolveSource: resolveCatalogSource, concurrency: 2 });
@@ -172,7 +179,8 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   playback: playbackService,
   playbackPlanner,
   playbackDelivery,
-  playbackPolicy
+  playbackPolicy,
+  subtitles: subtitleService
 });
 jobsWorker.start();
 jobsService.enqueue({ type: "scan", payload: { rootId: catalogRoot.id }, dedupeKey: `startup:${catalogRoot.id}` });
