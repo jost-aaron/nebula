@@ -11,6 +11,7 @@ import { catalogMigration } from "../server/catalog/schema.mjs";
 import { PLAYBACK_MIGRATION } from "../server/playback/schema.mjs";
 import { jobsMigration } from "../server/jobs/schema.mjs";
 import { probeMigration } from "../server/probe/catalogAdapter.mjs";
+import { auditMigration } from "../server/audit/schema.mjs";
 
 const fixture = async (t) => {
   const root = await import("node:fs/promises").then(({ mkdtemp }) => mkdtemp(path.join(os.tmpdir(), "nebula-backup-")));
@@ -19,7 +20,7 @@ const fixture = async (t) => {
   const databasePath = path.join(dataRoot, "nebula.sqlite");
   const database = await openNebulaDatabase(databasePath);
   migrateAccountSchema(database);
-  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration]);
+  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, auditMigration]);
   t.after(() => database.close());
   return { backupRoot: path.join(root, "backups"), dataRoot, database, databasePath, root };
 };
@@ -41,6 +42,9 @@ test("online backup captures WAL state and restores every persisted domain", asy
   scope.database.prepare(`INSERT INTO background_jobs (id, type, state, payload_json, progress, attempt, max_attempts, available_at, created_at, updated_at)
     VALUES ('job', 'probe', 'queued', '{}', 0, 0, 3, ?, ?, ?)`).run(now, now, now);
   scope.database.prepare("INSERT INTO media_probe_results (source_id, format_name, probed_at) VALUES ('source', 'mp4', ?)").run(now);
+  scope.database.prepare(`INSERT INTO audit_events
+    (id, event_type, actor_kind, principal_id, actor_role, target_type, target_id, occurred_at, outcome, metadata_json)
+    VALUES ('audit', 'job.enqueued', 'account', 'owner', 'owner', 'job', 'job', ?, 'success', '{"jobType":"probe"}')`).run(now);
 
   const service = createBackupService({ ...scope, now: () => new Date(now) });
   const manifest = await service.create({ backupId: "wave4" });
@@ -56,6 +60,7 @@ test("online backup captures WAL state and restores every persisted domain", asy
   assert.equal(db.prepare("SELECT position_seconds FROM playback_states WHERE user_id = 'owner'").get().position_seconds, 42);
   assert.equal(db.prepare("SELECT state FROM background_jobs WHERE id = 'job'").get().state, "queued");
   assert.equal(db.prepare("SELECT format_name FROM media_probe_results WHERE source_id = 'source'").get().format_name, "mp4");
+  assert.equal(db.prepare("SELECT event_type FROM audit_events WHERE id = 'audit'").get().event_type, "job.enqueued");
 });
 
 test("backup includes only safe catalog-referenced metadata cache files", async (t) => {

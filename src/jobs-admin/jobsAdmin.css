@@ -7,6 +7,7 @@
   padding: 14px;
   background: rgba(255, 255, 255, 0.06);
 }
+.jobs-admin[hidden] { display: none; }
 
 .jobs-admin h3, .jobs-admin p { margin: 0; }
 .jobs-admin-header, .jobs-admin-actions, .jobs-admin-filters, .jobs-admin-card-header,

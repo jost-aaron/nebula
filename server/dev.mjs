@@ -19,6 +19,7 @@ import { createRemuxService } from "./remux/index.mjs";
 import { createTranscodeService } from "./transcode/index.mjs";
 import { createDeliveryService } from "./playback/delivery.mjs";
 import { createBackupService } from "./backup/index.mjs";
+import { auditMigration, createAuditService } from "./audit/index.mjs";
 import {
   createCatalogCheck,
   createDatabaseCheck,
@@ -40,7 +41,12 @@ const host = process.env.HOST ?? "0.0.0.0";
 const storage = await createStorage({ contentRoot, dataRoot });
 const database = await openNebulaDatabase(storage.accountDatabasePath);
 const accountStore = await createAccountStore({ database });
-applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration]);
+applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, auditMigration]);
+const auditService = createAuditService({
+  db: database,
+  maxEvents: Number(process.env.NEBULA_AUDIT_MAX_EVENTS ?? 10_000),
+  retentionDays: Number(process.env.NEBULA_AUDIT_RETENTION_DAYS ?? 90)
+});
 const catalogRepository = createCatalogRepository(database);
 const probeReader = createProbeCatalogReader(database);
 const { root: catalogRoot } = bootstrapSharedContentRoot(catalogRepository, { contentRoot: storage.contentRoot });
@@ -96,7 +102,7 @@ const jobsWorker = createJobsWorker({
   }),
   repository: jobsRepository
 });
-const authGuard = createAuthGuard(accountStore);
+const authGuard = createAuthGuard(accountStore, { audit: auditService });
 const backupService = createBackupService({
   backupRoot,
   dataRoot: storage.dataRoot,
@@ -136,6 +142,7 @@ const handleObservability = createObservabilityRoutes({
   service: observabilityService
 });
 const handleApi = createApiHandler(storage, accountStore, authGuard, {
+  audit: auditService,
   backup: backupService,
   catalog: { probeReader, repository: catalogRepository, scan: scanCatalog },
   jobs: jobsService,

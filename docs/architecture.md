@@ -21,6 +21,7 @@ flowchart TD
   Library["src/library"]
   Files["src/files"]
   Account["src/account"]
+  Activity["src/activity-admin"]
   Server["server/dev.mjs"]
   Content["content/"]
   AccountStore["SQLite /app/data/nebula.sqlite"]
@@ -39,6 +40,7 @@ flowchart TD
   Library --> Main
   Files --> Main
   Account --> Main
+  Activity --> Main
   Registry --> Search
   Registry --> Library
   Server --> Content
@@ -119,6 +121,19 @@ flowchart TD
 
 - Renders the Settings/Diagnostics app surface.
 - Keeps dense diagnostics markup out of `src/main.ts`.
+
+`src/activity-admin/`
+
+- Renders and binds the owner-only, filterable Activity history in Settings.
+- Uses `src/api/auditApi.ts` for bounded cursor pagination.
+
+`server/audit/`
+
+- Owns the `audit-v1` migration, strict event/redaction contract, retention,
+  cursor queries, and owner/service-admin route.
+- Records account, authorization, scan/job, backup, and server-administration
+  seams best-effort so audit storage cannot corrupt primary operations.
+- See `docs/audit-history.md`.
 
 `src/search/`
 

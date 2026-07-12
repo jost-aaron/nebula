@@ -1,5 +1,6 @@
 import { BackupError } from "./errors.mjs";
 import { json, readBody } from "../http.mjs";
+import { actorFromContext } from "../audit/service.mjs";
 
 const summarizeManifest = (manifest) => ({
   backupId: manifest.backupId,
@@ -30,7 +31,7 @@ const rethrowRouteError = (error) => {
   throw error;
 };
 
-export const createBackupRoutes = (service) => async (request, response, url) => {
+export const createBackupRoutes = (service, audit = null) => async (request, response, url) => {
   if (request.method === "GET" && url.pathname === "/api/admin/backups") {
     try {
       const backups = await service.list();
@@ -45,9 +46,11 @@ export const createBackupRoutes = (service) => async (request, response, url) =>
     try {
       const body = await readBody(request);
       const manifest = await service.create({ backupId: body.backupId });
+      audit?.recordBestEffort({ actor: actorFromContext(request.nebulaAuth), eventType: "backup.created", outcome: "success", target: { type: "backup", id: manifest.backupId }, metadata: { requestedBy: "manual" } });
       json(response, 201, { backup: summarizeManifest(manifest) });
       return true;
     } catch (error) {
+      audit?.recordBestEffort({ actor: actorFromContext(request.nebulaAuth), eventType: "backup.created", outcome: "failure", metadata: { requestedBy: "manual" } });
       rethrowRouteError(error);
     }
   }
@@ -56,6 +59,7 @@ export const createBackupRoutes = (service) => async (request, response, url) =>
   if (request.method === "GET" && match) {
     try {
       const { manifest, schema } = await service.inspect({ backupId: match[1] });
+      audit?.recordBestEffort({ actor: actorFromContext(request.nebulaAuth), eventType: "backup.inspected", outcome: "success", target: { type: "backup", id: match[1] }, metadata: { requestedBy: "manual" } });
       json(response, 200, {
         backup: summarizeManifest(manifest),
         validation: {
@@ -66,6 +70,7 @@ export const createBackupRoutes = (service) => async (request, response, url) =>
       });
       return true;
     } catch (error) {
+      audit?.recordBestEffort({ actor: actorFromContext(request.nebulaAuth), eventType: "backup.inspected", outcome: "failure", target: { type: "backup", id: match[1] }, metadata: { requestedBy: "manual" } });
       rethrowRouteError(error);
     }
   }

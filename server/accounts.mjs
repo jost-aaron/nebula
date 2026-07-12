@@ -1,5 +1,6 @@
 import { clearSessionCookie, sessionCookie } from "./auth.mjs";
 import { json, readBody } from "./http.mjs";
+import { actorFromContext } from "./audit/service.mjs";
 
 const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 const clientLabel = (request, body) => String(body.clientLabel ?? request.headers["user-agent"] ?? "Nebula client").slice(0, 160);
@@ -16,7 +17,7 @@ const authResponse = (request, response, status, result, native) => {
   });
 };
 
-export const createAccountRoutes = (accountStore, authGuard) => async (request, response, url) => {
+export const createAccountRoutes = (accountStore, authGuard, audit = null) => async (request, response, url) => {
   if (request.method === "GET" && url.pathname === "/api/auth/status") {
     const context = request.nebulaAuth;
     json(response, 200, {
@@ -30,25 +31,29 @@ export const createAccountRoutes = (accountStore, authGuard) => async (request, 
 
   if (request.method === "POST" && url.pathname === "/api/auth/setup") {
     const body = await readBody(request, { limit: 32 * 1024 });
-    const result = await accountStore.setupOwner({
-      clientLabel: clientLabel(request, body),
-      displayName: body.displayName,
-      password: body.password,
-      username: body.username
-    });
-    authResponse(request, response, 201, result, isNative(body));
+    try {
+      const result = await accountStore.setupOwner({
+        clientLabel: clientLabel(request, body), displayName: body.displayName, password: body.password, username: body.username
+      });
+      audit?.recordBestEffort({ actor: { kind: "account", principalId: result.user.id, role: result.user.role }, eventType: "account.owner_setup", outcome: "success", target: { type: "account", id: result.user.id }, metadata: { clientType: isNative(body) ? "native" : "browser" } });
+      authResponse(request, response, 201, result, isNative(body));
+    } catch (error) {
+      audit?.recordBestEffort({ actor: { kind: "anonymous" }, eventType: "account.owner_setup", outcome: "failure", metadata: { clientType: isNative(body) ? "native" : "browser" } });
+      throw error;
+    }
     return true;
   }
 
   if (request.method === "POST" && url.pathname === "/api/auth/login") {
     const body = await readBody(request, { limit: 32 * 1024 });
-    const result = await accountStore.login({
-      clientLabel: clientLabel(request, body),
-      password: body.password,
-      remoteAddress: authGuard.remoteAddress(request),
-      username: body.username
-    });
-    authResponse(request, response, 200, result, isNative(body));
+    try {
+      const result = await accountStore.login({ clientLabel: clientLabel(request, body), password: body.password, remoteAddress: authGuard.remoteAddress(request), username: body.username });
+      audit?.recordBestEffort({ actor: { kind: "account", principalId: result.user.id, role: result.user.role }, eventType: "account.login", outcome: "success", target: { type: "account", id: result.user.id }, metadata: { clientType: isNative(body) ? "native" : "browser", transport: isNative(body) ? "bearer" : "cookie" } });
+      authResponse(request, response, 200, result, isNative(body));
+    } catch (error) {
+      audit?.recordBestEffort({ actor: { kind: "anonymous" }, eventType: "account.login", outcome: "failure", metadata: { clientType: isNative(body) ? "native" : "browser" } });
+      throw error;
+    }
     return true;
   }
 
@@ -87,16 +92,19 @@ export const createAccountRoutes = (accountStore, authGuard) => async (request, 
       const body = await readBody(request, { limit: 8 * 1024 });
       const token = typeof body.token === "string" ? body.token.trim() : "";
       if (token.length < 20 || token.length > 2048 || /\s/.test(token)) {
+        audit?.recordBestEffort({ actor: actorFromContext(context), eventType: "account.server_setting_changed", outcome: "failure", target: { type: "server-setting", id: "tmdb" }, metadata: { setting: "tmdb" } });
         json(response, 400, { error: "Enter a valid TMDB API Read Access Token." });
         return true;
       }
       accountStore.setServerSetting("tmdb_api_token", token);
+      audit?.recordBestEffort({ actor: actorFromContext(context), eventType: "account.server_setting_changed", outcome: "success", target: { type: "server-setting", id: "tmdb" }, metadata: { setting: "tmdb" } });
       json(response, 200, { configured: true, source: "admin" });
       return true;
     }
 
     if (request.method === "DELETE") {
       accountStore.deleteServerSetting("tmdb_api_token");
+      audit?.recordBestEffort({ actor: actorFromContext(context), eventType: "account.server_setting_changed", outcome: "success", target: { type: "server-setting", id: "tmdb" }, metadata: { setting: "tmdb" } });
       json(response, 200, {
         configured: environment,
         source: environment ? "environment" : "none"
@@ -107,6 +115,7 @@ export const createAccountRoutes = (accountStore, authGuard) => async (request, 
 
   if (request.method === "POST" && url.pathname === "/api/auth/logout") {
     accountStore.revokeSession(context.user.id, context.sessionId);
+    audit?.recordBestEffort({ actor: actorFromContext(context), eventType: "account.logout", outcome: "success", target: { type: "session", id: context.sessionId }, metadata: { transport: context.transport } });
     response.setHeader("set-cookie", clearSessionCookie(request));
     json(response, 200, { ok: true });
     return true;
@@ -114,28 +123,29 @@ export const createAccountRoutes = (accountStore, authGuard) => async (request, 
 
   if (request.method === "PATCH" && url.pathname === "/api/auth/profile") {
     const body = await readBody(request, { limit: 32 * 1024 });
-    json(response, 200, { user: accountStore.updateProfile(context.user.id, body) });
+    try {
+      const user = accountStore.updateProfile(context.user.id, body);
+      audit?.recordBestEffort({ actor: actorFromContext(context), eventType: "account.profile_updated", outcome: "success", target: { type: "account", id: context.user.id } });
+      json(response, 200, { user });
+    } catch (error) {
+      audit?.recordBestEffort({ actor: actorFromContext(context), eventType: "account.profile_updated", outcome: "failure", target: { type: "account", id: context.user.id } });
+      throw error;
+    }
     return true;
   }
 
   if (request.method === "POST" && url.pathname === "/api/auth/change-password") {
     const body = await readBody(request, { limit: 32 * 1024 });
-    const result = await accountStore.changePassword({
-      clientLabel: clientLabel(request, body),
-      currentPassword: body.currentPassword,
-      currentSessionId: context.sessionId,
-      newPassword: body.newPassword,
-      userId: context.user.id
-    });
-    const native = context.transport === "bearer";
-    if (!native) response.setHeader("set-cookie", sessionCookie(request, result.session.token, SESSION_MAX_AGE_SECONDS));
-    json(response, 200, {
-      csrfToken: native ? null : result.session.csrfToken,
-      expiresAt: result.session.expiresAt,
-      sessionToken: native ? result.session.token : undefined,
-      transport: context.transport,
-      user: accountStore.getUser(context.user.id)
-    });
+    try {
+      const result = await accountStore.changePassword({ clientLabel: clientLabel(request, body), currentPassword: body.currentPassword, currentSessionId: context.sessionId, newPassword: body.newPassword, userId: context.user.id });
+      audit?.recordBestEffort({ actor: actorFromContext(context), eventType: "account.password_changed", outcome: "success", target: { type: "account", id: context.user.id } });
+      const native = context.transport === "bearer";
+      if (!native) response.setHeader("set-cookie", sessionCookie(request, result.session.token, SESSION_MAX_AGE_SECONDS));
+      json(response, 200, { csrfToken: native ? null : result.session.csrfToken, expiresAt: result.session.expiresAt, sessionToken: native ? result.session.token : undefined, transport: context.transport, user: accountStore.getUser(context.user.id) });
+    } catch (error) {
+      audit?.recordBestEffort({ actor: actorFromContext(context), eventType: "account.password_changed", outcome: "failure", target: { type: "account", id: context.user.id } });
+      throw error;
+    }
     return true;
   }
 
@@ -151,20 +161,35 @@ export const createAccountRoutes = (accountStore, authGuard) => async (request, 
 
   if (request.method === "POST" && url.pathname === "/api/auth/accounts") {
     const body = await readBody(request, { limit: 32 * 1024 });
-    json(response, 201, { user: await accountStore.createMember(body) });
+    try {
+      const user = await accountStore.createMember(body);
+      audit?.recordBestEffort({ actor: actorFromContext(context), eventType: "account.member_created", outcome: "success", target: { type: "account", id: user.id } });
+      json(response, 201, { user });
+    } catch (error) {
+      audit?.recordBestEffort({ actor: actorFromContext(context), eventType: "account.member_created", outcome: "failure" });
+      throw error;
+    }
     return true;
   }
 
   const accountMatch = url.pathname.match(/^\/api\/auth\/accounts\/([a-f0-9-]{36})$/i);
   if (request.method === "PATCH" && accountMatch) {
     const body = await readBody(request, { limit: 8 * 1024 });
-    json(response, 200, { user: accountStore.setMemberDisabled(accountMatch[1], Boolean(body.disabled)) });
+    try {
+      const user = accountStore.setMemberDisabled(accountMatch[1], Boolean(body.disabled));
+      audit?.recordBestEffort({ actor: actorFromContext(context), eventType: "account.member_status_changed", outcome: "success", target: { type: "account", id: accountMatch[1] }, metadata: { disabled: Boolean(body.disabled) } });
+      json(response, 200, { user });
+    } catch (error) {
+      audit?.recordBestEffort({ actor: actorFromContext(context), eventType: "account.member_status_changed", outcome: "failure", target: { type: "account", id: accountMatch[1] }, metadata: { disabled: Boolean(body.disabled) } });
+      throw error;
+    }
     return true;
   }
 
   const sessionMatch = url.pathname.match(/^\/api\/auth\/sessions\/([a-f0-9-]{36})$/i);
   if (request.method === "DELETE" && sessionMatch) {
     accountStore.revokeSession(context.user.id, sessionMatch[1]);
+    audit?.recordBestEffort({ actor: actorFromContext(context), eventType: "account.session_revoked", outcome: "success", target: { type: "session", id: sessionMatch[1] } });
     if (sessionMatch[1] === context.sessionId) response.setHeader("set-cookie", clearSessionCookie(request));
     json(response, 200, { currentRevoked: sessionMatch[1] === context.sessionId, ok: true });
     return true;

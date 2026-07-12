@@ -1,6 +1,7 @@
 import { json } from "../http.mjs";
+import { actorFromContext } from "../audit/service.mjs";
 
-export const createCatalogRoutes = ({ probeReader = null, repository, scan }) => async (request, response, url) => {
+export const createCatalogRoutes = ({ probeReader = null, repository, scan }, audit = null) => async (request, response, url) => {
   if (request.method === "GET" && url.pathname === "/api/catalog/items") {
     const mediaKind = url.searchParams.get("mediaKind") || undefined;
     const availability = url.searchParams.get("availability") || undefined;
@@ -23,7 +24,14 @@ export const createCatalogRoutes = ({ probeReader = null, repository, scan }) =>
   }
 
   if (request.method === "POST" && url.pathname === "/api/catalog/scan") {
-    json(response, 202, { scan: await scan() });
+    try {
+      const result = await scan();
+      audit?.recordBestEffort({ actor: actorFromContext(request.nebulaAuth), eventType: "catalog.scan_requested", outcome: "success", target: { type: "library", id: "shared-content" }, metadata: { requestedBy: "manual" } });
+      json(response, 202, { scan: result });
+    } catch (error) {
+      audit?.recordBestEffort({ actor: actorFromContext(request.nebulaAuth), eventType: "catalog.scan_requested", outcome: "failure", target: { type: "library", id: "shared-content" }, metadata: { requestedBy: "manual" } });
+      throw error;
+    }
     return true;
   }
 

@@ -14,7 +14,9 @@ Studio scans local audio into a dedicated music player.
 Nebula starts with deliberate local owner setup and requires an account for the
 dashboard. Browser sessions use cookies and CSRF protection; Capacitor uses
 revocable bearer sessions. Owners can add or disable members, and Cinema
-watchlists are personal while the media library stays server-shared.
+watchlists are personal while the media library stays server-shared. Owners
+also have a bounded, redacted Activity history for account, authorization,
+scan/job, backup, and other server-administration actions.
 
 ## Run
 
@@ -60,6 +62,7 @@ without either configuration source.
 - `src/diagnostics/` - renderer, display, runtime, app, and performance
   diagnostics collectors.
 - `src/settings/` - shared Settings/Diagnostics panel renderer.
+- `src/activity-admin/` - owner-only responsive audit history surface.
 - `src/search/` - shared Search UI for the Search app.
 - `src/library/` - installed-app Library grid renderer.
 - `src/cinema/` - Plex-like local video library and lazy web player.
@@ -73,6 +76,7 @@ without either configuration source.
 - `server/accountStore.mjs` - SQLite accounts, credentials, sessions,
   throttling, watchlists, and media tickets.
 - `server/accounts.mjs` - account and session API routes.
+- `server/audit/` - structured audit migration, retention, redaction, and API.
 - `content/` - ignored local content root for Files and Cinema.
 - `ios/` - Capacitor iOS shell.
 - `scripts/ios-sync*.sh` - Docker-first Capacitor web asset sync helpers.

@@ -31,6 +31,10 @@ Wave 2 coverage also includes persistent job recovery and FIFO claiming,
 container FFprobe availability, bounded subprocess failures, path/symlink
 safety, normalized stream metadata, enriched catalog responses, and explicit
 watched-state updates without synthetic sessions.
+Wave 4 audit coverage includes idempotent migration, count/age retention,
+allowlisted write/read redaction, best-effort storage failure, cursor pagination,
+filter validation, owner/service-admin access, member denial, safe seam capture,
+and desktop plus 390×844 Settings Activity layout contracts.
 
 ## API Smoke Checks
 
@@ -129,6 +133,8 @@ Check:
 - Owner Settings includes a Jobs category with refresh, filtering, maintenance
   enqueue actions, and cancellation confirmation.
 - Member Settings does not show the Jobs category or owner-only admin controls.
+- Owner Settings includes an Activity category with event, outcome, actor,
+  principal, and date filters plus bounded pagination; members do not see it.
 - Cinema opens the local video browser and shows supported videos from
   `content/`.
 - Cinema has a visible Dashboard command that returns to the main dashboard.
@@ -213,6 +219,9 @@ At a phone-like viewport, for example `390 x 844`:
 - At `390 x 844`, the owner Jobs category keeps the enqueue actions in a
   two-column grid, filters stretch full width, and confirmation controls stay
   reachable without horizontal overflow.
+- At `390 x 844`, owner Activity filters and event details use one column, the
+  refresh/load-more controls span the panel, and the page has no horizontal
+  overflow. Selecting Activity hides Jobs and other Settings sections.
 
 ## iOS Safe-Area Test
 

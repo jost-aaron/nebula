@@ -9,6 +9,7 @@ import { createPerformanceMonitor } from "./diagnostics/performanceMonitor";
 import type { RendererRuntimeState } from "./diagnostics/types";
 import { bindFileBrowser, renderFileBrowserShell } from "./files/fileBrowser";
 import { bindJobsAdmin } from "./jobs-admin/renderJobsAdmin";
+import { bindActivityAdmin } from "./activity-admin/renderActivityAdmin";
 import { filterApps, renderSearchResults, renderSearchView } from "./search/renderSearchView";
 import { renderSettingsPanel } from "./settings/renderSettingsPanel";
 import { bindStudioView, renderStudioView } from "./studio/renderStudioView";
@@ -219,6 +220,7 @@ const bindSettingsTabs = (container: ParentNode) => {
     all: [],
     account: ["account"],
     jobs: ["jobs"],
+    activity: ["activity"],
     apps: ["apps"],
     display: ["display"],
     performance: ["performance"],
@@ -378,6 +380,9 @@ const launchApp = async (app: DashboardApp) => {
     bindAccountSettings(appSurface);
     if (accountSession.user.role === "owner") {
       disposeActiveApp = bindJobsAdmin(appSurface);
+      const disposeJobs = disposeActiveApp;
+      const disposeActivity = bindActivityAdmin(appSurface);
+      disposeActiveApp = () => { disposeJobs(); disposeActivity(); };
     }
   }
 

@@ -37,6 +37,8 @@ The current app includes:
   explicit per-user watched state.
 - Wave 3 account-bound playback delivery with server-authored direct, MP4 remux,
   and software HLS decisions plus expiring cache cleanup.
+- Wave 4 bounded structured audit history with owner/service-admin APIs and an
+  owner-only responsive Settings Activity surface.
 
 The latest user direction is to keep building toward a modern console/Plex-like
 media dashboard.
@@ -88,6 +90,15 @@ Accounts:
   access but not Files mutations or shared Cinema metadata editing.
 - Legacy `NEBULA_API_TOKEN` remains an owner-capability service path.
 - See `docs/accounts.md` and `docs/account-design/README.md`.
+
+Audit history:
+
+- `server/audit/` owns migration, allowlisted recording/redaction, retention,
+  pagination, and `/api/admin/audit`.
+- Owners and service admins may filter/read events; members are denied.
+- Settings / Activity is owner-only and responsive at 390×844.
+- Audit recording is best-effort and never stores secrets, raw errors, media
+  paths/filenames, or backup paths. See `docs/audit-history.md`.
 
 Files:
 
@@ -172,6 +183,7 @@ Read these in order:
 10. `docs/development.md`
 11. `docs/media-contracts.md`
 12. `docs/media-platform-parallel-plan.md`
+13. `docs/audit-history.md`
 
 ## Recent Verification
 
