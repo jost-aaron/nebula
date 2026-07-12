@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { ProbeError } from "./errors.mjs";
 
 export const PROBE_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS media_probe_results (
@@ -33,6 +34,22 @@ export const probeMigration = Object.freeze({
   apply(database) { database.exec(PROBE_SCHEMA_SQL); }
 });
 
+export const probeRevisionMigration = Object.freeze({
+  domain: "probe",
+  version: 2,
+  id: "probe-v2",
+  apply(database) {
+    const columns = database.prepare("SELECT name FROM pragma_table_info('media_probe_results')").all();
+    if (!columns.length) throw new Error("probe-v2 requires probe-v1.");
+    if (!columns.some(({ name }) => name === "source_content_revision")) {
+      database.exec(`ALTER TABLE media_probe_results ADD COLUMN source_content_revision INTEGER
+        CHECK (source_content_revision IS NULL OR source_content_revision > 0)`);
+    }
+  }
+});
+
+export const probeMigrations = Object.freeze([probeMigration, probeRevisionMigration]);
+
 const transaction = (database, action) => {
   database.exec("BEGIN IMMEDIATE");
   try {
@@ -46,17 +63,23 @@ const transaction = (database, action) => {
 };
 
 export const createProbeCatalogWriter = (database, { now = () => new Date().toISOString(), uuid = randomUUID } = {}) => ({
-  putProbeResult(sourceId, result) {
+  putProbeResult(sourceId, result, { expectedContentRevision } = {}) {
     return transaction(database, () => {
-      if (!database.prepare("SELECT 1 FROM media_sources WHERE id = ?").get(sourceId)) throw new Error(`Unknown catalog source: ${sourceId}`);
+      const source = database.prepare("SELECT content_revision FROM media_sources WHERE id = ?").get(sourceId);
+      if (!source) throw new Error(`Unknown catalog source: ${sourceId}`);
+      const sourceContentRevision = expectedContentRevision ?? source.content_revision;
+      if (source.content_revision !== sourceContentRevision) {
+        throw new ProbeError("stale_source_revision", `Catalog source revision changed while probing: ${sourceId}.`, { retryable: true });
+      }
       const format = result.format ?? {};
       database.prepare(`INSERT INTO media_probe_results
-        (source_id, format_name, format_long_name, duration_seconds, bitrate, size_bytes, probed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(source_id) DO UPDATE SET
+        (source_id, source_content_revision, format_name, format_long_name, duration_seconds, bitrate, size_bytes, probed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(source_id) DO UPDATE SET
+        source_content_revision = excluded.source_content_revision,
         format_name = excluded.format_name, format_long_name = excluded.format_long_name,
         duration_seconds = excluded.duration_seconds, bitrate = excluded.bitrate,
         size_bytes = excluded.size_bytes, probed_at = excluded.probed_at`)
-        .run(sourceId, format.name, format.longName, format.durationSeconds, format.bitrate, format.sizeBytes, now());
+        .run(sourceId, sourceContentRevision, format.name, format.longName, format.durationSeconds, format.bitrate, format.sizeBytes, now());
       database.prepare("DELETE FROM media_streams WHERE source_id = ?").run(sourceId);
       database.prepare("DELETE FROM media_chapters WHERE source_id = ?").run(sourceId);
       const insertStream = database.prepare(`INSERT INTO media_streams
@@ -95,6 +118,12 @@ export const createProbeCatalogReader = (database) => ({
     const chapters = database.prepare("SELECT * FROM media_chapters WHERE source_id = ? ORDER BY chapter_index").all(sourceId).map((row) => ({
       endSeconds: row.end_seconds, id: row.id, sourceId, startSeconds: row.start_seconds, title: row.title ?? `Chapter ${row.chapter_index + 1}`
     }));
-    return { chapters, format: format ? { bitrate: format.bitrate, durationSeconds: format.duration_seconds, name: format.format_name, probedAt: format.probed_at, sizeBytes: format.size_bytes } : null, probeState: format ? "ready" : "pending", streams };
+    return {
+      chapters,
+      format: format ? { bitrate: format.bitrate, durationSeconds: format.duration_seconds, name: format.format_name, probedAt: format.probed_at, sizeBytes: format.size_bytes } : null,
+      probeState: format ? "ready" : "pending",
+      sourceContentRevision: format?.source_content_revision ?? null,
+      streams
+    };
   }
 });

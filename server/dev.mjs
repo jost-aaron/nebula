@@ -15,7 +15,7 @@ import { createPlaybackRepository } from "./playback/repository.mjs";
 import { createPlaybackService } from "./playback/service.mjs";
 import { PLAYBACK_MIGRATION } from "./playback/schema.mjs";
 import { createJobsRepository, createJobsService, createJobsWorker, createMediaJobHandlers, jobsMigration } from "./jobs/index.mjs";
-import { createProbeCatalogReader, createProbeCatalogWriter, createProbeService, probeMigration } from "./probe/index.mjs";
+import { createProbeCatalogReader, createProbeCatalogWriter, createProbeService, probeMigrations } from "./probe/index.mjs";
 import { createPlaybackPlanner } from "./playback-planner/index.mjs";
 import { createRemuxService } from "./remux/index.mjs";
 import { createAccelerationManager, createAccelerationProbe, createTranscodeService } from "./transcode/index.mjs";
@@ -51,7 +51,7 @@ const database = await openNebulaDatabase(storage.accountDatabasePath);
 const accountStore = await createAccountStore({ database });
 const guestService = createGuestService({ accountStore });
 accountStore.setOwnerCreatedHook(() => guestService.revokeAll());
-applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration, renditionsMigration]);
+applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration, renditionsMigration]);
 const auditService = createAuditService({
   db: database,
   maxEvents: Number(process.env.NEBULA_AUDIT_MAX_EVENTS ?? 10_000),

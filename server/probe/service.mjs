@@ -42,9 +42,13 @@ export const createProbeService = ({
       if (!source || source.availability === "missing") {
         throw new ProbeError("missing", `Unknown or missing catalog source: ${sourceId}`, { retryable: true });
       }
+      const expectedContentRevision = source.contentRevision;
+      if (!Number.isInteger(expectedContentRevision) || expectedContentRevision < 1) {
+        throw new ProbeError("invalid_source_revision", `Catalog source revision is unavailable: ${sourceId}.`, { retryable: true });
+      }
       const absolutePath = await resolveProbePath(contentRoot, source.path);
       const result = normalizeFfprobe(await runner(absolutePath, runnerOptions));
-      await catalogWriter.putProbeResult(sourceId, result);
+      await catalogWriter.putProbeResult(sourceId, result, { expectedContentRevision });
       return result;
     })
   };

@@ -109,8 +109,27 @@ test("inode-backed renames preserve source and item UUIDs", async (t) => {
   assert.equal(scan.renamed, 1);
   assert.equal(after.id, before.id);
   assert.equal(after.itemId, before.itemId);
+  assert.equal(after.contentRevision, before.contentRevision);
   assert.equal(after.previousPath, "Movies/Old.mp4");
   assert.equal(repository.resolveContentPath("Movies/Old.mp4", root.id), null);
+});
+
+test("inode-backed renames increment the source revision when content facts change", async (t) => {
+  const { contentRoot, repository, root } = await setup(t);
+  const oldPath = path.join(contentRoot, "Old.mp4");
+  const newPath = path.join(contentRoot, "New.mp4");
+  await writeFile(oldPath, "movie");
+  await scanLocalRoot({ absoluteRoot: contentRoot, repository, rootId: root.id });
+  const before = repository.resolveContentPath("Old.mp4", root.id);
+  await rename(oldPath, newPath);
+  await writeFile(newPath, "changed movie bytes");
+
+  const scan = await scanLocalRoot({ absoluteRoot: contentRoot, repository, rootId: root.id });
+  const after = repository.resolveContentPath("New.mp4", root.id);
+  assert.equal(scan.renamed, 1);
+  assert.equal(after.id, before.id);
+  assert.equal(after.itemId, before.itemId);
+  assert.equal(after.contentRevision, before.contentRevision + 1);
 });
 
 test("same-path replacement creates new identities and supersedes the old source", async (t) => {
@@ -127,6 +146,7 @@ test("same-path replacement creates new identities and supersedes the old source
   assert.equal(scan.new, 1);
   assert.notEqual(after.id, before.id);
   assert.notEqual(after.itemId, before.itemId);
+  assert.equal(after.contentRevision, 1);
   assert.equal(database.prepare("SELECT availability FROM media_sources WHERE id = ?").get(before.id).availability, "superseded");
 });
 
@@ -153,6 +173,26 @@ test("incremental scans do not mark omissions missing; full scans mark, restore,
   assert.equal(restored.restored, 1);
   assert.equal(current.id, initial.id);
   assert.equal(current.cleanupEligibleAt, null);
+});
+
+test("restoring changed content preserves source identity and increments its revision", async (t) => {
+  const { contentRoot, repository, root } = await setup(t);
+  const mediaPath = path.join(contentRoot, "Return.mp4");
+  const parkedPath = path.join(path.dirname(contentRoot), "Return.changed");
+  await writeFile(mediaPath, "original");
+  await scanLocalRoot({ absoluteRoot: contentRoot, repository, rootId: root.id });
+  const before = repository.resolveContentPath("Return.mp4", root.id);
+  await rename(mediaPath, parkedPath);
+  await scanLocalRoot({ absoluteRoot: contentRoot, repository, rootId: root.id });
+  await writeFile(parkedPath, "changed while missing");
+  await rename(parkedPath, mediaPath);
+
+  const scan = await scanLocalRoot({ absoluteRoot: contentRoot, repository, rootId: root.id });
+  const after = repository.resolveContentPath("Return.mp4", root.id);
+  assert.equal(scan.restored, 1);
+  assert.equal(after.id, before.id);
+  assert.equal(after.itemId, before.itemId);
+  assert.equal(after.contentRevision, before.contentRevision + 1);
 });
 
 test("filesystem discovery failures persist failed scan state", async (t) => {

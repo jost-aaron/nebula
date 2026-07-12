@@ -12,6 +12,7 @@ import { createPlaybackRepository } from "../server/playback/repository.mjs";
 import { createPlaybackRoutes } from "../server/playback/routes.mjs";
 import { PLAYBACK_MIGRATION } from "../server/playback/schema.mjs";
 import { createPlaybackService } from "../server/playback/service.mjs";
+import { probeMigrations } from "../server/probe/index.mjs";
 
 const responseCapture = () => {
   let status = 0;
@@ -24,16 +25,17 @@ const responseCapture = () => {
   };
 };
 
-test("shared database composes account, catalog, and playback migrations once", async (t) => {
+test("shared database composes account, catalog, playback, and probe migrations once", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "nebula-media-platform-"));
   const database = await openNebulaDatabase(path.join(root, "nebula.sqlite"));
   t.after(async () => { database.close(); await rm(root, { force: true, recursive: true }); });
   const accountStore = await createAccountStore({ database });
-  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION]);
-  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION]);
+  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, ...probeMigrations]);
+  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, ...probeMigrations]);
 
-  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM nebula_domain_migrations").get().count, 2);
-  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('users', 'media_items', 'playback_states')").get().count, 3);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM nebula_domain_migrations").get().count, 4);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('users', 'media_items', 'playback_states', 'media_probe_results')").get().count, 4);
+  assert.ok(database.prepare("SELECT 1 FROM pragma_table_info('media_probe_results') WHERE name = 'source_content_revision'").get());
   accountStore.close();
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM users").get().count, 0);
 });

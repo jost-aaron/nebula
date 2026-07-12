@@ -207,6 +207,9 @@ flowchart TD
   migrations centrally ordered and independently testable.
 - Catalog indexes the shared content root into stable item/source UUIDs and
   exposes additive catalog APIs without replacing current path-based clients.
+- Catalog source revisions advance when observed size or modification time
+  changes across same-path updates, safe renames, and restores; same-path
+  replacements retain their separate new-source identity behavior.
 - Playback records idempotent per-user lifecycle events and exposes Continue
   Watching independently of Cinema UI integration.
 
@@ -226,6 +229,8 @@ flowchart TD
   startup recovery, and owner-managed operational APIs.
 - Run FFprobe with fixed arguments, path containment, time/output limits, and
   catalog-backed format, stream, HDR, subtitle, and chapter persistence.
+- Persist the source revision described by each probe and reject stale in-flight
+  results if catalog reconciliation advances that revision before persistence.
 - Startup scan jobs fan out revision-keyed probe jobs without blocking Cinema.
 
 `server/backup/` and `server/observability/`

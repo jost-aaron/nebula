@@ -6,16 +6,21 @@ It never opens the production database and never changes `PRAGMA user_version`.
 
 ## Composition
 
-The integration owner should centrally apply `probeMigration` after the catalog
+The integration owner should centrally apply `probeMigrations` after the catalog
 migration, construct `createProbeCatalogWriter(database)`, and inject it as
 `catalogWriter` into `createProbeService`. `resolveSource(sourceId)` must return
-the catalog source shape (`path` and `availability`). Probe work should be queued
-after catalog reconciliation rather than awaited by scans.
+the catalog source shape (`path`, `availability`, and `contentRevision`). Probe
+work should be queued after catalog reconciliation rather than awaited by scans.
 
-The migration descriptor creates `media_probe_results`, `media_streams`, and
-`media_chapters`. Re-probing atomically replaces a source's stream and chapter
-rows. The adapter validates the source foreign key and writes no descriptive or
-per-user metadata.
+`probe-v1` creates `media_probe_results`, `media_streams`, and `media_chapters`.
+The additive `probe-v2` migration records `source_content_revision` and
+preserves existing probe rows with an unknown revision until they are reprobed;
+their historical source revision cannot be inferred safely. Both migrations are
+idempotent and leave `PRAGMA user_version` to the account schema. Re-probing
+atomically replaces a source's format, stream, and chapter rows. The reader adds
+`sourceContentRevision` without changing existing fields or legacy ready/pending
+behavior. The adapter validates the source foreign key and writes no descriptive
+or per-user metadata.
 
 ## Safety And Failure Contract
 
@@ -25,15 +30,20 @@ per-user metadata.
   reject traversal and symlink escapes.
 - Default limits are 15 seconds, 4 MiB combined output, and two concurrent
   probes. Callers may lower these limits through `runnerOptions`.
+- The service captures the catalog source revision before FFprobe starts. The
+  writer checks that revision in the same transaction as persistence and rejects
+  stale results before replacing any current technical rows.
 - Failures use codes: `missing`, `partial_or_corrupt`, `unsupported`,
   `ffprobe_unavailable`, `timeout`, `output_limit`, `invalid_output`, and
-  `probe_failed`. Partial/corrupt and timeout failures are retryable.
+  `probe_failed`. Revision failures use `invalid_source_revision` and
+  `stale_source_revision`. Partial/corrupt, timeout, and revision failures are
+  retryable.
 - Failed probes are not persisted as successful technical metadata. Job-level
   status, retries, and failure persistence belong to the background-jobs track.
 
 ## Integration Requests
 
-1. Register `probeMigration` in the central domain migration list after catalog.
+1. Register `probeMigrations` in the central domain migration list after catalog.
 2. Compose the writer/service in server startup and enqueue probes for new or
    changed catalog sources.
 3. Decide whether the catalog repository's placeholder `putProbeResult` should

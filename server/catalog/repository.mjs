@@ -54,6 +54,7 @@ const transaction = (database, action) => {
 };
 
 const defaultClock = () => new Date().toISOString();
+const sourceContentChanged = (source, file) => source.size_bytes !== file.size || source.modified_ms !== file.modifiedMs;
 
 export const createCatalogRepository = (database, { now = defaultClock, uuid = randomUUID, missingCleanupScans = 2, missingCleanupMs = 7 * 24 * 60 * 60 * 1000 } = {}) => {
   const getLibrary = (id) => database.prepare("SELECT * FROM media_libraries WHERE id = ?").get(id) ?? null;
@@ -141,10 +142,11 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
 
       if (!source && keyed) {
         const wasMissing = keyed.availability === "missing";
+        const changed = sourceContentChanged(keyed, file);
         database.prepare(`UPDATE media_sources SET previous_path = content_path, content_path = ?, size_bytes = ?, modified_ms = ?,
-          availability = 'available', last_seen_at = ?, missing_since = NULL, missing_scan_count = 0,
+          availability = 'available', content_revision = content_revision + ?, last_seen_at = ?, missing_since = NULL, missing_scan_count = 0,
           cleanup_eligible_at = NULL, updated_at = ? WHERE id = ?`)
-          .run(file.path, file.size, file.modifiedMs, timestamp, timestamp, keyed.id);
+          .run(file.path, file.size, file.modifiedMs, changed ? 1 : 0, timestamp, timestamp, keyed.id);
         source = { ...keyed, content_path: file.path };
         if (keyed.content_path !== file.path) counts.renamed += 1;
         else if (wasMissing) counts.restored += 1;
@@ -158,7 +160,7 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
         counts.new += 1;
       } else {
         const restored = source.availability === "missing";
-        const changed = source.size_bytes !== file.size || source.modified_ms !== file.modifiedMs;
+        const changed = sourceContentChanged(source, file);
         database.prepare(`UPDATE media_sources SET file_key = ?, size_bytes = ?, modified_ms = ?, availability = 'available',
           content_revision = content_revision + ?, last_seen_at = ?, missing_since = NULL, missing_scan_count = 0,
           cleanup_eligible_at = NULL, updated_at = ? WHERE id = ?`)

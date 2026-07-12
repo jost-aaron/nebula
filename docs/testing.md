@@ -37,8 +37,10 @@ events, progress coalescing, Continue Watching, cross-user isolation, and
 catalog validation of playback item/source pairs.
 Wave 2 coverage also includes persistent job recovery and FIFO claiming,
 container FFprobe availability, bounded subprocess failures, path/symlink
-safety, normalized stream metadata, enriched catalog responses, and explicit
-watched-state updates without synthetic sessions.
+safety, normalized stream metadata, revision-safe rename/restore reconciliation,
+idempotent probe-revision migration with legacy-row compatibility, stale
+in-flight probe rejection, enriched catalog responses, and explicit watched-state
+updates without synthetic sessions.
 Wave 4 library-permission coverage additionally exercises playback-state
 filtering and writes, planner denial, delivery admission, and active-session
 denial after a grant is removed.

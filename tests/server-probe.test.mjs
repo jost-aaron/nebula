@@ -8,10 +8,13 @@ import test from "node:test";
 import {
   FFPROBE_ARGUMENTS,
   PROBE_SCHEMA_SQL,
+  createProbeCatalogReader,
   createProbeCatalogWriter,
   createProbeService,
   normalizeFfprobe,
   probeMigration,
+  probeMigrations,
+  probeRevisionMigration,
   resolveProbePath,
   runFfprobe
 } from "../server/probe/index.mjs";
@@ -77,7 +80,7 @@ test("service bounds concurrency and persists through only the injected writer",
   for (const name of ["one.mp4", "two.mp4", "three.mp4"]) await writeFile(path.join(root, name), "media");
   const service = createProbeService({
     catalogWriter: { putProbeResult: async (...args) => writes.push(args) }, concurrency: 2, contentRoot: root,
-    resolveSource: async (id) => ({ id, path: id, availability: "available" }),
+    resolveSource: async (id) => ({ id, path: id, availability: "available", contentRevision: 1 }),
     runner: async () => {
       active += 1; maximum = Math.max(maximum, active);
       await new Promise((resolve) => setTimeout(resolve, 20));
@@ -88,6 +91,27 @@ test("service bounds concurrency and persists through only the injected writer",
   await Promise.all(["one.mp4", "two.mp4", "three.mp4"].map((id) => service.probeSource(id)));
   assert.equal(maximum, 2);
   assert.deepEqual(writes.map(([id]) => id).sort(), ["one.mp4", "three.mp4", "two.mp4"]);
+  assert.ok(writes.every(([, , options]) => options.expectedContentRevision === 1));
+  t.after(() => import("node:fs/promises").then(({ rm }) => rm(root, { recursive: true, force: true })));
+});
+
+test("service captures the source revision before FFprobe starts", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "nebula-probe-revision-"));
+  await writeFile(path.join(root, "movie.mp4"), "media");
+  let currentRevision = 4;
+  let writeOptions = null;
+  const service = createProbeService({
+    catalogWriter: { putProbeResult: async (_sourceId, _result, options) => { writeOptions = options; } },
+    contentRoot: root,
+    resolveSource: async () => ({ availability: "available", contentRevision: currentRevision, path: "movie.mp4" }),
+    runner: async () => {
+      currentRevision = 5;
+      return await fixture("audio.json");
+    }
+  });
+
+  await service.probeSource("source-1");
+  assert.deepEqual(writeOptions, { expectedContentRevision: 4 });
   t.after(() => import("node:fs/promises").then(({ rm }) => rm(root, { recursive: true, force: true })));
 });
 
@@ -98,23 +122,50 @@ test("runner uses fixed arguments and classifies corrupt and bounded failures", 
   await assert.rejects(runFfprobe(new URL("./fixtures/probe/corrupt.mp4", import.meta.url).pathname, { maxOutputBytes: 1 }), { code: "output_limit" });
 });
 
-test("probe migration is centrally composable and adapter atomically replaces technical rows", async (t) => {
+test("probe-v2 migration preserves legacy rows with unknown revisions idempotently", (t) => {
   assert.doesNotMatch(PROBE_SCHEMA_SQL, /PRAGMA|user_version/i);
   assert.equal(probeMigration.id, "probe-v1");
+  assert.equal(probeRevisionMigration.id, "probe-v2");
   const db = new DatabaseSync(":memory:");
-  db.exec("PRAGMA foreign_keys = ON; CREATE TABLE media_sources (id TEXT PRIMARY KEY);");
-  db.prepare("INSERT INTO media_sources (id) VALUES (?)").run("source-1");
+  db.exec("PRAGMA foreign_keys = ON; PRAGMA user_version = 73; CREATE TABLE media_sources (id TEXT PRIMARY KEY, content_revision INTEGER NOT NULL);");
+  db.prepare("INSERT INTO media_sources (id, content_revision) VALUES (?, ?)").run("source-1", 7);
   probeMigration.apply(db);
-  probeMigration.apply(db);
+  db.prepare("INSERT INTO media_probe_results (source_id, probed_at) VALUES (?, ?)").run("source-1", "2026-07-10T00:00:00.000Z");
+  probeRevisionMigration.apply(db);
+  probeRevisionMigration.apply(db);
+
+  const legacy = createProbeCatalogReader(db).get("source-1");
+  assert.equal(legacy.probeState, "ready");
+  assert.equal(legacy.sourceContentRevision, null);
+  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 73);
+  t.after(() => db.close());
+});
+
+test("adapter writes current revisions and atomically rejects stale probe results", async (t) => {
+  assert.deepEqual(probeMigrations.map(({ id }) => id), ["probe-v1", "probe-v2"]);
+  const db = new DatabaseSync(":memory:");
+  db.exec("PRAGMA foreign_keys = ON; CREATE TABLE media_sources (id TEXT PRIMARY KEY, content_revision INTEGER NOT NULL);");
+  db.prepare("INSERT INTO media_sources (id, content_revision) VALUES (?, ?)").run("source-1", 1);
+  for (const migration of probeMigrations) migration.apply(db);
+  for (const migration of probeMigrations) migration.apply(db);
   const writer = createProbeCatalogWriter(db, { now: () => "2026-07-11T00:00:00.000Z", uuid: (() => { let id = 0; return () => `id-${++id}`; })() });
   const first = normalizeFfprobe(await fixture("video-hdr.json"));
   writer.putProbeResult("source-1", first);
+  assert.equal(db.prepare("SELECT source_content_revision FROM media_probe_results").get().source_content_revision, 1);
   assert.equal(db.prepare("SELECT COUNT(*) AS count FROM media_streams").get().count, 3);
   assert.equal(db.prepare("SELECT COUNT(*) AS count FROM media_chapters").get().count, 2);
-  writer.putProbeResult("source-1", normalizeFfprobe(await fixture("audio.json")));
+  db.prepare("UPDATE media_sources SET content_revision = 2 WHERE id = ?").run("source-1");
+  writer.putProbeResult("source-1", normalizeFfprobe(await fixture("audio.json")), { expectedContentRevision: 2 });
   assert.equal(db.prepare("SELECT COUNT(*) AS count FROM media_streams").get().count, 1);
   assert.equal(db.prepare("SELECT COUNT(*) AS count FROM media_chapters").get().count, 0);
-  assert.equal(db.prepare("SELECT format_name FROM media_probe_results").get().format_name, "flac");
+  assert.deepEqual({ ...db.prepare("SELECT format_name, source_content_revision FROM media_probe_results").get() }, { format_name: "flac", source_content_revision: 2 });
+  assert.equal(createProbeCatalogReader(db).get("source-1").sourceContentRevision, 2);
+  assert.throws(
+    () => writer.putProbeResult("source-1", first, { expectedContentRevision: 1 }),
+    { code: "stale_source_revision", retryable: true }
+  );
+  assert.deepEqual({ ...db.prepare("SELECT format_name, source_content_revision FROM media_probe_results").get() }, { format_name: "flac", source_content_revision: 2 });
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM media_streams").get().count, 1);
   assert.throws(() => writer.putProbeResult("missing-source", first), /Unknown catalog source/);
   t.after(() => db.close());
 });
