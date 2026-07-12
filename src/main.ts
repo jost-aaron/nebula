@@ -1,6 +1,6 @@
 import { renderAppIcon } from "./appIcons";
 import { getAuthStatus, getCurrentAccount } from "./api/accountApi";
-import { apiJson, getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken, setAccountSessionToken, setApiBaseUrl, setApiToken } from "./api/http";
+import { apiJson, getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken, initializeAccountSession, setAccountSessionToken, setApiBaseUrl, setApiToken } from "./api/http";
 import { bindAccountGate, bindAccountIdentity, bindAccountSettings, bindServerConnection, renderAccountGate, renderAccountIdentity, renderAccountLoading, renderServerConnection } from "./account/accountUi";
 import { dashboardApps, type DashboardApp } from "./apps";
 import { bindCinemaView, renderCinemaView } from "./cinema/renderCinemaView";
@@ -260,16 +260,16 @@ const bindClientSettings = (container: ParentNode) => {
     return;
   }
 
-  save.addEventListener("click", () => {
-    setApiBaseUrl(input.value);
+  save.addEventListener("click", async () => {
+    await setApiBaseUrl(input.value);
     setApiToken(tokenInput.value);
     status.textContent = `Saved · ${getApiConnectionMode()}`;
   });
 
-  clear.addEventListener("click", () => {
+  clear.addEventListener("click", async () => {
     input.value = "";
     tokenInput.value = "";
-    setApiBaseUrl("");
+    await setApiBaseUrl("");
     setApiToken("");
     status.textContent = `Using ${getApiConnectionMode().toLowerCase()}`;
   });
@@ -743,6 +743,7 @@ startRenderer(canvas)
 
 const bootAccount = async () => {
   root.innerHTML = renderAccountLoading();
+  await initializeAccountSession();
   if (!getEffectiveApiBaseUrl()) {
     root.innerHTML = renderServerConnection();
     bindServerConnection(root);
@@ -769,8 +770,7 @@ const bootAccount = async () => {
 };
 
 window.addEventListener("nebula:session-expired", () => {
-  setAccountSessionToken("");
-  window.location.reload();
+  void setAccountSessionToken("").finally(() => window.location.reload());
 }, { once: true });
 
 void bootAccount();

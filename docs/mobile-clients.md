@@ -53,8 +53,10 @@ Settings -> Client -> API Token
 That token is sent as a bearer token by frontend API clients when configured.
 
 This remains the legacy administrator/service token. Normal Capacitor sign-in
-uses a separate revocable account bearer session. The framework-free v1 client
-stores it in WebView local storage; Keychain-backed storage is a follow-up.
+uses a separate revocable account bearer session stored by the first-party
+`NativeSessionKeychain` iOS bridge, never WebView local storage. The service
+token setting is intentionally separate and should be left blank for account
+sign-in.
 
 For localhost development, leave it blank. For a mobile client, set it to a
 reachable server address such as:
@@ -119,6 +121,32 @@ To compile the simulator app from the command line:
 ```sh
 ./scripts/ios-build-simulator.sh
 ```
+
+`ios/App/App/NativeSessionKeychainPlugin.swift` is tracked native source. Sync
+may regenerate `ios/App/App/public/`; never commit that directory. After changing
+the bridge, run both sync and simulator build. No additional host npm install is
+required.
+
+### Manual Keychain simulator verification
+
+1. Start an isolated Docker server, sync with its URL, build, install, and launch
+   on a booted simulator using the commands in `docs/testing.md`.
+2. Sign in, quit the app, relaunch, and confirm the account is restored.
+3. In Safari Web Inspector, confirm no local-storage key beginning with
+   `nebula.accountSessionToken:` exists and no bearer value appears in rendered
+   HTML or console output.
+4. Change Settings -> Client -> Server URL. Confirm the app returns to the account
+   gate and does not authenticate the new server with the old credential.
+5. Sign in again, then Sign out (and separately revoke the current device from
+   another session). Relaunch and confirm sign-in is required.
+6. Test an upgrade by installing a newer build without uninstalling; the session
+   should remain. Test reinstall separately: iOS can preserve same-device
+   Keychain data after deletion, so revoke/sign out before uninstall when a clean
+   state is required. `xcrun simctl erase <UDID>` provides a deterministic clean
+   simulator.
+7. To exercise unavailable storage, boot the simulator but do not unlock it after
+   restart; the client must show sign-in instead of falling back to local storage.
+   A malformed Keychain item is deleted by the bridge and also fails closed.
 
 For command-line simulator checks, use Xcode's developer directory explicitly if
 plain `xcrun` cannot find `simctl`:
@@ -219,8 +247,7 @@ docker compose up --build
 
 ## Next Steps
 
-1. Move native account bearer storage into an iOS Keychain bridge and add
-   device pairing.
+1. Add native device pairing on top of the Keychain-backed account session.
 2. Add an automated iOS smoke path that launches the simulator and verifies
    Settings -> Client plus Files listing against a local server.
 3. Split the Docker server into API, static client, and storage/database

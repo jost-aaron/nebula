@@ -14,6 +14,8 @@ The Node test suite runs inside Docker and covers authentication (including
 forged Host headers and localhost policy), bearer tokens, CORS and Capacitor
 preflights, bounded/malformed JSON, resumable upload races and chunk bounds, and
 Cinema/Studio byte ranges.
+It also includes native-session source contracts for Keychain accessibility,
+legacy local-storage removal, server scoping, and fail-closed cleanup.
 
 Account coverage also includes salted scrypt verification, setup exactly once,
 SQLite persistence, generic/throttled login failure, disabled members, cookie
@@ -273,6 +275,10 @@ Expected:
 - The Applications strip remains above the home indicator.
 - No bottom rail is present or reserving extra space.
 - Native screenshot dimensions match the selected simulator display.
+- A native sign-in survives app termination/relaunch without any
+  `nebula.accountSessionToken:*` local-storage entry.
+- Sign out, current-session revocation, session expiry, and Server URL changes
+  require a fresh sign-in and do not reuse the previous Keychain credential.
 
 Current command-line `simctl` can screenshot the launched dashboard, but it does
 not provide tap automation in this setup. Use a quick manual simulator pass for

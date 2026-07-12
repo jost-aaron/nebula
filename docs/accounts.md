@@ -121,12 +121,33 @@ value is restored through `GET /api/auth/me`; it is not an authentication
 secret by itself.
 
 Capacitor sends `clientType: "native"` during setup/login and receives the raw
-session token once. The current client stores it in local storage, scoped by
-Server URL so a token is not sent when switching servers, because this
-framework-free scaffold has no Keychain bridge. This is an explicit version-one
-limitation; a production native client should move it to Keychain-backed secure
-storage. Native requests send `Authorization: Bearer <session token>` and do not
-require CSRF.
+session token once. The iOS client stores it through Nebula's Capacitor bridge
+as a generic-password Keychain item scoped by Server URL and marked
+`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. Native requests send
+`Authorization: Bearer <session token>` and do not require CSRF. Browser sessions
+remain HttpOnly-cookie/CSRF sessions; a non-native cross-origin web client keeps
+any bearer response in memory only.
+
+On the first upgraded native launch, all legacy `nebula.accountSessionToken:*`
+WebView local-storage entries are removed. The entry matching the current Server
+URL is copied to Keychain first when possible; if Keychain is locked,
+unavailable, or corrupt, the insecure copy still stays removed and the user must
+sign in again. Saving a different Server URL removes the old server's Keychain
+session before reload, preventing accidental credential reuse. Logout, current
+device revocation, password rotation, and a server `401` remove the current
+Keychain item. Keychain values are never rendered, logged, added to generated
+assets, or included in Nebula server backups.
+
+If Keychain deletion is temporarily unavailable, Nebula records only a
+non-secret blocked-session marker for that Server URL and refuses to restore the
+credential. A later unlocked launch retries deletion; the marker never contains
+the bearer value.
+
+The `ThisDeviceOnly` accessibility class excludes sessions from migration to a
+different device and from iCloud/backup restoration. Normal app upgrades retain
+the item. iOS may retain Keychain items after app deletion, so a reinstall can
+restore the session on the same device until server expiry/revocation; users who
+need immediate removal should sign out or revoke the device before uninstalling.
 
 HTML media elements cannot attach bearer headers. An authenticated library
 request therefore receives narrow media URLs containing random, hashed,
@@ -154,7 +175,8 @@ explicitly allowed origin, and no arbitrary origin is reflected.
   stable-item lookup, playback state, planning, and delivery.
 - Search history is not persisted.
 - Server URL and legacy API token remain device-local client settings. Native
-  account session tokens are also device-local until Keychain integration.
+  account session tokens are device-only Keychain items and are excluded from
+  Nebula backups.
 
 On the first owner's initial Cinema library read, legacy `watchlisted: true`
 values from `content/.cinema-metadata.json` are copied into that owner's
@@ -203,7 +225,6 @@ provide encrypted database-at-rest support.
 - One role per account; media permissions are library-level, with no folder- or
   item-level ACLs.
 - No encrypted database-at-rest support.
-- Native bearer storage is not yet Keychain-backed.
 - Direct HTTP development cannot set a Secure cookie; production should use
   HTTPS.
 - Studio queue/history and Search history are not server-persistent.
