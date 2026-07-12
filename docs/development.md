@@ -1,5 +1,10 @@
 # Development Workflow
 
+This document covers the source-mounted development stack. It is intentionally
+different from the persistent single-host operator example. Do not copy
+`compose.yaml` into a deployment; use and read
+[deployment.md](deployment.md) with `compose.deploy.yaml` instead.
+
 This project is Docker Compose first. Do not install dependencies on the host.
 
 ## Requirements
