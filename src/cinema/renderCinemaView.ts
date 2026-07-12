@@ -676,7 +676,7 @@ export const renderCinemaView = () => `
   </section>
 `;
 
-export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
+export const bindCinemaView = (container: ParentNode, onHome?: () => void, options: { personalPlayback?: boolean } = {}) => {
   const app = container.querySelector<HTMLElement>("[data-cinema-app]");
   const topNav = container.querySelector<HTMLElement>("[data-cinema-top-nav]");
   const content = container.querySelector<HTMLElement>("[data-cinema-content]");
@@ -1315,7 +1315,8 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
     try {
       entries = (await listCinemaLibrary()).entries;
       try {
-        const [catalog, continuing] = await Promise.all([listCinemaCatalog(), listCinemaContinueWatching()]);
+        const catalog = await listCinemaCatalog();
+        const continuing = options.personalPlayback === false ? { entries: [] } : await listCinemaContinueWatching();
         const byPath = new Map(catalog.items.map((item) => [item.path ?? item.source?.path ?? "", item]));
         entries = entries.map((entry) => {
           const item = (entry.id ? catalog.items.find((candidate) => candidate.id === entry.id) : undefined) ?? byPath.get(entry.path);
@@ -1327,7 +1328,9 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void) => {
           } : entry;
         });
         playback = new Map(continuing.entries.map((entry) => [entry.itemId, entry]));
-        catalogMessage = `${catalog.items.length} stable catalog ${catalog.items.length === 1 ? "item" : "items"} · playback synced`;
+        catalogMessage = options.personalPlayback === false
+          ? `${catalog.items.length} stable catalog ${catalog.items.length === 1 ? "item" : "items"} · guest session`
+          : `${catalog.items.length} stable catalog ${catalog.items.length === 1 ? "item" : "items"} · playback synced`;
       } catch {
         catalogMessage = "Local fallback · catalog or personal playback state is unavailable";
       }

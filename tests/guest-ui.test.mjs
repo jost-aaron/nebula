@@ -15,3 +15,14 @@ test("first-run and guest dashboard expose the required focused UI contracts", a
   assert.match(css, /@media\s*\(max-width:\s*430px\)/);
   assert.match(css, /\.account-stage/);
 });
+
+test("guest Cinema skips personal playback synchronization", async () => {
+  const [main, cinema] = await Promise.all([
+    readFile(new URL("../src/main.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/cinema/renderCinemaView.ts", import.meta.url), "utf8")
+  ]);
+
+  assert.match(main, /personalPlayback: !isGuest/);
+  assert.match(cinema, /options\.personalPlayback === false \? \{ entries: \[\] \} : await listCinemaContinueWatching\(\)/);
+  assert.match(cinema, /guest session/);
+});

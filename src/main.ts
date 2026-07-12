@@ -404,7 +404,7 @@ const launchApp = async (app: DashboardApp) => {
   }
 
   if (isCinemaApp) {
-    bindCinemaView(appSurface, closeActiveApp);
+    bindCinemaView(appSurface, closeActiveApp, { personalPlayback: !isGuest });
   }
 
   if (isStudioApp) {
