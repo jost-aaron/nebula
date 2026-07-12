@@ -28,3 +28,22 @@ The first worker owns planner logic and focused tests under
 broad Cinema redesign. Remuxing follows only after planner fixtures cover at
 least direct-play, container-only incompatibility, codec incompatibility,
 resolution/bitrate limits, subtitles, and unsupported clients.
+
+## Delivery sessions
+
+Wave 3 delivery is integrated through account-bound, process-local sessions:
+
+```text
+POST   /api/playback/delivery-sessions
+GET    /api/playback/delivery-sessions/:id
+DELETE /api/playback/delivery-sessions/:id
+GET    /api/playback/delivery-sessions/:id/file
+GET    /api/playback/delivery-sessions/:id/hls/:asset
+```
+
+Creation accepts item/source IDs and client capabilities only. The server runs
+the planner, validates catalog and probe data, and selects direct delivery, an
+MP4 stream-copy remux, or software H.264/AAC HLS. Sessions expire after 30
+minutes and are cleaned on cancellation, expiry, restart, and graceful
+shutdown. Responses never expose filesystem paths, and HLS requests use only
+the transcode service's canonical playlist/segment resolver.

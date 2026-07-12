@@ -83,3 +83,32 @@ test("playback routes derive user identity and reject service principals", async
   await assert.rejects(() => route(serviceRequest, serviceResponse, new URL("http://nebula/api/playback/events")), { status: 403 });
   database.close();
 });
+
+test("delivery routes forward the authenticated principal to the trusted delivery boundary", async () => {
+  const calls = [];
+  const delivery = {
+    async create(body, principal) {
+      calls.push({ body, principal });
+      return { plan: { decision: "direct-play" }, session: { id: "delivery-a", status: "ready" } };
+    },
+    get(id, principal) { calls.push({ id, principal }); return { id, status: "ready" }; },
+    async cancel(id, principal) { calls.push({ cancel: id, principal }); }
+  };
+  const route = createPlaybackRoutes({}, null, delivery);
+  const body = { itemId: "item-a", sourceId: "source-a", capabilities: { deviceId: "web" }, plan: { decision: "transcode" } };
+  const request = {
+    async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify(body)); },
+    headers: {}, method: "POST", nebulaAuth: { user: { id: "user-a" } }
+  };
+  const created = responseCapture();
+  assert.equal(await route(request, created, new URL("http://nebula/api/playback/delivery-sessions")), true);
+  assert.equal(created.status(), 201);
+  assert.deepEqual(calls[0], { body, principal: { type: "user", userId: "user-a" } });
+
+  const statusResponse = responseCapture();
+  await route({ headers: {}, method: "GET", nebulaAuth: request.nebulaAuth }, statusResponse, new URL("http://nebula/api/playback/delivery-sessions/delivery-a"));
+  assert.equal(statusResponse.status(), 200);
+  const cancelResponse = responseCapture();
+  await route({ headers: {}, method: "DELETE", nebulaAuth: request.nebulaAuth }, cancelResponse, new URL("http://nebula/api/playback/delivery-sessions/delivery-a"));
+  assert.equal(cancelResponse.status(), 204);
+});

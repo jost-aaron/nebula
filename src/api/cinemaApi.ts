@@ -1,4 +1,4 @@
-import { apiJson, apiUrl } from "./http";
+import { apiFetch, apiJson, apiUrl } from "./http";
 import type {
   CinemaIdentifyRequest,
   CinemaIdentifyResponse,
@@ -12,6 +12,7 @@ import type { CinemaTmdbSearchResponse, CinemaTmdbStatusResponse } from "../shar
 import type { CatalogItemResponse, MediaChapter } from "../shared/catalogTypes";
 import type { ContinueWatchingResponse, PlaybackEventRequest, PlaybackEventResponse } from "../shared/playbackTypes";
 import type { PlaybackWatchedRequest, PlaybackState } from "../shared/playbackTypes";
+import type { PlaybackDeliveryCreateRequest, PlaybackDeliveryCreateResponse, PlaybackDeliveryStatusResponse } from "../shared/playbackDeliveryTypes";
 
 export interface CinemaCatalogEntry {
   availability?: string;
@@ -60,6 +61,14 @@ export const updateCinemaWatched = (body: PlaybackWatchedRequest) =>
   apiJson<{ state: PlaybackState }>("/api/playback/watched", {
     body: JSON.stringify(body), headers: { "content-type": "application/json" }, method: "PATCH"
   });
+
+export const createCinemaDelivery = (body: PlaybackDeliveryCreateRequest) => apiJson<PlaybackDeliveryCreateResponse>("/api/playback/delivery-sessions", {
+  body: JSON.stringify(body), headers: { "content-type": "application/json" }, method: "POST"
+});
+export const getCinemaDelivery = (id: string) => apiJson<PlaybackDeliveryStatusResponse>(`/api/playback/delivery-sessions/${encodeURIComponent(id)}`);
+export const cancelCinemaDelivery = (id: string) => apiFetch(`/api/playback/delivery-sessions/${encodeURIComponent(id)}`, { method: "DELETE" }).then((response) => {
+  if (!response.ok && response.status !== 404) throw new Error(`Delivery cancellation failed: ${response.status}`);
+});
 
 export const identifyCinemaFrames = (body: CinemaIdentifyRequest) =>
   apiJson<CinemaIdentifyResponse>("/api/cinema/identify", {

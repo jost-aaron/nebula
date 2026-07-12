@@ -35,6 +35,8 @@ The current app includes:
 - Wave 2 media processing with persistent background jobs, containerized
   FFprobe, enriched catalog details, Cinema resume/Continue Watching, and
   explicit per-user watched state.
+- Wave 3 account-bound playback delivery with server-authored direct, MP4 remux,
+  and software HLS decisions plus expiring cache cleanup.
 
 The latest user direction is to keep building toward a modern console/Plex-like
 media dashboard.
@@ -130,6 +132,8 @@ Media platform contracts:
 - Cinema and Studio still use their compatibility path APIs. Catalog-backed UI,
   playback lifecycle reporting, and Continue Watching presentation are active
   in Cinema while path playback remains as a compatibility fallback.
+- Cinema now prefers `/api/playback/delivery-sessions` for same-origin stable-ID
+  playback and falls back to its existing ticketed path URL if planning fails.
 
 Studio:
 

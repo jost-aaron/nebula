@@ -235,6 +235,11 @@ Cinema and Files surfaces after major layout changes.
 
 ## Future Automated Tests
 
+Wave 3 server tests cover trusted planner routing, account isolation, expiry,
+cancel/shutdown cleanup, remux/transcode recovery, safe HLS asset resolution,
+and direct/remux byte-range delivery. Browser smoke checks should exercise
+Cinema on desktop and at 390x844 while retaining the ticket fallback.
+
 Good next additions:
 
 - Playwright smoke test in Docker.
