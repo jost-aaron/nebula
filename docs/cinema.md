@@ -171,3 +171,10 @@ can begin after its first atomic segment; resumed transcodes wait for a complete
 playlist so seeking uses the original timeline correctly. The client includes
 the requested resume position in delivery creation, and active HLS asset access
 extends the account-bound session expiry for long-running movies.
+
+The player header offers Auto, Original, and each server-advertised profile.
+Changing quality creates a new account-bound delivery, preserves the current
+position, and cancels the prior delivery only after the replacement is ready.
+The result chip distinguishes a requested Auto mode from its actual Direct,
+Remux, or profile outcome. Safari/iOS uses native HLS; Chromium-family browsers
+use the local pinned hls.js dependency rather than a CDN script.

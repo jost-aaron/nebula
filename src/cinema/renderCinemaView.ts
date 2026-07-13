@@ -32,6 +32,10 @@ import { addMediaListItem, createMediaList, listMediaLists } from "../api/mediaL
 import type { MediaList } from "../shared/mediaListTypes";
 import { getSubtitlePreference, listSubtitleTracks, saveSubtitlePreference, selectSubtitleTrack, subtitleAssetUrl } from "../api/subtitleApi";
 import type { SubtitlePreference, SubtitleTracksResponse } from "../shared/subtitleTypes";
+import { listRenditionProfiles } from "../api/renditionsApi";
+import type { PlaybackQualityPreference, RenditionProfile, RenditionProfileId } from "../shared/renditionTypes";
+import type { PlaybackPlanResponse } from "../shared/playbackPlanTypes";
+import { createHlsPlayback, supportsHlsPlayback, type HlsPlaybackHandle } from "./hlsPlayback";
 
 type CinemaView = "library" | "watchlist" | "title-detail" | "player" | "metadata-editor" | "servers" | "identify";
 
@@ -80,6 +84,24 @@ const formatTime = (seconds: number) => {
   const minutes = Math.floor(safeSeconds / 60);
   const remainder = safeSeconds % 60;
   return `${minutes}:${String(remainder).padStart(2, "0")}`;
+};
+
+const fallbackRenditionProfiles: RenditionProfile[] = [
+  { audioBitrate: 128_000, audioChannels: 2, audioCodec: "aac", container: "mpegts", hdrPolicy: "sdr-only", id: "480p", label: "480p", maxFrameRate: 60, maxHeight: 480, maxWidth: 854, pixelFormat: "yuv420p", protocol: "hls", segmentDurationSeconds: 4, totalBitrate: 2_000_000, version: 1, videoBitrate: 1_800_000, videoCodec: "h264" },
+  { audioBitrate: 128_000, audioChannels: 2, audioCodec: "aac", container: "mpegts", hdrPolicy: "sdr-only", id: "720p", label: "720p HD", maxFrameRate: 60, maxHeight: 720, maxWidth: 1280, pixelFormat: "yuv420p", protocol: "hls", segmentDurationSeconds: 4, totalBitrate: 4_000_000, version: 1, videoBitrate: 3_600_000, videoCodec: "h264" },
+  { audioBitrate: 192_000, audioChannels: 2, audioCodec: "aac", container: "mpegts", hdrPolicy: "sdr-only", id: "1080p", label: "1080p Full HD", maxFrameRate: 60, maxHeight: 1080, maxWidth: 1920, pixelFormat: "yuv420p", protocol: "hls", segmentDurationSeconds: 4, totalBitrate: 8_000_000, version: 1, videoBitrate: 7_400_000, videoCodec: "h264" }
+];
+
+const qualityValue = (preference: PlaybackQualityPreference) => preference.mode === "profile" ? preference.profileId : preference.mode;
+const parseQualityValue = (value: string): PlaybackQualityPreference => value === "original"
+  ? { mode: "original" }
+  : (["480p", "720p", "1080p"] as RenditionProfileId[]).includes(value as RenditionProfileId)
+    ? { mode: "profile", profileId: value as RenditionProfileId }
+    : { mode: "auto" };
+const qualityResultLabel = (preference: PlaybackQualityPreference, plan?: PlaybackPlanResponse) => {
+  if (!plan) return preference.mode === "profile" ? preference.profileId : preference.mode === "original" ? "Original" : "Auto";
+  const result = plan.output.profileId ?? (plan.decision === "direct-play" ? "Original" : plan.decision === "remux" ? "Original · Remux" : "Compatible");
+  return preference.mode === "auto" ? `Auto · ${result}` : result;
 };
 
 const estimateRuntime = (_entry: CinemaEntry) => "Runtime pending";
@@ -176,7 +198,7 @@ const renderServerCard = (server: CinemaServerInfo, compact = false) => `
 
 const renderPlaybackSettings = (_entry: CinemaEntry, subtitles?: SubtitleTracksResponse, preference?: SubtitlePreference) => `
   <section class="cinema-playback-settings" aria-label="Playback settings">
-    <button type="button"><span>${renderCinemaIcon("BadgeCheck")} Quality</span><strong>Original Quality</strong>${renderCinemaIcon("ChevronRight", "cinema-chevron-icon")}</button>
+    <button type="button"><span>${renderCinemaIcon("BadgeCheck")} Quality</span><strong>Auto · Select in player</strong>${renderCinemaIcon("ChevronRight", "cinema-chevron-icon")}</button>
     <button type="button"><span>${renderCinemaIcon("Languages")} Audio</span><strong>English (Source)</strong>${renderCinemaIcon("ChevronRight", "cinema-chevron-icon")}</button>
     <label class="cinema-subtitle-setting"><span>${renderCinemaIcon("Captions")} Subtitles</span><select data-cinema-subtitle-select aria-label="Subtitle track"><option value="">Off</option>${subtitles?.tracks.map((track) => `<option value="${escapeHtml(track.id)}"${track.id === subtitles.selectedSubtitleId ? " selected" : ""}>${escapeHtml(track.label || track.language || "Unknown")} · ${escapeHtml(track.format)}</option>`).join("") ?? ""}</select></label>
   </section>
@@ -452,7 +474,7 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: C
   </main>
 `;
 
-const renderVideoPlayerView = (entry: CinemaEntry, subtitles?: SubtitleTracksResponse) => `
+const renderVideoPlayerView = (entry: CinemaEntry, subtitles: SubtitleTracksResponse | undefined, quality: PlaybackQualityPreference, profiles: RenditionProfile[]) => `
   <main class="cinema-watch-surface" data-cinema-view="player">
     <header class="cinema-player-header">
       <button type="button" data-cinema-action="back-title">${renderCinemaIcon("ArrowLeft")} Details</button>
@@ -460,7 +482,14 @@ const renderVideoPlayerView = (entry: CinemaEntry, subtitles?: SubtitleTracksRes
         <p class="eyebrow">Now Playing</p>
         <h2>${escapeHtml(entry.title)}</h2>
       </div>
-      <span class="cinema-player-quality">Original Quality</span>
+      <label class="cinema-player-quality">Quality
+        <select data-cinema-player-quality aria-label="Playback quality">
+          <option value="auto"${quality.mode === "auto" ? " selected" : ""}>Auto</option>
+          <option value="original"${quality.mode === "original" ? " selected" : ""}>Original</option>
+          ${profiles.map((profile) => `<option value="${profile.id}"${quality.mode === "profile" && quality.profileId === profile.id ? " selected" : ""}>${escapeHtml(profile.label)} · ${Math.round(profile.totalBitrate / 1_000_000)} Mbps</option>`).join("")}
+        </select>
+        <span data-cinema-quality-result>${escapeHtml(qualityResultLabel(quality))}</span>
+      </label>
       <button type="button" data-cinema-action="player-fullscreen">Fullscreen</button>
     </header>
     <section class="cinema-video-stage">
@@ -477,7 +506,7 @@ const renderVideoPlayerView = (entry: CinemaEntry, subtitles?: SubtitleTracksRes
   </main>
 `;
 
-const renderPlayerView = (entry: CinemaEntry, _entries: CinemaEntry[], subtitles?: SubtitleTracksResponse) => renderVideoPlayerView(entry, subtitles);
+const renderPlayerView = (entry: CinemaEntry, _entries: CinemaEntry[], subtitles: SubtitleTracksResponse | undefined, quality: PlaybackQualityPreference, profiles: RenditionProfile[]) => renderVideoPlayerView(entry, subtitles, quality, profiles);
 
 const renderServersView = () => {
   const server = currentServerInfo();
@@ -493,7 +522,7 @@ const renderServersView = () => {
       <div class="cinema-server-grid">
         <span>Mode <strong>${escapeHtml(server.mode)}</strong></span>
         <span>Authentication <strong>${escapeHtml(server.authState)}</strong></span>
-        <span>Playback <strong>Original quality</strong></span>
+        <span>Playback <strong>Auto / 480p / 720p / 1080p</strong></span>
         <span>Throughput <strong>Local network</strong></span>
       </div>
     </main>
@@ -751,10 +780,12 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   let playlists: MediaList[] = [];
   let collections: MediaList[] = [];
   let pendingPlayback: PendingCinemaPlayback | null = null;
+  let qualityPreference: PlaybackQualityPreference = { mode: "auto" };
+  let renditionProfiles = fallbackRenditionProfiles;
 
   const deliveryCapabilities = (player: HTMLVideoElement) => {
     const mp4 = Boolean(player.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"'));
-    const hls = Boolean(player.canPlayType("application/vnd.apple.mpegurl"));
+    const hls = supportsHlsPlayback(player);
     const storageKey = "nebula.cinema.deviceId";
     let deviceId = window.localStorage.getItem(storageKey);
     if (!deviceId) { deviceId = crypto.randomUUID(); window.localStorage.setItem(storageKey, deviceId); }
@@ -924,7 +955,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     }
 
     if (view === "player") {
-      content.innerHTML = selected ? renderPlayerView(selected, entries, selected.id ? subtitleState.get(selected.id) : undefined) : renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage);
+      content.innerHTML = selected ? renderPlayerView(selected, entries, selected.id ? subtitleState.get(selected.id) : undefined, qualityPreference, renditionProfiles) : renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage);
     }
 
     if (view === "servers") {
@@ -1017,6 +1048,9 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     if (player && stage) {
       let sessionId: string | null = null;
       let deliveryId: string | null = null;
+      let pendingDeliveryId: string | null = null;
+      let hlsPlayback: HlsPlaybackHandle | null = null;
+      let requestGeneration = 0;
       const generation = ++deliveryGeneration;
       let ended = false;
       let lifecycleStarted = false;
@@ -1111,17 +1145,18 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
           report("progress");
         }
       });
-      player.addEventListener("loadedmetadata", () => {
-        if (startPosition !== null && startPosition < player.duration) player.currentTime = Math.max(0, startPosition);
-      }, { once: true });
       const stopPlayback = () => {
         deliveryGeneration += 1;
+        requestGeneration += 1;
         if (!ended && lifecycleStarted) {
           ended = true;
           report("stop");
         }
         window.removeEventListener("pagehide", stopPlayback);
+        hlsPlayback?.destroy();
+        hlsPlayback = null;
         if (deliveryId) void cancelCinemaDelivery(deliveryId).catch(() => {});
+        if (pendingDeliveryId && pendingDeliveryId !== deliveryId) void cancelCinemaDelivery(pendingDeliveryId).catch(() => {});
       };
       stopActivePlayback = stopPlayback;
       window.addEventListener("pagehide", stopPlayback, { once: true });
@@ -1129,36 +1164,93 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       player.addEventListener("error", () => setStatus("This video could not be played here."));
       renderPlaybackState();
 
-      const useFallback = () => {
+      const seekWhenReady = (position: number | null) => {
+        if (position === null || position <= 0) return;
+        const seek = () => {
+          if (Number.isFinite(player.duration) && position < player.duration) player.currentTime = Math.max(0, position);
+        };
+        if (player.readyState >= 1) seek(); else player.addEventListener("loadedmetadata", seek, { once: true });
+      };
+      const useFallback = (position = startPosition) => {
         if (generation !== deliveryGeneration) return;
+        hlsPlayback?.destroy();
+        hlsPlayback = null;
         setStatus("Using local compatibility playback.");
         player.src = playingEntry.streamUrl;
         player.load();
+        seekWhenReady(position);
         void player.play().catch(() => setStatus("Ready. Press Play to start playback."));
       };
-      const prepareDelivery = async () => {
+      const attachDelivery = async (created: Awaited<ReturnType<typeof createCinemaDelivery>>, targetPosition: number | null, shouldPlay: boolean) => {
+        hlsPlayback?.destroy();
+        hlsPlayback = null;
+        const source = apiUrl(created.session.deliveryUrl);
+        if (created.plan.output.protocol === "hls") {
+          hlsPlayback = createHlsPlayback({
+            manifestUrl: source,
+            media: player,
+            onError: (error) => setStatus(error.message)
+          });
+          await hlsPlayback.ready;
+        } else {
+          player.src = source;
+          player.load();
+        }
+        seekWhenReady(targetPosition);
+        if (shouldPlay) void player.play().catch(() => setStatus("Ready. Press Play to start playback."));
+      };
+      const prepareDelivery = async (preference = qualityPreference, targetPosition = startPosition, switching = false) => {
         if (!(player instanceof HTMLVideoElement) || !playingEntry.id || !playingEntry.sourceId || getApiConnectionMode() !== "Same origin") return useFallback();
-        setStatus("Preparing compatible playback…");
+        const localRequest = ++requestGeneration;
+        const oldDeliveryId = deliveryId;
+        const shouldPlay = switching ? !player.paused : true;
+        setStatus(switching ? `Preparing ${qualityResultLabel(preference)}…` : "Preparing compatible playback…");
         try {
-          const created = await createCinemaDelivery({ capabilities: deliveryCapabilities(player), itemId: playingEntry.id, sourceId: playingEntry.sourceId, startPositionSeconds: startPosition });
-          deliveryId = created.session.id;
+          const created = await createCinemaDelivery({ capabilities: deliveryCapabilities(player), itemId: playingEntry.id, quality: preference, sourceId: playingEntry.sourceId, startPositionSeconds: targetPosition });
+          pendingDeliveryId = created.session.id;
           let delivery = created.session;
           while (["queued", "running"].includes(delivery.status)) {
             await new Promise((resolve) => window.setTimeout(resolve, 350));
-            if (generation !== deliveryGeneration) return;
+            if (generation !== deliveryGeneration || localRequest !== requestGeneration) {
+              void cancelCinemaDelivery(delivery.id).catch(() => {});
+              return false;
+            }
             delivery = (await getCinemaDelivery(delivery.id)).session;
           }
-          if (delivery.status !== "ready" || generation !== deliveryGeneration) throw new Error("Delivery did not become ready.");
-          player.src = apiUrl(delivery.deliveryUrl);
-          player.load();
+          if (delivery.status !== "ready" || generation !== deliveryGeneration || localRequest !== requestGeneration) throw new Error("Delivery did not become ready.");
+          await attachDelivery({ ...created, session: delivery }, targetPosition, shouldPlay);
+          if (generation !== deliveryGeneration || localRequest !== requestGeneration) {
+            void cancelCinemaDelivery(delivery.id).catch(() => {});
+            return false;
+          }
+          deliveryId = delivery.id;
+          pendingDeliveryId = null;
+          if (oldDeliveryId && oldDeliveryId !== deliveryId) void cancelCinemaDelivery(oldDeliveryId).catch(() => {});
+          qualityPreference = preference;
+          const qualitySelect = content.querySelector<HTMLSelectElement>("[data-cinema-player-quality]");
+          const qualityResult = content.querySelector<HTMLElement>("[data-cinema-quality-result]");
+          if (qualitySelect) { qualitySelect.value = qualityValue(preference); qualitySelect.disabled = false; }
+          if (qualityResult) qualityResult.textContent = qualityResultLabel(preference, created.plan);
           const readyMessage = created.plan.decision === "direct-play" ? "Direct play ready." : created.plan.decision === "remux" ? "Compatible MP4 ready." : "HLS stream ready.";
           setStatus(readyMessage);
-          void player.play().catch(() => setStatus(`${readyMessage} Press Play to start playback.`));
+          return true;
         } catch {
-          if (deliveryId) { void cancelCinemaDelivery(deliveryId).catch(() => {}); deliveryId = null; }
-          useFallback();
+          if (pendingDeliveryId) { void cancelCinemaDelivery(pendingDeliveryId).catch(() => {}); pendingDeliveryId = null; }
+          const qualitySelect = content.querySelector<HTMLSelectElement>("[data-cinema-player-quality]");
+          if (qualitySelect) { qualitySelect.value = qualityValue(qualityPreference); qualitySelect.disabled = false; }
+          if (switching) setStatus("That quality is unavailable for this title or device.");
+          else if (preference.mode === "profile") setStatus("That quality is unavailable. Choose Auto or Original.");
+          else useFallback(targetPosition);
+          return false;
         }
       };
+      const qualitySelect = content.querySelector<HTMLSelectElement>("[data-cinema-player-quality]");
+      qualitySelect?.addEventListener("change", () => {
+        const next = parseQualityValue(qualitySelect.value);
+        const position = Number.isFinite(player.currentTime) ? player.currentTime : 0;
+        qualitySelect.disabled = true;
+        void prepareDelivery(next, position, true);
+      });
       void prepareDelivery();
     }
 
@@ -1772,6 +1864,10 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   });
 
   render();
+  void listRenditionProfiles().then((response) => {
+    renditionProfiles = response.profiles;
+    if (view !== "player") render();
+  }).catch(() => {});
   void Promise.all([listMediaLists("playlist", "video"), listMediaLists("collection", "video")]).then(([personal, shared]) => {
     playlists = personal.lists; collections = shared.lists;
     catalogMessage = `${catalogMessage} · ${playlists.length} playlists · ${collections.length} collections`;

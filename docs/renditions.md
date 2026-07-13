@@ -78,3 +78,10 @@ playable so the original timeline remains seekable. Start-offset transcoding is
 future optimization work. Interactive output remains disposable under
 `delivery-cache`; persistent reuse, scheduled/pinned generation, quota/LRU
 management, and administrator controls are the next waves.
+
+Cinema discovers profile labels and limits from `GET /api/renditions/profiles`.
+Its player exposes Auto, Original, 480p, 720p, and 1080p choices and reports the
+actual planned result. Native HLS remains preferred on Safari/iOS; browsers with
+Media Source Extensions use the pinned hls.js adapter with credentialed
+same-origin requests, one bounded media recovery attempt, sanitized failures,
+and explicit teardown whenever delivery changes or Cinema closes.

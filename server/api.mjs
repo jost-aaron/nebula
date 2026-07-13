@@ -12,6 +12,7 @@ import { createAuditRoutes } from "./audit/routes.mjs";
 import { createMediaListsRoutes } from "./mediaLists/routes.mjs";
 import { createSubtitleRoutes } from "./subtitles/routes.mjs";
 import { createAccelerationRoutes } from "./transcode/routes.mjs";
+import { createRenditionRoutes } from "./renditions/routes.mjs";
 
 export const createApiHandler = (storage, accountStore, authGuard, options = {}) => {
   const routeHandlers = [
@@ -23,6 +24,7 @@ export const createApiHandler = (storage, accountStore, authGuard, options = {})
     ...(options.catalog ? [createCatalogRoutes(options.catalog, options.audit)] : []),
     ...(options.mediaLists ? [createMediaListsRoutes(options.mediaLists, options.audit)] : []),
     ...(options.subtitles ? [createSubtitleRoutes(options.subtitles)] : []),
+    createRenditionRoutes(),
     ...(options.playback ? [createPlaybackRoutes(options.playback, options.playbackPlanner, options.playbackDelivery)] : []),
     ...(options.jobs ? [createJobsRoutes(options.jobs, options.audit)] : []),
     createCinemaRoutes(storage, accountStore, { ...options.cinema, guestService: options.guestService, libraryPermissions: options.libraryPermissions }),
@@ -39,7 +41,7 @@ export const createApiHandler = (storage, accountStore, authGuard, options = {})
           name: "Nebula Server",
           status: "online",
           serverTime: new Date().toISOString(),
-          capabilities: ["audit-history", "background-jobs", "catalog", "cinema-library", "cinema-identify", "collections", "files", "hardware-transcode", "library-permissions", "metadata-editing", "music-library", "playback-delivery", "playback-policy", "playback-state", "playlists", "probe", "subtitles"]
+          capabilities: ["audit-history", "background-jobs", "catalog", "cinema-library", "cinema-identify", "collections", "files", "hardware-transcode", "library-permissions", "metadata-editing", "music-library", "playback-delivery", "playback-policy", "playback-state", "playlists", "probe", "rendition-profiles", "subtitles"]
         });
         return true;
       }

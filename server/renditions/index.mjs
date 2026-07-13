@@ -5,6 +5,7 @@ export {
   RENDITION_PROFILES,
   renditionProfileVersion
 } from "./profiles.mjs";
+export { createRenditionRoutes } from "./routes.mjs";
 export {
   migrateRenditionsSchema,
   RENDITIONS_SCHEMA_SQL,

@@ -350,7 +350,10 @@ constraints, and source-delete cascading. Runtime tests additionally verify
 exact profile bitrate/dimension arguments, keyframe-aligned event playlists,
 atomic first-segment readiness before FFmpeg completion, sliding delivery
 expiry, resume-safe complete-playlist gating, policy-aware profile selection,
-and real FFmpeg H.264/AAC output. Later waves must add persistent reuse,
+real FFmpeg H.264/AAC output, native-HLS preference, hls.js MSE fallback,
+credential configuration, bounded recovery, idempotent teardown, quality
+request forwarding, actual-result labeling, and phone control reachability.
+Later waves must add persistent reuse,
 source-revision invalidation, and scheduled-job lifecycle tests.
 
 Good next additions:
