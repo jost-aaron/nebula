@@ -14,21 +14,21 @@ const fixture = async (decision = "direct-play", options = {}) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "nebula-delivery-"));
   await mkdir(path.join(root, "Movies"));
   await writeFile(path.join(root, "Movies", "movie.mp4"), "movie-bytes");
-  let plannedRequest; let cleaned = 0; let released = 0;
+  let plannedRequest; let transcodeOptions; let cleaned = 0; let released = 0;
   const worker = {
     status: "ready", outputPath: path.join(root, "Movies", "movie.mp4"), completion: Promise.resolve(),
     cancel() {}, async cleanup() { cleaned += 1; }, async resolveAsset(name) { return path.join(root, name); }
   };
   const service = createDeliveryService({
     contentRoot: root,
-    planner: { async plan(value) { plannedRequest = value; return plan(decision); } },
+    planner: { async plan(value) { plannedRequest = value; return options.plan ?? plan(decision); } },
     policy: options.policy ?? { admit() { let done = false; return { maxProducedBitrate: null, release() { if (!done) { done = true; released += 1; } } }; } },
     remuxService: { async createSession() { return worker; } },
     resolveSource: async () => ({ availability: "available", id: "source-1", itemId: "item-1", path: "Movies/movie.mp4" }),
-    transcodeService: { async createSession() { return worker; } },
+    transcodeService: { async createSession(_plan, _principal, value) { transcodeOptions = value; return worker; } },
     ttlMs: options.ttlMs ?? 60_000, now: options.now, uuid: () => "delivery-1"
   });
-  return { cleaned: () => cleaned, plannedRequest: () => plannedRequest, released: () => released, root, service };
+  return { cleaned: () => cleaned, plannedRequest: () => plannedRequest, released: () => released, root, service, transcodeOptions: () => transcodeOptions };
 };
 
 test("delivery replans from IDs and capabilities, binds ownership, and exposes no filesystem paths", async (t) => {
@@ -55,6 +55,51 @@ test("remux and transcode sessions route through only the server-produced plan",
     assert.equal(value.cleaned(), 1);
     assert.equal(value.released(), 1);
   }
+});
+
+test("delivery forwards quality, reports its profile, and extends active session expiry", async (t) => {
+  let clock = 1_000;
+  const profilePlan = plan("transcode");
+  profilePlan.output.profileId = "720p";
+  const value = await fixture("transcode", { now: () => clock, plan: profilePlan, ttlMs: 100 });
+  t.after(() => rm(value.root, { recursive: true, force: true }));
+  const quality = { mode: "profile", profileId: "720p" };
+  const created = await value.service.create({ ...request, quality }, user("alice"));
+  assert.deepEqual(value.plannedRequest(), { capabilities, itemId: "item-1", quality, sourceId: "source-1" });
+  assert.equal(created.session.profileId, "720p");
+  clock = 1_050;
+  assert.equal(value.service.get("delivery-1", user("alice")).expiresAt, new Date(1_150).toISOString());
+  clock = 1_101;
+  assert.equal(value.service.get("delivery-1", user("alice")).status, "ready");
+  await value.service.shutdown();
+});
+
+test("delivery applies policy constraints before profile planning and never mutates fixed profiles", async (t) => {
+  let admitted;
+  const fixedPlan = plan("transcode");
+  fixedPlan.output = { ...fixedPlan.output, bitrate: 2_000_000, profileId: "480p" };
+  const policy = {
+    admit(value) { admitted = value; return { maxProducedBitrate: 1_500_000, release() {} }; },
+    constraints() { return { maxBitrate: 3_000_000, maxConcurrentStreams: null }; }
+  };
+  const value = await fixture("transcode", { plan: fixedPlan, policy });
+  t.after(() => rm(value.root, { recursive: true, force: true }));
+  const created = await value.service.create(request, user("alice"));
+  assert.equal(value.plannedRequest().capabilities.maxBitrate, 3_000_000);
+  assert.equal(admitted.fixedProfile, true);
+  assert.equal(created.plan.output.bitrate, 2_000_000);
+  await value.service.shutdown();
+});
+
+test("resumed transcodes wait for a complete playlist and reject malformed positions", async (t) => {
+  const value = await fixture("transcode"); t.after(() => rm(value.root, { recursive: true, force: true }));
+  await value.service.create({ ...request, startPositionSeconds: 186 }, user("alice"));
+  assert.deepEqual(value.transcodeOptions(), { requireCompleteBeforeReady: true });
+  await value.service.shutdown();
+
+  const invalid = await fixture("transcode"); t.after(() => rm(invalid.root, { recursive: true, force: true }));
+  await assert.rejects(invalid.service.create({ ...request, startPositionSeconds: -1 }, user("alice")), { code: "invalid_start_position" });
+  await invalid.service.shutdown();
 });
 
 test("explicit playback completion releases generated policy accounting", async (t) => {

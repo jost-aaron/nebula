@@ -1140,7 +1140,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         if (!(player instanceof HTMLVideoElement) || !playingEntry.id || !playingEntry.sourceId || getApiConnectionMode() !== "Same origin") return useFallback();
         setStatus("Preparing compatible playback…");
         try {
-          const created = await createCinemaDelivery({ capabilities: deliveryCapabilities(player), itemId: playingEntry.id, sourceId: playingEntry.sourceId });
+          const created = await createCinemaDelivery({ capabilities: deliveryCapabilities(player), itemId: playingEntry.id, sourceId: playingEntry.sourceId, startPositionSeconds: startPosition });
           deliveryId = created.session.id;
           let delivery = created.session;
           while (["queued", "running"].includes(delivery.status)) {

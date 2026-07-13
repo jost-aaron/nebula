@@ -36,7 +36,7 @@ export const createPlaybackPolicyService = ({ repository }) => {
       }
     };
   };
-  const admit = ({ decision, producedBitrate, requestedBitrate, sessionId, userId }) => {
+  const admit = ({ decision, fixedProfile = false, producedBitrate, requestedBitrate, sessionId, userId }) => {
     if (closed) throw denial(503, "playback_policy_closed", "Playback policy admission is shutting down.");
     if (decision === "direct-play") return { maxProducedBitrate: null, release() {} };
     if (!sessionId || leases.has(sessionId)) throw denial(409, "playback_policy_collision", "A unique playback policy lease could not be allocated.");
@@ -53,6 +53,9 @@ export const createPlaybackPolicyService = ({ repository }) => {
     }
     if (decision === "remux" && effective.maxBitrate !== null && Number.isFinite(producedBitrate) && producedBitrate > effective.maxBitrate) {
       throw denial(422, "produced_bitrate_limit_exceeded", "The remux output bitrate exceeds the configured playback limit.");
+    }
+    if (decision === "transcode" && fixedProfile && effective.maxBitrate !== null && Number.isFinite(producedBitrate) && producedBitrate > effective.maxBitrate) {
+      throw denial(422, "rendition_bitrate_limit_exceeded", "The rendition profile exceeds the configured playback limit.");
     }
     const lease = { decision, sessionId, startedAt: new Date().toISOString(), userId };
     leases.set(sessionId, lease);
@@ -81,6 +84,7 @@ export const createPlaybackPolicyService = ({ repository }) => {
   };
   return {
     admit,
+    constraints: (userId) => ({ ...effectiveFor(userId).effective }),
     getConfig: () => ({ global: repository.getGlobal(), users: status().users }),
     setGlobal: (policy) => repository.setGlobal(validatePolicy(policy)),
     setUser: (userId, policy) => {

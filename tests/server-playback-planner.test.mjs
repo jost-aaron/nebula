@@ -44,7 +44,7 @@ test("codec incompatibility chooses the deterministic software HLS target", () =
   incompatible.probe.streams[0].codec = "vp9";
   const result = planPlayback(request(), incompatible);
   assert.equal(result.decision, "transcode");
-  assert.deepEqual(result.output, { audioCodec: "aac", bitrate: 8_000_000, container: "mpegts", protocol: "hls", videoCodec: "h264" });
+  assert.deepEqual(result.output, { audioCodec: "aac", bitrate: 8_000_000, container: "mpegts", height: 1080, profileId: "1080p", protocol: "hls", videoCodec: "h264", width: 1920 });
   assert.deepEqual(result.reasons.map(({ code, streamIndex }) => [code, streamIndex]), [
     ["VIDEO_CODEC_UNSUPPORTED", 0], ["HLS_SOFTWARE_TRANSCODE", null]
   ]);
@@ -54,6 +54,7 @@ test("resolution, bitrate, and audio channel limits are all reported in stable o
   const result = planPlayback(request({ capabilities: capabilities({ maxAudioChannels: 2, maxBitrate: 4_000_000, maxHeight: 720, maxWidth: 1280 }) }), media());
   assert.equal(result.decision, "transcode");
   assert.equal(result.output.bitrate, 4_000_000);
+  assert.deepEqual({ height: result.output.height, profileId: result.output.profileId, width: result.output.width }, { height: 720, profileId: "720p", width: 1280 });
   assert.deepEqual(result.reasons.map(({ code }) => code), [
     "VIDEO_WIDTH_EXCEEDED", "VIDEO_HEIGHT_EXCEEDED", "BITRATE_EXCEEDED", "AUDIO_CHANNELS_EXCEEDED", "HLS_SOFTWARE_TRANSCODE"
   ]);
@@ -94,6 +95,38 @@ test("malformed capabilities fail closed and do not query catalog data", async (
   const result = await planner.plan(request({ capabilities: capabilities({ maxBitrate: -1 }) }), { userId: "user-a" });
   assert.equal(result.decision, "unsupported");
   assert.equal(result.reasons[0].code, "MALFORMED_CAPABILITIES");
+  assert.equal(calls, 0);
+});
+
+test("quality preferences select exact profiles without upscaling and original never silently downscales", () => {
+  const explicit = planPlayback(request({ quality: { mode: "profile", profileId: "480p" } }), media());
+  assert.equal(explicit.decision, "transcode");
+  assert.deepEqual(explicit.output, {
+    audioCodec: "aac", bitrate: 2_000_000, container: "mpegts", height: 480,
+    profileId: "480p", protocol: "hls", videoCodec: "h264", width: 852
+  });
+  assert.deepEqual(explicit.reasons.map(({ code }) => code), ["QUALITY_PROFILE_REQUESTED", "HLS_SOFTWARE_TRANSCODE"]);
+
+  const smaller = media();
+  smaller.probe.streams[0] = { ...smaller.probe.streams[0], height: 720, width: 1280 };
+  const upscale = planPlayback(request({ quality: { mode: "profile", profileId: "1080p" } }), smaller);
+  assert.equal(upscale.decision, "unsupported");
+  assert.equal(upscale.reasons.at(-1).code, "QUALITY_PROFILE_UPSCALE_REQUIRED");
+
+  const constrained = planPlayback(request({
+    capabilities: capabilities({ maxBitrate: 4_000_000, maxHeight: 720, maxWidth: 1280 }),
+    quality: { mode: "original" }
+  }), media());
+  assert.equal(constrained.decision, "unsupported");
+  assert.equal(constrained.reasons.at(-1).code, "ORIGINAL_QUALITY_UNAVAILABLE");
+});
+
+test("malformed quality fails closed before catalog resolution", async () => {
+  let calls = 0;
+  const planner = createPlaybackPlanner({ resolveMedia: async () => { calls += 1; return media(); } });
+  const result = await planner.plan(request({ quality: { mode: "profile", profileId: "4k" } }), { userId: "user-a" });
+  assert.equal(result.decision, "unsupported");
+  assert.equal(result.reasons[0].code, "MALFORMED_QUALITY");
   assert.equal(calls, 0);
 });
 

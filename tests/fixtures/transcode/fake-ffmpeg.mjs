@@ -7,6 +7,7 @@ const inputName = path.basename(process.argv[inputIndex + 1] ?? "");
 const templateIndex = process.argv.indexOf("-hls_segment_filename");
 const directory = path.dirname(process.argv[templateIndex + 1]);
 
+if (inputName.startsWith("empty")) process.exit(0);
 if (inputName.startsWith("output-limit")) writeFileSync(path.join(directory, "segment-00000.ts"), Buffer.alloc(64));
 if (inputName.startsWith("segment-limit")) {
   writeFileSync(path.join(directory, "segment-00000.ts"), "one");

@@ -1,3 +1,5 @@
+import { RENDITION_PROFILES, getRenditionProfile, listRenditionProfiles, normalizeQualityPreference } from "../renditions/profiles.mjs";
+
 const SOFTWARE_VIDEO_CODEC = "h264";
 const SOFTWARE_AUDIO_CODEC = "aac";
 const HLS_CONTAINER = "mpegts";
@@ -15,6 +17,18 @@ const normalize = (value) => {
 const finiteMin = (...values) => {
   const finite = values.filter((value) => Number.isFinite(value));
   return finite.length ? Math.min(...finite) : null;
+};
+const fitsClient = (profile, capabilities) =>
+  (capabilities.maxWidth === null || profile.maxWidth <= capabilities.maxWidth)
+  && (capabilities.maxHeight === null || profile.maxHeight <= capabilities.maxHeight)
+  && (capabilities.maxBitrate === null || profile.totalBitrate <= capabilities.maxBitrate);
+const fitDimensions = (video, profile) => {
+  if (!Number.isFinite(video?.width) || !Number.isFinite(video?.height) || video.width <= 0 || video.height <= 0) return null;
+  const ratio = Math.min(1, profile.maxWidth / video.width, profile.maxHeight / video.height);
+  return {
+    height: Math.max(2, Math.floor((video.height * ratio) / 2) * 2),
+    width: Math.max(2, Math.floor((video.width * ratio) / 2) * 2)
+  };
 };
 
 const list = (values) => new Set(values.map(normalize).filter(Boolean));
@@ -63,6 +77,8 @@ const remuxContainer = (containers, video, audio) => ["mp4", "matroska", "webm",
 export const planPlayback = (request, media) => {
   const malformed = validateCapabilities(request?.capabilities);
   if (malformed) return unsupported(request, [reason("MALFORMED_CAPABILITIES", malformed)]);
+  const quality = normalizeQualityPreference(request?.quality);
+  if (!quality) return unsupported(request, [reason("MALFORMED_QUALITY", "The requested playback quality is invalid.")]);
 
   if (!media || typeof media !== "object") return unsupported(request, [reason("CATALOG_SOURCE_NOT_FOUND", "The requested catalog source was not found.")]);
   if (media.item?.id !== request.itemId || media.source?.id !== request.sourceId || media.source?.itemId !== request.itemId) {
@@ -74,6 +90,7 @@ export const planPlayback = (request, media) => {
   }
 
   const capabilities = request.capabilities;
+  const requestedProfile = quality.mode === "profile" ? getRenditionProfile(quality.profileId) : null;
   const containers = list(capabilities.containers);
   const videoCodecs = list(capabilities.videoCodecs);
   const audioCodecs = list(capabilities.audioCodecs);
@@ -96,6 +113,7 @@ export const planPlayback = (request, media) => {
   const bitrate = media.probe.format.bitrate;
   if (capabilities.maxBitrate !== null && (!Number.isFinite(bitrate) || bitrate > capabilities.maxBitrate)) incompatibilities.push(reason("BITRATE_EXCEEDED", `Source bitrate ${bitrate ?? "unknown"} exceeds the client limit of ${capabilities.maxBitrate}.`));
   if (audio && capabilities.maxAudioChannels !== null && (!Number.isFinite(audio.channels) || audio.channels > capabilities.maxAudioChannels)) incompatibilities.push(reason("AUDIO_CHANNELS_EXCEEDED", `Audio channels ${audio.channels ?? "unknown"} exceed the client limit of ${capabilities.maxAudioChannels}.`, streamIndex(audio)));
+  if (requestedProfile) incompatibilities.push(reason("QUALITY_PROFILE_REQUESTED", `The ${requestedProfile.label} rendition was requested.`));
   const subtitleFormat = normalize(subtitle?.format);
   const subtitleNative = !subtitle || (subtitle.kind === "sidecar" && subtitleFormats.has(subtitleFormat)) || (subtitle.kind === "embedded" && subtitleFormats.has(subtitleFormat));
   if (subtitle && !subtitleNative) incompatibilities.push(reason("SUBTITLE_BURN_IN_REQUIRED", `Selected subtitle format ${subtitleFormat ?? "unknown"} requires burn-in.`, subtitle.streamIndex ?? null));
@@ -115,11 +133,48 @@ export const planPlayback = (request, media) => {
     reasons: [...incompatibilities, reason("REMUX_PRESERVES_STREAMS", `The selected streams can be copied into the supported ${targetContainer} container.`)]
   };
 
+  if (quality.mode === "original") return unsupported(request, [
+    ...incompatibilities,
+    reason("ORIGINAL_QUALITY_UNAVAILABLE", "Original quality cannot be delivered without changing its encoded representation.")
+  ]);
+
   const canTranscodeVideo = !video || videoCodecs.has(SOFTWARE_VIDEO_CODEC);
   const canTranscodeAudio = !audio || audioCodecs.has(SOFTWARE_AUDIO_CODEC);
+  const sourceProfiles = video ? listRenditionProfiles({ sourceHeight: video.height, sourceWidth: video.width }) : [];
+  const autoPool = sourceProfiles.length ? sourceProfiles : RENDITION_PROFILES.slice(0, 1);
+  const autoProfile = video ? [...autoPool].reverse().find((entry) => fitsClient(entry, capabilities)) ?? null : null;
+  const transcodeProfile = requestedProfile ?? autoProfile;
+  const sourceDimensionsKnown = !video || (Number.isFinite(video.width) && Number.isFinite(video.height) && video.width > 0 && video.height > 0);
+  const sourceWouldUpscale = Boolean(requestedProfile && video
+    && Number.isFinite(video.width) && Number.isFinite(video.height)
+    && video.width < requestedProfile.maxWidth && video.height < requestedProfile.maxHeight);
+  const requestedProfileUnavailable = Boolean(requestedProfile && (!video || !sourceDimensionsKnown || !fitsClient(requestedProfile, capabilities) || sourceWouldUpscale));
+  if (requestedProfileUnavailable) return unsupported(request, [
+    ...incompatibilities,
+    reason(sourceWouldUpscale ? "QUALITY_PROFILE_UPSCALE_REQUIRED" : "QUALITY_PROFILE_UNAVAILABLE", sourceWouldUpscale
+      ? "The requested rendition would upscale this source."
+      : "The requested rendition exceeds this client capability.")
+  ]);
+  if (video && !transcodeProfile) return unsupported(request, [
+    ...incompatibilities,
+    reason("RENDITION_PROFILE_UNAVAILABLE", "No standard rendition profile satisfies this source and client.")
+  ]);
+  if (video && !sourceDimensionsKnown) return unsupported(request, [
+    ...incompatibilities,
+    reason("SOURCE_DIMENSIONS_UNKNOWN", "A bounded rendition cannot be produced without source dimensions.")
+  ]);
+  const targetDimensions = transcodeProfile && video ? fitDimensions(video, transcodeProfile) : null;
   if (capabilities.supportsHls && canTranscodeVideo && canTranscodeAudio) return {
     decision: "transcode", itemId: request.itemId, sourceId: request.sourceId,
-    output: { audioCodec: audio ? SOFTWARE_AUDIO_CODEC : null, bitrate: finiteMin(capabilities.maxBitrate, bitrate), container: HLS_CONTAINER, protocol: "hls", videoCodec: video ? SOFTWARE_VIDEO_CODEC : null, ...(media.subtitleSelection ? { subtitle: subtitle ? { id: subtitle.id, delivery: subtitleNative ? "sidecar" : "burn-in", format: subtitleFormat } : null } : {}) },
+    output: {
+      audioCodec: audio ? SOFTWARE_AUDIO_CODEC : null,
+      bitrate: transcodeProfile?.totalBitrate ?? finiteMin(capabilities.maxBitrate, bitrate),
+      container: HLS_CONTAINER,
+      ...(targetDimensions && transcodeProfile ? { ...targetDimensions, profileId: transcodeProfile.id } : {}),
+      protocol: "hls",
+      videoCodec: video ? SOFTWARE_VIDEO_CODEC : null,
+      ...(media.subtitleSelection ? { subtitle: subtitle ? { id: subtitle.id, delivery: subtitleNative ? "sidecar" : "burn-in", format: subtitleFormat } : null } : {})
+    },
     reasons: [...(media.subtitleSelection ? [reason(subtitleSelection.reason, subtitle ? `Selected ${subtitle.label || subtitle.language || "subtitle"}.` : "No subtitle track was selected.")] : []), ...incompatibilities, reason("HLS_SOFTWARE_TRANSCODE", "A software HLS rendition can satisfy the declared client capabilities.")]
   };
 
@@ -137,6 +192,7 @@ export const createPlaybackPlanner = ({ resolveMedia }) => {
     async plan(request, authorizationContext) {
       const malformed = validateCapabilities(request?.capabilities);
       if (malformed) return unsupported(request, [reason("MALFORMED_CAPABILITIES", malformed)]);
+      if (!normalizeQualityPreference(request?.quality)) return unsupported(request, [reason("MALFORMED_QUALITY", "The requested playback quality is invalid.")]);
       const media = await resolveMedia({ itemId: request.itemId, sourceId: request.sourceId }, authorizationContext);
       return planPlayback(request, media);
     }

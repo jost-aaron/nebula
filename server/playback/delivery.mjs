@@ -7,6 +7,10 @@ const ownerId = (principal) => {
   if (principal?.type !== "user" || !principal.userId) throw httpError(403, "Account playback access is required.", "account_required");
   return principal.userId;
 };
+const finiteMin = (...values) => {
+  const finite = values.filter((value) => Number.isFinite(value));
+  return finite.length ? Math.min(...finite) : null;
+};
 
 export const createDeliveryService = ({
   contentRoot, planner, policy = null, remuxService, resolveSource, transcodeService,
@@ -25,6 +29,7 @@ export const createDeliveryService = ({
       void expire(entry);
       throw httpError(410, "Delivery session expired.", "session_expired");
     }
+    entry.expiresAt = now() + ttlMs;
     return entry;
   };
   const status = (entry) => entry.worker?.status ?? entry.status;
@@ -38,6 +43,7 @@ export const createDeliveryService = ({
     expiresAt: new Date(entry.expiresAt).toISOString(),
     id: entry.id,
     itemId: entry.plan.itemId,
+    ...(entry.plan.output?.profileId ? { profileId: entry.plan.output.profileId } : {}),
     sourceId: entry.plan.sourceId,
     status: status(entry)
   });
@@ -64,7 +70,21 @@ export const createDeliveryService = ({
   const create = async (request, principal) => {
     if (closed) throw httpError(503, "Playback delivery is shutting down.", "service_closed");
     const accountId = ownerId(principal);
-    const plannerRequest = { capabilities: request?.capabilities, itemId: request?.itemId, sourceId: request?.sourceId };
+    const startPositionSeconds = request?.startPositionSeconds ?? null;
+    if (startPositionSeconds !== null && (!Number.isFinite(startPositionSeconds) || startPositionSeconds < 0)) {
+      throw httpError(400, "Playback start position must be a non-negative number.", "invalid_start_position");
+    }
+    const constraints = policy?.constraints?.(accountId) ?? null;
+    const requestedCapabilities = request?.capabilities;
+    const capabilities = requestedCapabilities && constraints?.maxBitrate !== null && constraints?.maxBitrate !== undefined
+      ? { ...requestedCapabilities, maxBitrate: finiteMin(requestedCapabilities.maxBitrate, constraints.maxBitrate) }
+      : requestedCapabilities;
+    const plannerRequest = {
+      capabilities,
+      itemId: request?.itemId,
+      ...(request?.quality === undefined ? {} : { quality: request.quality }),
+      sourceId: request?.sourceId
+    };
     if (authorize && !authorize({ itemId: plannerRequest.itemId, sourceId: plannerRequest.sourceId }, principal)) {
       throw httpError(404, "Media source not found.", "source_not_found");
     }
@@ -73,8 +93,8 @@ export const createDeliveryService = ({
     if (plan.decision === "remux" && plan.output?.container !== "mp4") throw httpError(422, "The planned remux target is not available.", "unsupported_delivery");
     const createdAt = now();
     const id = uuid();
-    const policyLease = policy?.admit({ decision: plan.decision, producedBitrate: plan.output?.bitrate, requestedBitrate: request?.capabilities?.maxBitrate, sessionId: id, userId: accountId }) ?? null;
-    const governedPlan = plan.decision === "transcode" && policyLease?.maxProducedBitrate
+    const policyLease = policy?.admit({ decision: plan.decision, fixedProfile: Boolean(plan.output?.profileId), producedBitrate: plan.output?.bitrate, requestedBitrate: capabilities?.maxBitrate, sessionId: id, userId: accountId }) ?? null;
+    const governedPlan = plan.decision === "transcode" && !plan.output?.profileId && policyLease?.maxProducedBitrate
       ? { ...plan, output: { ...plan.output, bitrate: Math.min(plan.output?.bitrate ?? policyLease.maxProducedBitrate, policyLease.maxProducedBitrate) } }
       : plan;
     const entry = { id, ownerId: accountId, plan: governedPlan, createdAt, expiresAt: createdAt + ttlMs, status: "ready", worker: null, source: null, cleanupPromise: null, policyLease };
@@ -85,7 +105,7 @@ export const createDeliveryService = ({
       } else if (governedPlan.decision === "remux") {
         entry.worker = await remuxService.createSession(governedPlan, principal);
       } else if (governedPlan.decision === "transcode") {
-        entry.worker = await transcodeService.createSession(governedPlan, principal);
+        entry.worker = await transcodeService.createSession(governedPlan, principal, { requireCompleteBeforeReady: startPositionSeconds > 0 });
       }
     } catch (error) {
       policyLease?.release();

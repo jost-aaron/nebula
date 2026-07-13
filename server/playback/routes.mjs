@@ -9,9 +9,9 @@ const principalFor = (request) => request.nebulaAuth?.user
   ? { type: "user", userId: request.nebulaAuth.user.id }
   : request.nebulaAuth?.kind === "guest" ? { type: "guest", sessionId: request.nebulaAuth.sessionId } : { type: "service", userId: null };
 
-const sendFile = async (request, response, asset, explicitType) => {
+const sendFile = async (request, response, asset, explicitType, extraHeaders = {}) => {
   const details = await stat(asset);
-  const headers = { "accept-ranges": "bytes", "content-type": explicitType ?? mimeType(asset) };
+  const headers = { "accept-ranges": "bytes", "content-type": explicitType ?? mimeType(asset), ...extraHeaders };
   if (request.method === "HEAD") { response.writeHead(200, { ...headers, "content-length": details.size }); response.end(); return; }
   const range = request.headers.range;
   if (!range) { response.writeHead(200, { ...headers, "content-length": details.size }); createReadStream(asset).pipe(response); return; }
@@ -48,8 +48,9 @@ export const createPlaybackRoutes = (service, planner = null, delivery = null) =
     let assetName;
     try { assetName = decodeURIComponent(hlsMatch[2]); } catch { throw Object.assign(new Error("The requested delivery asset is invalid."), { status: 400, expose: true }); }
     const asset = await delivery.resolveHlsAsset(hlsMatch[1], assetName, principal);
-    const type = path.extname(asset) === ".m3u8" ? "application/vnd.apple.mpegurl" : "video/mp2t";
-    await sendFile(request, response, asset, type);
+    const playlist = path.extname(asset) === ".m3u8";
+    const type = playlist ? "application/vnd.apple.mpegurl" : "video/mp2t";
+    await sendFile(request, response, asset, type, { "cache-control": playlist ? "no-store" : "private, max-age=31536000, immutable" });
     return true;
   }
 

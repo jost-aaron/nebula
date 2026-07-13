@@ -59,9 +59,22 @@ hardware-selection policy, output verification, and atomic publication logic.
 Normal delivery remains account-bound even when the underlying rendition is
 shared across authorized users.
 
-## Current Boundary
+## Current Runtime Boundary
 
-This contract wave adds profile definitions, additive playback types, and the
-central migration only. It does not yet change Cinema's quality selector,
-planner behavior, FFmpeg scaling, HLS startup, persistent storage, or jobs.
-Those features land in later waves against this contract.
+The playback planner now consumes `auto`, `original`, and explicit profile
+preferences. `auto` preserves direct play/remux when possible and otherwise
+selects the highest standard profile allowed by the source, client, and
+playback policy. `original` never silently downscales. Explicit profile requests
+force HLS and fail closed if they exceed the client or would upscale the source.
+
+Interactive HLS uses exact profile bitrate ceilings, fitted even dimensions,
+four-second keyframe-aligned event segments, and atomic FFmpeg publication. A
+fresh transcode becomes playable once the first playlist and segment are safe,
+while FFmpeg continues to occupy its concurrency slot until completion. HLS
+playlists are never cached; completed segments are private and immutable.
+
+Resumed transcodes currently wait for the complete playlist before becoming
+playable so the original timeline remains seekable. Start-offset transcoding is
+future optimization work. Interactive output remains disposable under
+`delivery-cache`; persistent reuse, scheduled/pinned generation, quota/LRU
+management, and administrator controls are the next waves.

@@ -346,9 +346,12 @@ and completes it; otherwise the result is explicitly skipped/unavailable.
 Rendition-contract coverage verifies fixed profile IDs and versions, bounded
 H.264/AAC targets, fail-closed quality preferences, no-upscale profile
 availability, idempotent central migration, source-revision uniqueness, schema
-constraints, and source-delete cascading. Later runtime waves must add real
-FFmpeg dimension/bitrate verification, progressive HLS readiness, persistent
-reuse, source-revision invalidation, and scheduled-job lifecycle tests.
+constraints, and source-delete cascading. Runtime tests additionally verify
+exact profile bitrate/dimension arguments, keyframe-aligned event playlists,
+atomic first-segment readiness before FFmpeg completion, sliding delivery
+expiry, resume-safe complete-playlist gating, policy-aware profile selection,
+and real FFmpeg H.264/AAC output. Later waves must add persistent reuse,
+source-revision invalidation, and scheduled-job lifecycle tests.
 
 Good next additions:
 

@@ -249,6 +249,8 @@ flowchart TD
   client-authored decision.
 - Bind expiring delivery sessions to the creating account and route direct,
   MP4 remux, or software HLS output through path-safe asset boundaries.
+- Publish progressive HLS only after its first playlist-referenced segment is
+  atomic, while keeping FFmpeg completion and concurrency accounting separate.
 - Treat generated output as disposable cache cleaned on cancel, expiry,
   restart, and shutdown; absolute paths never cross the HTTP boundary.
 

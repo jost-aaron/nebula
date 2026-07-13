@@ -5,6 +5,7 @@ import { TranscodeError } from "./errors.mjs";
 import { resolveTranscodeAssetPath, resolveTranscodeSourcePath } from "./path.mjs";
 import { runFfmpegTranscode } from "./runner.mjs";
 import { accelerationRunnerProfile } from "./acceleration.mjs";
+import { getRenditionProfile } from "../renditions/profiles.mjs";
 
 class Semaphore {
   constructor(limit) {
@@ -31,6 +32,14 @@ const validatePlan = (plan) => {
   if (output?.protocol !== "hls" || output?.container !== "mpegts" || output?.videoCodec !== "h264" || output?.audioCodec !== "aac") {
     throw new TranscodeError("unsupported_output", "This service supports H.264/AAC MPEG-TS HLS output only.");
   }
+  if (output.profileId) {
+    const profile = getRenditionProfile(output.profileId);
+    if (!profile || output.bitrate !== profile.totalBitrate
+      || !Number.isInteger(output.width) || output.width < 2 || output.width > profile.maxWidth
+      || !Number.isInteger(output.height) || output.height < 2 || output.height > profile.maxHeight) {
+      throw new TranscodeError("unsupported_output", "The rendition plan does not match its server-owned profile.");
+    }
+  }
 };
 
 export const createTranscodeService = ({
@@ -44,7 +53,7 @@ export const createTranscodeService = ({
   const record = (backend, outcome) => outcomes.set(`${backend}:${outcome}`, (outcomes.get(`${backend}:${outcome}`) ?? 0) + 1);
   const initialize = async () => { await rm(outputRoot, { recursive: true, force: true }); await mkdir(outputRoot, { recursive: true }); };
   const initialized = initialize();
-  const createSession = async (plan, authorizationContext, { signal } = {}) => {
+  const createSession = async (plan, authorizationContext, { requireCompleteBeforeReady = false, signal } = {}) => {
     validatePlan(plan);
     if (closed) throw new TranscodeError("service_closed", "The transcode service is shut down.");
     await initialized;
@@ -85,13 +94,25 @@ export const createTranscodeService = ({
         if (controller.signal.aborted) throw new TranscodeError("cancelled", "Transcode was cancelled.");
         const run = async (backend) => {
           const kind = backend === "software" ? "software" : "hardware"; active[kind] += 1;
-          try { return await runner(inputPath, directory, { ...runnerOptions, maxBitrate: plan.output.bitrate ?? runnerOptions?.maxBitrate ?? null, profile: accelerationRunnerProfile(backend), signal: controller.signal, subtitleFilter }); }
+          const renditionProfile = getRenditionProfile(plan.output.profileId);
+          try { return await runner(inputPath, directory, {
+            ...runnerOptions,
+            maxBitrate: plan.output.bitrate ?? runnerOptions?.maxBitrate ?? null,
+            maxHeight: plan.output.height ?? null,
+            maxWidth: plan.output.width ?? null,
+            onReady: () => { if (!requireCompleteBeforeReady && state.status === "running") state.status = "ready"; },
+            profile: accelerationRunnerProfile(backend),
+            renditionProfile,
+            segmentDuration: renditionProfile?.segmentDurationSeconds ?? runnerOptions?.segmentDuration,
+            signal: controller.signal,
+            subtitleFilter
+          }); }
           finally { active[kind] -= 1; }
         };
         let result;
         try { result = await run(state.acceleration.backend); record(state.acceleration.backend, "success"); }
         catch (error) {
-          const retryableHardwareFailure = state.acceleration.backend !== "software" && !state.acceleration.required && ["ffmpeg_failed", "ffmpeg_unavailable", "output_failed"].includes(error?.code);
+          const retryableHardwareFailure = state.status !== "ready" && state.acceleration.backend !== "software" && !state.acceleration.required && ["ffmpeg_failed", "ffmpeg_unavailable", "output_failed"].includes(error?.code);
           record(state.acceleration.backend, retryableHardwareFailure ? "fallback" : "failure");
           if (!retryableHardwareFailure) throw error;
           await rm(directory, { recursive: true, force: true }); await mkdir(directory, { recursive: false });

@@ -53,6 +53,8 @@ test("requested and remux-produced bitrate are denied while transcode output is 
   const lease = value.service.admit({ decision: "transcode", producedBitrate: 8_000_000, requestedBitrate: 2_000_000, sessionId: "capped", userId: alice });
   assert.equal(lease.maxProducedBitrate, 3_000_000);
   lease.release();
+  assert.deepEqual(value.service.constraints(alice), { maxBitrate: 3_000_000, maxConcurrentStreams: null });
+  assert.throws(() => value.service.admit({ decision: "transcode", fixedProfile: true, producedBitrate: 4_000_000, requestedBitrate: 3_000_000, sessionId: "fixed", userId: alice }), { code: "rendition_bitrate_limit_exceeded" });
   value.database.close();
 });
 

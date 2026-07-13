@@ -17,4 +17,4 @@ export interface PlaybackDeliverySession {
 }
 export interface PlaybackDeliveryCreateResponse { plan: PlaybackPlanResponse; session: PlaybackDeliverySession; }
 export interface PlaybackDeliveryStatusResponse { session: PlaybackDeliverySession; }
-export type PlaybackDeliveryCreateRequest = PlaybackPlanRequest;
+export interface PlaybackDeliveryCreateRequest extends PlaybackPlanRequest { startPositionSeconds?: number | null; }

@@ -52,6 +52,7 @@ test("plans and catalog sources fail closed before FFmpeg", async (t) => {
   await assert.rejects(service.createSession(null, {}), { code: "invalid_plan" });
   await assert.rejects(service.createSession(plan({ decision: "remux" }), {}), { code: "invalid_plan" });
   await assert.rejects(service.createSession(plan({ output: { protocol: "hls", container: "fmp4", videoCodec: "h264", audioCodec: "aac" } }), {}), { code: "unsupported_output" });
+  await assert.rejects(service.createSession(plan({ output: { protocol: "hls", container: "mpegts", videoCodec: "h264", audioCodec: "aac", bitrate: 3_000_000, height: 720, profileId: "720p", width: 1280 } }), {}), { code: "unsupported_output" });
   for (const source of [null, { id: ids.sourceId, itemId: ids.itemId, availability: "missing", path: "incompatible.avi" }, { id: "wrong", itemId: ids.itemId, availability: "available", path: "incompatible.avi" }]) {
     const candidate = createTranscodeService({ ...roots, resolveSource: async () => source });
     await assert.rejects(candidate.createSession(plan(), {}), { code: "missing_source" }); await candidate.shutdown();
@@ -101,6 +102,47 @@ test("runner applies the server-produced bitrate ceiling without shell interpola
   assert.equal(valueAfter("-b:a"), "128000");
 });
 
+test("runner applies exact rendition limits, no-upscale dimensions, and progressive HLS publication", () => {
+  const renditionProfile = {
+    audioBitrate: 128_000, audioChannels: 2, maxFrameRate: 60,
+    totalBitrate: 4_000_000, videoBitrate: 3_600_000
+  };
+  const args = buildTranscodeArguments("/input", "/output", {
+    maxBitrate: 9_000_000, maxHeight: 721, maxWidth: 1281, renditionProfile, segmentDuration: 4,
+    subtitleFilter: "subtitles=fixture.srt"
+  });
+  const valueAfter = (flag) => args[args.indexOf(flag) + 1];
+  assert.equal(valueAfter("-b:v"), "3600000");
+  assert.equal(valueAfter("-b:a"), "128000");
+  assert.equal(valueAfter("-fpsmax"), "60");
+  assert.equal(valueAfter("-force_key_frames"), "expr:gte(t,n_forced*4)");
+  assert.equal(valueAfter("-hls_playlist_type"), "event");
+  assert.equal(valueAfter("-hls_flags"), "independent_segments+temp_file");
+  assert.match(valueAfter("-vf"), /subtitles=fixture\.srt,scale=w=1280:h=720/);
+});
+
+test("transcode sessions become playable after the first atomic segment while completion keeps running", async (t) => {
+  const roots = await workspace(t); await writeFile(path.join(roots.contentRoot, "incompatible.avi"), "media");
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const service = serviceFor(roots, { runner: async (_input, directory, { onReady }) => {
+    await writeFile(path.join(directory, "master.m3u8"), "#EXTM3U\nmedia.m3u8\n");
+    await writeFile(path.join(directory, "segment-00000.ts"), "first");
+    await writeFile(path.join(directory, "media.m3u8"), "#EXTM3U\nsegment-00000.ts\n");
+    onReady();
+    await gate;
+    return { masterPlaylist: path.join(directory, "master.m3u8"), mediaPlaylist: path.join(directory, "media.m3u8") };
+  } });
+  const session = await service.createSession(plan(), { userId: "user-a" });
+  while (session.status !== "ready") await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(await readFile(await session.resolveAsset("segment-00000.ts"), "utf8"), "first");
+  assert.equal((await service.status()).active.software, 1);
+  release();
+  await session.completion;
+  assert.equal(session.status, "ready");
+  await service.shutdown();
+});
+
 test("runner enforces timeout, output byte, segment, and cancellation limits", async (t) => {
   const roots = await workspace(t);
   const binary = path.resolve("tests/fixtures/transcode/fake-ffmpeg.mjs");
@@ -115,6 +157,13 @@ test("runner enforces timeout, output byte, segment, and cancellation limits", a
   const input = path.join(roots.contentRoot, "cancel.avi"); const directory = path.join(roots.outputRoot, "cancel"); await writeFile(input, "fixture"); await mkdir(directory);
   const controller = new AbortController(); const completion = runFfmpegTranscode(input, directory, { binary, signal: controller.signal }); controller.abort();
   await assert.rejects(completion, { code: "cancelled" });
+});
+
+test("runner rejects a successful process that never publishes a playable segment", async (t) => {
+  const roots = await workspace(t);
+  const input = path.join(roots.contentRoot, "empty.avi"); const directory = path.join(roots.outputRoot, "empty");
+  await writeFile(input, "fixture"); await mkdir(directory);
+  await assert.rejects(runFfmpegTranscode(input, directory, { binary: path.resolve("tests/fixtures/transcode/fake-ffmpeg.mjs") }), { code: "output_failed" });
 });
 
 test("cancellation, timeout, and limits remove terminal partial output", async (t) => {
