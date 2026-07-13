@@ -353,8 +353,21 @@ expiry, resume-safe complete-playlist gating, policy-aware profile selection,
 real FFmpeg H.264/AAC output, native-HLS preference, hls.js MSE fallback,
 credential configuration, bounded recovery, idempotent teardown, quality
 request forwarding, actual-result labeling, and phone control reachability.
-Later waves must add persistent reuse,
-source-revision invalidation, and scheduled-job lifecycle tests.
+Persistent-rendition tests verify atomic publication beneath the data root,
+reuse after delivery cleanup and service restart, exact revision invalidation,
+corrupt/missing asset rebuilds, first-segment playback before publication,
+same-key interactive build deduplication, authorization before lookup, and
+absolute/traversal storage-key rejection. Scheduled-job lifecycle, retention,
+quota, and LRU cleanup tests remain for later waves.
+
+Run the focused persistence regression set through Docker:
+
+```sh
+docker compose run --rm dashboard node --test \
+  tests/server-rendition-persistence.test.mjs \
+  tests/server-transcode.test.mjs \
+  tests/server-playback-delivery.test.mjs
+```
 
 Good next additions:
 

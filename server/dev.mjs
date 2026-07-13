@@ -26,7 +26,7 @@ import { createBackupService } from "./backup/index.mjs";
 import { auditMigration, createAuditService } from "./audit/index.mjs";
 import { createMediaListsService, mediaListsMigration } from "./mediaLists/index.mjs";
 import { createSubtitleService, subtitleMigration } from "./subtitles/index.mjs";
-import { renditionsMigration } from "./renditions/index.mjs";
+import { createRenditionStore, renditionsMigration } from "./renditions/index.mjs";
 import {
   createCatalogCheck,
   createDatabaseCheck,
@@ -100,11 +100,13 @@ const accelerationManager = createAccelerationManager({
   mode: process.env.NEBULA_TRANSCODE_ACCELERATION ?? "software-only",
   probe: createAccelerationProbe({ accessDevice: async (backend) => { if (backend !== "vaapi") return false; try { await access("/dev/dri/renderD128"); return true; } catch { return false; } } })
 });
+const renditionStore = createRenditionStore({ database, dataRoot: storage.dataRoot });
 const transcodeService = createTranscodeService({
   acceleration: accelerationManager, contentRoot: storage.contentRoot, outputRoot: path.join(deliveryCacheRoot, "transcode"), resolveSource: resolveCatalogSource, concurrency: 1,
+  renditionStore,
   resolveSubtitle: ({ itemId, sourceId, subtitleId }, principal) => subtitleService.resolveBurnIn({ itemId, sourceId }, subtitleId, principal)
 });
-await Promise.all([remuxService.initialize(), transcodeService.initialize()]);
+await Promise.all([remuxService.initialize(), renditionStore.initialize(), transcodeService.initialize()]);
 const playbackPolicy = createPlaybackPolicyService({ repository: createPlaybackPolicyRepository(database) });
 const playbackDelivery = createDeliveryService({
   authorize: ({ itemId }, principal) => libraryPermissions.canAccessItem(principal, itemId),

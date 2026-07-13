@@ -44,13 +44,34 @@ const validatePlan = (plan) => {
 
 export const createTranscodeService = ({
   concurrency = 2, contentRoot, outputRoot, resolveSource,
-  acceleration = null, resolveSubtitle = null, runner = runFfmpegTranscode, runnerOptions, uuid = randomUUID
+  acceleration = null, renditionStore = null, resolveSubtitle = null, runner = runFfmpegTranscode, runnerOptions, uuid = randomUUID
 } = {}) => {
   if (!contentRoot || !outputRoot) throw new TypeError("contentRoot and outputRoot are required.");
   if (typeof resolveSource !== "function") throw new TypeError("resolveSource must be a function.");
-  const semaphore = new Semaphore(concurrency); const sessions = new Map(); let closed = false;
+  const semaphore = new Semaphore(concurrency); const sessions = new Map(); const renditionBuilds = new Map(); let closed = false;
   const active = { hardware: 0, software: 0 }; const outcomes = new Map();
   const record = (backend, outcome) => outcomes.set(`${backend}:${outcome}`, (outcomes.get(`${backend}:${outcome}`) ?? 0) + 1);
+  const renditionLockKey = (key) => `${key.sourceId}:${key.sourceRevision}:${key.profile.id}:${key.profile.version}`;
+  const claimRenditionBuild = async (key) => {
+    const lockKey = renditionLockKey(key);
+    while (true) {
+      const existing = renditionBuilds.get(lockKey);
+      if (existing) {
+        await existing.promise;
+        const reusable = await renditionStore.findReady(key);
+        if (reusable) return { reusable };
+        continue;
+      }
+      const reusable = await renditionStore.findReady(key);
+      if (reusable) return { reusable };
+      if (renditionBuilds.has(lockKey)) continue;
+      let release;
+      const promise = new Promise((resolve) => { release = resolve; });
+      const claim = { promise, release: () => { if (renditionBuilds.get(lockKey) === claim) renditionBuilds.delete(lockKey); release(); } };
+      renditionBuilds.set(lockKey, claim);
+      return { release: claim.release };
+    }
+  };
   const initialize = async () => { await rm(outputRoot, { recursive: true, force: true }); await mkdir(outputRoot, { recursive: true }); };
   const initialized = initialize();
   const createSession = async (plan, authorizationContext, { requireCompleteBeforeReady = false, signal } = {}) => {
@@ -62,6 +83,11 @@ export const createTranscodeService = ({
       throw new TranscodeError("missing_source", "The requested catalog source is missing or unavailable.");
     }
     const inputPath = await resolveTranscodeSourcePath(contentRoot, source.path);
+    const renditionProfile = getRenditionProfile(plan.output?.profileId);
+    const renditionKey = renditionStore && renditionProfile && Number.isInteger(source.contentRevision) && source.contentRevision > 0
+      && plan.output?.subtitle?.delivery !== "burn-in"
+      ? { profile: renditionProfile, sourceId: source.id, sourceRevision: source.contentRevision }
+      : null;
     let subtitleFilter = null;
     if (plan.output?.subtitle?.delivery === "burn-in") {
       if (typeof resolveSubtitle !== "function") throw new TranscodeError("subtitle_unavailable", "The selected subtitle cannot be burned in.");
@@ -72,6 +98,23 @@ export const createTranscodeService = ({
     }
     const id = uuid();
     if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(id) || sessions.has(id)) throw new TranscodeError("session_collision", "A unique transcode session could not be allocated.");
+    if (renditionKey) {
+      const reusable = await renditionStore.findReady(renditionKey);
+      if (reusable) {
+        const state = { directory: reusable.directory, status: "ready" };
+        const session = {
+          id, itemId: plan.itemId, sourceId: plan.sourceId, reused: true,
+          get status() { return state.status; }, get playlistPath() { return path.join(state.directory, "master.m3u8"); }, get error() { return null; },
+          get acceleration() { return { backend: "persistent", outcome: "reused", reason: "verified_rendition" }; },
+          cancel() {},
+          resolveAsset: (assetName) => resolveTranscodeAssetPath(state.directory, assetName),
+          cleanup: async () => { state.status = "closed"; sessions.delete(id); }
+        };
+        session.completion = Promise.resolve(session);
+        sessions.set(id, session);
+        return session;
+      }
+    }
     const accelerationDecision = acceleration ? await acceleration.decide(plan) : { backend: "software", outcome: "software", reason: "software_selected", required: false };
     if (accelerationDecision.outcome === "failed") {
       const error = new TranscodeError("required_backend_unavailable", "The required transcoding backend is unavailable.");
@@ -79,22 +122,39 @@ export const createTranscodeService = ({
     }
     const directory = path.join(outputRoot, id); const controller = new AbortController();
     const forwardAbort = () => controller.abort(); signal?.addEventListener("abort", forwardAbort, { once: true });
-    const state = { status: "queued", playlistPath: null, error: null, acceleration: accelerationDecision };
+    const state = { directory, persisted: false, releaseRenditionBuild: null, renditionBuilding: false, reused: false, status: "queued", playlistPath: null, error: null, acceleration: accelerationDecision };
     const session = {
       id, itemId: plan.itemId, sourceId: plan.sourceId,
+      get reused() { return state.reused; },
       get status() { return state.status; }, get playlistPath() { return state.playlistPath; }, get error() { return state.error; },
       get acceleration() { return { backend: state.acceleration.backend, outcome: state.acceleration.outcome, reason: state.acceleration.reason }; },
       cancel: () => controller.abort(),
-      resolveAsset: (assetName) => resolveTranscodeAssetPath(directory, assetName),
-      cleanup: async () => { controller.abort(); try { await session.completion; } catch {} await rm(directory, { recursive: true, force: true }); sessions.delete(id); }
+      resolveAsset: (assetName) => resolveTranscodeAssetPath(state.directory, assetName),
+      cleanup: async () => { controller.abort(); try { await session.completion; } catch {} if (!state.persisted) await rm(directory, { recursive: true, force: true }); sessions.delete(id); }
     };
     session.completion = semaphore.run(async () => {
-      state.status = "running"; await mkdir(directory, { recursive: false });
+      state.status = "running";
       try {
+        if (controller.signal.aborted) throw new TranscodeError("cancelled", "Transcode was cancelled.");
+        if (renditionKey) {
+          const claim = await claimRenditionBuild(renditionKey);
+          const reusable = claim.reusable;
+          if (reusable) {
+            state.directory = reusable.directory;
+            state.persisted = true;
+            state.reused = true;
+            state.playlistPath = path.join(reusable.directory, "master.m3u8");
+            state.status = "ready";
+            return session;
+          }
+          state.releaseRenditionBuild = claim.release;
+          await renditionStore.begin(renditionKey);
+          state.renditionBuilding = true;
+        }
+        await mkdir(directory, { recursive: false });
         if (controller.signal.aborted) throw new TranscodeError("cancelled", "Transcode was cancelled.");
         const run = async (backend) => {
           const kind = backend === "software" ? "software" : "hardware"; active[kind] += 1;
-          const renditionProfile = getRenditionProfile(plan.output.profileId);
           try { return await runner(inputPath, directory, {
             ...runnerOptions,
             maxBitrate: plan.output.bitrate ?? runnerOptions?.maxBitrate ?? null,
@@ -119,10 +179,28 @@ export const createTranscodeService = ({
           state.acceleration = { backend: "software", outcome: "fallback", reason: "hardware_job_failed", required: false };
           result = await run("software"); record("software", "success");
         }
-        state.status = "ready"; state.playlistPath = result.masterPlaylist; return session;
+        if (renditionKey) {
+          const published = await renditionStore.publish(renditionKey, directory, {
+            audioBitrate: renditionProfile.audioBitrate,
+            bitrate: renditionProfile.totalBitrate,
+            height: plan.output.height,
+            videoBitrate: renditionProfile.videoBitrate,
+            width: plan.output.width
+          });
+          state.directory = published.directory;
+          state.persisted = true;
+          state.playlistPath = path.join(published.directory, "master.m3u8");
+        } else {
+          state.playlistPath = result.masterPlaylist;
+        }
+        state.status = "ready";
+        state.releaseRenditionBuild?.(); state.releaseRenditionBuild = null;
+        return session;
       } finally { signal?.removeEventListener("abort", forwardAbort); }
     }, controller.signal).catch(async (error) => {
       state.error = error; state.status = error?.code === "cancelled" ? "cancelled" : "failed";
+      if (renditionKey && state.renditionBuilding) await renditionStore.fail(renditionKey, error);
+      state.releaseRenditionBuild?.(); state.releaseRenditionBuild = null;
       await rm(directory, { recursive: true, force: true }); throw error;
     });
     sessions.set(id, session); return session;
