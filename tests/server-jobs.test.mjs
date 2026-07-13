@@ -179,6 +179,7 @@ test("media orchestration contracts inject domain operations and can fan out ide
     probeSource: async (payload) => calls.push(["probe", payload.sourceId]),
     refreshMetadata: async () => {},
     cacheArtwork: async () => {},
+    buildRendition: async () => {},
     cleanup: async () => {}
   };
   const handlers = createMediaJobHandlers(operations);

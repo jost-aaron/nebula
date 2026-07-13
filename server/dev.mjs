@@ -26,7 +26,7 @@ import { createBackupService } from "./backup/index.mjs";
 import { auditMigration, createAuditService } from "./audit/index.mjs";
 import { createMediaListsService, mediaListsMigration } from "./mediaLists/index.mjs";
 import { createSubtitleService, subtitleMigration } from "./subtitles/index.mjs";
-import { createRenditionStore, renditionsMigration } from "./renditions/index.mjs";
+import { createRenditionService, createRenditionStore, renditionsMigration } from "./renditions/index.mjs";
 import {
   createCatalogCheck,
   createDatabaseCheck,
@@ -77,11 +77,11 @@ const playbackService = createPlaybackService({
   visibilityFilter: ({ itemId }, principal) => libraryPermissions.canAccessItem(principal, itemId)
 });
 const resolveCatalogSource = ({ itemId, sourceId }, principal) => {
-  if (!(["user", "guest"].includes(principal?.type))) throw Object.assign(new Error("Account playback access is required."), { status: 403 });
+  if (!(["user", "guest", "service"].includes(principal?.type))) throw Object.assign(new Error("Account playback access is required."), { status: 403 });
   const item = catalogRepository.getItem(itemId);
   const source = catalogRepository.getSource(sourceId);
   if (!item || !source || source.itemId !== itemId || source.availability !== "available" || source.rootId !== catalogRoot.id
-    || item.libraryId !== catalogRoot.library_id || !libraryPermissions.canAccessLibrary(principal, item.libraryId)) return null;
+    || item.libraryId !== catalogRoot.library_id || (principal.type !== "service" && !libraryPermissions.canAccessLibrary(principal, item.libraryId))) return null;
   return source;
 };
 const subtitleService = createSubtitleService({
@@ -124,6 +124,16 @@ const probeService = createProbeService({
 });
 const jobsRepository = createJobsRepository({ db: database });
 const jobsService = createJobsService({ repository: jobsRepository });
+const renditionService = createRenditionService({
+  audit: auditService,
+  canAccessItem: (context, itemId) => context?.kind === "service" || libraryPermissions.canAccessItem(
+    context?.kind === "account" ? { type: "user", userId: context.principalId }
+      : context?.kind === "guest" ? { kind: "guest" } : null,
+    itemId
+  ),
+  catalog: catalogRepository, jobs: jobsService, planner: playbackPlanner,
+  probeReader, store: renditionStore, transcode: transcodeService
+});
 const jobsWorker = createJobsWorker({
   handlers: createMediaJobHandlers({
     scanLibrary: async (_payload, context) => {
@@ -134,6 +144,7 @@ const jobsWorker = createJobsWorker({
       return scan;
     },
     probeSource: ({ sourceId }) => probeService.probeSource(sourceId),
+    buildRendition: (payload, context) => renditionService.build(payload, context),
     refreshMetadata: async () => ({ skipped: "metadata orchestration pending" }),
     cacheArtwork: async () => ({ skipped: "artwork cache pending" }),
     cleanup: async () => ({ candidates: catalogRepository.listCleanupCandidates().length })
@@ -192,6 +203,7 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   playbackPlanner,
   playbackDelivery,
   playbackPolicy,
+  renditions: renditionService,
   transcodeAcceleration: { refresh: accelerationManager.refresh, setMode: accelerationManager.setMode, status: transcodeService.status },
   subtitles: subtitleService
 });

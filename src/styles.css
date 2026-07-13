@@ -6535,3 +6535,9 @@ h1 {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
 }
+.cinema-optimize { display: grid; gap: 18px; padding: 20px; }
+.cinema-optimize-profiles { display: grid; gap: 10px; }
+.cinema-optimize-profiles article { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(150px, auto) auto; gap: 12px; align-items: center; padding: 14px; border: 1px solid rgba(112, 225, 229, .22); border-radius: 12px; background: rgba(8, 20, 24, .72); }
+.cinema-optimize-profiles article div, .cinema-optimize footer { display: flex; gap: 8px; justify-content: flex-end; }
+.cinema-optimize-status { color: #7de0ea; }
+@media (max-width: 600px) { .cinema-optimize-profiles article { grid-template-columns: 1fr; } .cinema-optimize-profiles article div, .cinema-optimize footer { justify-content: stretch; } .cinema-optimize button { flex: 1; } }

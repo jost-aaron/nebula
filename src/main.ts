@@ -407,7 +407,7 @@ const launchApp = async (app: DashboardApp) => {
   }
 
   if (isCinemaApp) {
-    bindCinemaView(appSurface, closeActiveApp, { personalPlayback: !isGuest });
+    bindCinemaView(appSurface, closeActiveApp, { canManageRenditions: accountSession.user?.role === "owner", personalPlayback: !isGuest });
   }
 
   if (isStudioApp) {

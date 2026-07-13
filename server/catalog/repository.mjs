@@ -77,7 +77,7 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
     if (availability) { clauses.push("s.availability = ?"); values.push(availability); }
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
     const rows = database.prepare(`
-      SELECT i.*, s.id AS source_id, s.root_id AS source_root_id, s.content_path AS source_content_path,
+      SELECT i.*, s.id AS source_id, s.item_id AS source_item_id, s.root_id AS source_root_id, s.content_path AS source_content_path,
         s.previous_path AS source_previous_path, s.source_type AS source_source_type,
         s.media_kind AS source_media_kind, s.file_key AS source_file_key, s.size_bytes AS source_size_bytes,
         s.modified_ms AS source_modified_ms, s.availability AS source_availability,

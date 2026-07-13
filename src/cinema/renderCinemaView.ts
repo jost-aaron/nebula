@@ -32,8 +32,8 @@ import { addMediaListItem, createMediaList, listMediaLists } from "../api/mediaL
 import type { MediaList } from "../shared/mediaListTypes";
 import { getSubtitlePreference, listSubtitleTracks, saveSubtitlePreference, selectSubtitleTrack, subtitleAssetUrl } from "../api/subtitleApi";
 import type { SubtitlePreference, SubtitleTracksResponse } from "../shared/subtitleTypes";
-import { listRenditionProfiles } from "../api/renditionsApi";
-import type { PlaybackQualityPreference, RenditionProfile, RenditionProfileId } from "../shared/renditionTypes";
+import { buildItemRenditions, deleteRendition, listItemRenditions, listRenditionProfiles, setRenditionRetention } from "../api/renditionsApi";
+import type { MediaRendition, PlaybackQualityPreference, RenditionProfile, RenditionProfileId } from "../shared/renditionTypes";
 import type { PlaybackPlanResponse } from "../shared/playbackPlanTypes";
 import { createHlsPlayback, supportsHlsPlayback, type HlsPlaybackHandle } from "./hlsPlayback";
 
@@ -428,7 +428,7 @@ const renderWatchlistView = (entries: CinemaEntry[], query: string) => {
   `;
 };
 
-const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: ContinueWatchingEntry | undefined, catalog: CinemaCatalogState | undefined, subtitles?: SubtitleTracksResponse, preference?: SubtitlePreference) => `
+const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: ContinueWatchingEntry | undefined, catalog: CinemaCatalogState | undefined, subtitles?: SubtitleTracksResponse, preference?: SubtitlePreference, canOptimize = false) => `
   <main class="cinema-title-detail" data-cinema-view="title-detail">
     <section class="cinema-player-layout">
       <div class="cinema-player-frame" data-cinema-backdrop="${escapeHtml(entry.path)}"${backdropStyle(entry)}>
@@ -447,6 +447,7 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: C
           ${renderWatchlistButton(entry)}
           ${entry.id ? `<button type="button" data-cinema-action="save-playlist">${renderCinemaIcon("ListPlus")} Save to playlist</button>` : ""}
           <button type="button" data-cinema-action="more">${renderCinemaIcon("MoreHorizontal")} More</button>
+          ${canOptimize && entry.id && entry.sourceId ? `<button type="button" data-cinema-action="optimize">${renderCinemaIcon("Gauge")} Optimize</button>` : ""}
         </div>
         <button class="cinema-edit-command" type="button" data-cinema-action="edit">${renderCinemaIcon("Pencil")} Edit Details</button>
         <button class="cinema-edit-command" type="button" data-cinema-action="tmdb">${renderCinemaIcon("Database")} Match with TMDB</button>
@@ -656,6 +657,33 @@ const renderMoreSheet = (entry: CinemaEntry) =>
     `
   );
 
+const renditionStateLabel = (rendition: MediaRendition | undefined) => rendition
+  ? `${rendition.state}${rendition.retention === "pinned" ? " · pinned" : ""}`
+  : "Not generated";
+
+const renderOptimizeSheet = (entry: CinemaEntry, profiles: RenditionProfile[], renditions: MediaRendition[], message = "") =>
+  renderCinemaSheet("Optimize for Devices", entry.title, `
+    <form class="cinema-optimize" data-cinema-optimize-form>
+      <p>Create reusable lower-quality versions ahead of playback. Existing versions are reused automatically.</p>
+      ${message ? `<p class="cinema-optimize-status" role="status">${escapeHtml(message)}</p>` : ""}
+      <div class="cinema-optimize-profiles">
+        ${profiles.map((profile) => {
+          const rendition = renditions.find((entry) => entry.profileId === profile.id);
+          return `<article>
+            <label><input type="checkbox" name="profileId" value="${profile.id}"${rendition?.state === "ready" ? " disabled" : ""}> <strong>${escapeHtml(profile.label)}</strong></label>
+            <span>${escapeHtml(renditionStateLabel(rendition))} · ${Math.round(profile.totalBitrate / 1_000_000)} Mbps</span>
+            ${rendition ? `<div>
+              <button type="button" data-cinema-rendition-retention="${rendition.id}" data-retention="${rendition.retention === "pinned" ? "cache" : "pinned"}">${rendition.retention === "pinned" ? "Unpin" : "Pin"}</button>
+              <button type="button" data-cinema-rendition-remove="${rendition.id}">Remove</button>
+            </div>` : ""}
+          </article>`;
+        }).join("")}
+      </div>
+      <label><input type="checkbox" name="pinned"> Keep selected versions pinned</label>
+      <footer><button type="button" data-cinema-action="close-sheet">Close</button><button type="submit">Build selected</button></footer>
+    </form>
+  `);
+
 const renderChaptersSheet = (entry: CinemaEntry, chapters: MediaChapter[]) =>
   renderCinemaSheet(
     "All Chapters",
@@ -753,7 +781,7 @@ export const renderCinemaView = () => `
   </section>
 `;
 
-export const bindCinemaView = (container: ParentNode, onHome?: () => void, options: { personalPlayback?: boolean } = {}) => {
+export const bindCinemaView = (container: ParentNode, onHome?: () => void, options: { canManageRenditions?: boolean; personalPlayback?: boolean } = {}) => {
   const app = container.querySelector<HTMLElement>("[data-cinema-app]");
   const topNav = container.querySelector<HTMLElement>("[data-cinema-top-nav]");
   const content = container.querySelector<HTMLElement>("[data-cinema-content]");
@@ -951,7 +979,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     }
 
     if (view === "title-detail") {
-      content.innerHTML = selected ? renderTitleHero(selected, entries, selected.id ? playback.get(selected.id) : undefined, selected.id ? catalogState.get(selected.id) : undefined, selected.id ? subtitleState.get(selected.id) : undefined, subtitlePreference) : renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage);
+      content.innerHTML = selected ? renderTitleHero(selected, entries, selected.id ? playback.get(selected.id) : undefined, selected.id ? catalogState.get(selected.id) : undefined, selected.id ? subtitleState.get(selected.id) : undefined, subtitlePreference, options.canManageRenditions) : renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage);
     }
 
     if (view === "player") {
@@ -1389,6 +1417,16 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     hydratePosters();
   };
 
+  const openOptimizeSheet = async (entry: CinemaEntry, message = "") => {
+    if (!entry.id) return;
+    try {
+      const state = await listItemRenditions(entry.id);
+      openSheet(renderOptimizeSheet(entry, state.profiles, state.renditions, message));
+    } catch (error) {
+      openSheet(renderOptimizeSheet(entry, [], [], error instanceof Error ? error.message : "Optimization status is unavailable."));
+    }
+  };
+
   const updateEntryFromMetadata = (entry: CinemaEntry, metadata: Record<string, unknown>): CinemaEntry => ({
     ...entry,
     ...metadata,
@@ -1602,6 +1640,28 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     const categoryButton = target.closest<HTMLButtonElement>("[data-cinema-category]");
     const pathButton = target.closest<HTMLButtonElement>("[data-cinema-path]");
     const actionButton = target.closest<HTMLButtonElement>("[data-cinema-action]");
+    const retentionButton = target.closest<HTMLButtonElement>("[data-cinema-rendition-retention]");
+    const removeButton = target.closest<HTMLButtonElement>("[data-cinema-rendition-remove]");
+
+    if (retentionButton && selected?.id) {
+      retentionButton.disabled = true;
+      void setRenditionRetention(selected.id, retentionButton.dataset.cinemaRenditionRetention!, retentionButton.dataset.retention === "pinned" ? "pinned" : "cache")
+        .then(() => openOptimizeSheet(selected!, "Retention updated."))
+        .catch((error) => openOptimizeSheet(selected!, error instanceof Error ? error.message : "Retention could not be updated."));
+      return;
+    }
+    if (removeButton && selected?.id) {
+      if (removeButton.dataset.confirm !== "true") {
+        removeButton.dataset.confirm = "true";
+        removeButton.textContent = "Confirm removal";
+        return;
+      }
+      removeButton.disabled = true;
+      void deleteRendition(selected.id, removeButton.dataset.cinemaRenditionRemove!)
+        .then(() => openOptimizeSheet(selected!, "Rendition removed."))
+        .catch((error) => openOptimizeSheet(selected!, error instanceof Error ? error.message : "Rendition could not be removed."));
+      return;
+    }
 
     if (resumeBackdrop && target === resumeBackdrop) {
       closeResumePrompt();
@@ -1743,6 +1803,11 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       openSheet(renderMoreSheet(active));
     }
 
+    if (action === "optimize" && active?.id && active.sourceId) {
+      selected = active;
+      void openOptimizeSheet(active);
+    }
+
     if (action === "view-chapters" && active) {
       selected = active;
       openSheet(renderChaptersSheet(active, active.id ? catalogState.get(active.id)?.chapters ?? [] : []));
@@ -1823,6 +1888,22 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     if (action === "run-identify") {
       void identifySelectedVideo();
     }
+  });
+
+  app.addEventListener("submit", (event) => {
+    const form = (event.target as Element).closest<HTMLFormElement>("[data-cinema-optimize-form]");
+    if (!form || !selected?.id || !selected.sourceId) return;
+    event.preventDefault();
+    const data = new FormData(form);
+    const profileIds = data.getAll("profileId").map(String) as RenditionProfileId[];
+    if (!profileIds.length) {
+      void openOptimizeSheet(selected, "Select at least one profile.");
+      return;
+    }
+    form.querySelectorAll<HTMLButtonElement>("button").forEach((button) => { button.disabled = true; });
+    void buildItemRenditions(selected.id, { profileIds, retention: data.get("pinned") ? "pinned" : "cache", sourceId: selected.sourceId })
+      .then(() => openOptimizeSheet(selected!, "Optimization jobs queued."))
+      .catch((error) => openOptimizeSheet(selected!, error instanceof Error ? error.message : "Optimization could not be queued."));
   });
 
   app.addEventListener("input", (event) => {

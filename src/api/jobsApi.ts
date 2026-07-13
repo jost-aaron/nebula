@@ -1,7 +1,7 @@
 import { apiJson } from "./http";
 
 export const JOB_STATES = ["queued", "running", "succeeded", "failed", "cancelled"] as const;
-export const JOB_TYPES = ["scan", "probe", "metadata", "artwork", "cleanup"] as const;
+export const JOB_TYPES = ["scan", "probe", "metadata", "artwork", "cleanup", "rendition"] as const;
 
 export type JobState = (typeof JOB_STATES)[number];
 export type JobType = (typeof JOB_TYPES)[number];

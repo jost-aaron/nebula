@@ -110,3 +110,20 @@ actual planned result. Native HLS remains preferred on Safari/iOS; browsers with
 Media Source Extensions use the pinned hls.js adapter with credentialed
 same-origin requests, one bounded media recovery attempt, sanitized failures,
 and explicit teardown whenever delivery changes or Cinema closes.
+## Scheduled Optimization
+
+Owners can open a Cinema title and choose **Optimize** to queue one durable job
+per eligible 480p, 720p, or 1080p profile. The server derives the source
+revision, profile version, retry policy, and dedupe key; browser requests cannot
+provide paths, codecs, FFmpeg arguments, retries, or dedupe keys.
+
+Each job re-resolves its catalog source before transcoding and fails safely when
+the source revision or profile version changed. Ready renditions and active jobs
+are reused. Scheduled output uses the same verified atomic persistent store as
+interactive playback and can be pinned against future cache cleanup.
+
+Rendition builds, pin changes, removal, and job cancellation require an owner or
+service-admin context. Members can consume ready output only through normal
+account-bound playback delivery authorization. The Jobs settings surface shows
+and filters rendition work but deliberately has no generic rendition enqueue
+button.

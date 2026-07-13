@@ -1,4 +1,4 @@
-const JOB_TYPES = Object.freeze(["scan", "probe", "metadata", "artwork", "cleanup"]);
+const JOB_TYPES = Object.freeze(["scan", "probe", "metadata", "artwork", "cleanup", "rendition"]);
 const positiveInteger = (value, fallback) => Number.isInteger(value) && value > 0 ? value : fallback;
 
 export const createJobsService = ({ repository, allowedTypes = JOB_TYPES } = {}) => {

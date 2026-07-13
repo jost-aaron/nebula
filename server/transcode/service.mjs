@@ -74,7 +74,7 @@ export const createTranscodeService = ({
   };
   const initialize = async () => { await rm(outputRoot, { recursive: true, force: true }); await mkdir(outputRoot, { recursive: true }); };
   const initialized = initialize();
-  const createSession = async (plan, authorizationContext, { requireCompleteBeforeReady = false, signal } = {}) => {
+  const createSession = async (plan, authorizationContext, { origin = "interactive", requireCompleteBeforeReady = false, retention = "cache", signal } = {}) => {
     validatePlan(plan);
     if (closed) throw new TranscodeError("service_closed", "The transcode service is shut down.");
     await initialized;
@@ -148,7 +148,7 @@ export const createTranscodeService = ({
             return session;
           }
           state.releaseRenditionBuild = claim.release;
-          await renditionStore.begin(renditionKey);
+          await renditionStore.begin(renditionKey, { origin, retention });
           state.renditionBuilding = true;
         }
         await mkdir(directory, { recursive: false });

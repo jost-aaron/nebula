@@ -256,8 +256,10 @@ test("compatibility projection preserves Cinema and Studio fields while adding c
   const entries = projectRepositoryItems(repository);
   const film = entries.find((entry) => entry.path === "Film.mp4");
   const song = entries.find((entry) => entry.path === "Song.mp3");
+  const catalogFilm = repository.listItems({ mediaKind: "video" }).find((entry) => entry.id === film.id);
   assert.match(film.id, /^[0-9a-f-]{36}$/);
   assert.match(film.sourceId, /^[0-9a-f-]{36}$/);
+  assert.equal(catalogFilm.source.itemId, film.id);
   assert.equal(film.category, "movies");
   assert.equal(film.streamUrl, "/api/cinema/media?path=Film.mp4");
   assert.equal(song.category, "music");

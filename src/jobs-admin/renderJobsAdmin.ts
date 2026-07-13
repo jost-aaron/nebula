@@ -25,9 +25,10 @@ const relativeTime = (value: string) => {
 const renderJob = (job: BackgroundJob, confirmingId: string | null) => {
   const progress = percent(job.progress);
   const cancelRequested = Boolean(job.cancelRequestedAt);
+  const renditionProfile = job.type === "rendition" && typeof job.payload.profileId === "string" ? ` · ${escapeHtml(job.payload.profileId)}` : "";
   return `<article class="jobs-admin-card" data-state="${job.state}" data-job-id="${job.id}">
     <div class="jobs-admin-card-header">
-      <span class="jobs-admin-title"><strong>${escapeHtml(job.type)} job</strong><code>${escapeHtml(job.id.slice(0, 8))}</code></span>
+      <span class="jobs-admin-title"><strong>${escapeHtml(job.type)} job${renditionProfile}</strong><code>${escapeHtml(job.id.slice(0, 8))}</code></span>
       <span class="jobs-admin-state">${escapeHtml(job.state)}</span>
     </div>
     <div class="jobs-admin-card-meta">

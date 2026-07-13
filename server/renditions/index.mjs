@@ -7,6 +7,7 @@ export {
 } from "./profiles.mjs";
 export { createRenditionRoutes } from "./routes.mjs";
 export { createRenditionStore, verifyHlsDirectory } from "./store.mjs";
+export { createRenditionService } from "./service.mjs";
 export {
   migrateRenditionsSchema,
   RENDITIONS_SCHEMA_SQL,

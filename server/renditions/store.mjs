@@ -6,6 +6,15 @@ const ASSET_NAME = /^(?:master\.m3u8|media\.m3u8|segment-\d{5}\.ts)$/;
 const SEGMENT_NAME = /^segment-\d{5}\.ts$/;
 const contained = (root, candidate) => candidate === root || candidate.startsWith(`${root}${path.sep}`);
 const timestamp = () => new Date().toISOString();
+const publicRow = (row) => row ? ({
+  audioBitrate: row.audio_bitrate, bitrate: row.bitrate, completedAt: row.completed_at,
+  createdAt: row.created_at, error: row.error_code ? { code: row.error_code, message: row.error_message } : null,
+  height: row.height, id: row.id, itemId: row.item_id, lastAccessedAt: row.last_accessed_at,
+  origin: row.origin, profileId: row.profile_id, profileVersion: row.profile_version,
+  retention: row.retention, sizeBytes: row.size_bytes, sourceId: row.source_id,
+  sourceRevision: row.source_revision, state: row.state, updatedAt: row.updated_at,
+  videoBitrate: row.video_bitrate, width: row.width
+}) : null;
 
 const safeStoragePath = async (root, storageKey) => {
   if (typeof storageKey !== "string" || !storageKey || path.isAbsolute(storageKey)) return null;
@@ -62,6 +71,25 @@ export const createRenditionStore = ({ database, dataRoot, now = timestamp, uuid
   const keyValues = ({ sourceId, sourceRevision, profile }) => [sourceId, sourceRevision, profile.id, profile.version];
   const rowFor = (key) => database.prepare(`SELECT * FROM media_renditions
     WHERE source_id = ? AND source_revision = ? AND profile_id = ? AND profile_version = ?`).get(...keyValues(key)) ?? null;
+  const get = (id) => publicRow(database.prepare(`SELECT r.*, s.item_id FROM media_renditions r
+    JOIN media_sources s ON s.id = r.source_id WHERE r.id = ?`).get(id));
+  const listForItem = (itemId) => database.prepare(`SELECT r.*, s.item_id FROM media_renditions r
+    JOIN media_sources s ON s.id = r.source_id WHERE s.item_id = ? ORDER BY r.profile_id, r.updated_at DESC`)
+    .all(itemId).map(publicRow);
+  const setRetention = (id, retention) => {
+    if (!["cache", "pinned"].includes(retention)) throw Object.assign(new Error("Invalid rendition retention."), { status: 400, expose: true });
+    database.prepare("UPDATE media_renditions SET retention = ?, updated_at = ? WHERE id = ?").run(retention, now(), id);
+    return get(id);
+  };
+  const remove = async (id) => {
+    await initialized;
+    const row = database.prepare("SELECT * FROM media_renditions WHERE id = ?").get(id);
+    if (!row) return false;
+    const directory = row.storage_key ? await safeStoragePath(root, row.storage_key) : null;
+    if (directory) await rm(directory, { recursive: true, force: true });
+    database.prepare("DELETE FROM media_renditions WHERE id = ?").run(id);
+    return true;
+  };
   const invalidate = async (row, code = "asset_invalid") => {
     database.prepare("UPDATE media_renditions SET state = 'stale', error_code = ?, error_message = ?, updated_at = ? WHERE id = ?")
       .run(code, "Persisted rendition failed verification.", now(), row.id);
@@ -130,7 +158,7 @@ export const createRenditionStore = ({ database, dataRoot, now = timestamp, uuid
     database.prepare("UPDATE media_renditions SET state = 'failed', error_code = ?, error_message = ?, updated_at = ? WHERE id = ?")
       .run(String(error?.code ?? "build_failed").slice(0, 64), "Rendition generation failed.", now(), row.id);
   };
-  return { begin, fail, findReady, initialize: () => initialized, publish, root };
+  return { begin, fail, findReady, get, initialize: () => initialized, listForItem, publish, remove, root, setRetention };
 };
 
 export { verifyHlsDirectory };

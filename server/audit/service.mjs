@@ -5,6 +5,7 @@ export const AUDIT_EVENT_TYPES = Object.freeze([
   "account.password_changed", "account.member_created", "account.member_status_changed",
   "account.session_revoked", "account.server_setting_changed", "auth.access_denied",
   "catalog.scan_requested", "job.enqueued", "job.cancel_requested",
+  "rendition.build_requested", "rendition.retention_changed", "rendition.deleted",
   "backup.created", "backup.inspected", "media_list.playlist_created", "media_list.collection_created"
 ]);
 
@@ -15,9 +16,9 @@ const EVENT_TYPES = new Set(AUDIT_EVENT_TYPES);
 const OUTCOMES = new Set(AUDIT_OUTCOMES);
 const ACTOR_KINDS = new Set(AUDIT_ACTOR_KINDS);
 const METADATA_KEYS = new Set([
-  "clientType", "disabled", "jobType", "setting", "transport", "created", "requestedBy"
+  "clientType", "disabled", "jobType", "setting", "transport", "created", "requestedBy", "retention"
 ]);
-const METADATA_VALUES = new Set(["browser", "native", "cookie", "bearer", "tmdb", "manual", "startup", "scan", "probe", "metadata", "artwork", "cleanup"]);
+const METADATA_VALUES = new Set(["browser", "native", "cookie", "bearer", "tmdb", "manual", "service", "startup", "scan", "probe", "metadata", "artwork", "cleanup", "cache", "pinned", "rendition"]);
 const bounded = (value, max) => value === null || value === undefined ? null : String(value).slice(0, max);
 const iso = (value) => new Date(value).toISOString();
 const safeTargetId = (value) => {

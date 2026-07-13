@@ -9,6 +9,7 @@ export const createJobsRoutes = (service, audit = null) => async (request, respo
   if (request.method === "POST" && url.pathname === "/api/jobs") {
     const body = await readBody(request);
     try {
+      if (body?.type === "rendition") throw Object.assign(new Error("Rendition jobs must be requested from a media title."), { status: 400, expose: true });
       const result = service.enqueue(body);
       audit?.recordBestEffort({ actor: actorFromContext(request.nebulaAuth), eventType: "job.enqueued", outcome: "success", target: { type: "job", id: result.job.id }, metadata: { created: result.created, jobType: result.job.type, requestedBy: "manual" } });
       json(response, 202, result);

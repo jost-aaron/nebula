@@ -376,3 +376,8 @@ Good next additions:
 - A repeatable iOS simulator UI test that taps through Cinema and Files safe
   areas.
 - WebGPU capability test that accepts both WebGPU and Canvas fallback modes.
+Scheduled rendition coverage verifies server-derived canonical job payloads,
+revision-safe workers, active/ready deduplication, persistent publication,
+owner/service-admin mutation boundaries, CSRF enforcement, path-free responses,
+and Cinema Optimize controls. Rendition jobs are visible in Settings jobs
+filters but cannot be enqueued without a validated Cinema title.

@@ -5,6 +5,7 @@ const REQUIRED_OPERATIONS = Object.freeze({
   cleanup: "cleanup",
   metadata: "refreshMetadata",
   probe: "probeSource",
+  rendition: "buildRendition",
   scan: "scanLibrary"
 });
 

@@ -60,5 +60,18 @@ export interface RenditionProfilesResponse {
 }
 
 export interface MediaRenditionsResponse {
+  profiles: RenditionProfile[];
   renditions: MediaRendition[];
+}
+
+export interface RenditionBuildRequest {
+  profileIds: RenditionProfileId[];
+  retention?: RenditionRetention;
+  sourceId: CatalogId;
+}
+
+export interface RenditionBuildSummary {
+  created: boolean;
+  job?: { id: string; state: string; type: "rendition" };
+  rendition?: MediaRendition;
 }
