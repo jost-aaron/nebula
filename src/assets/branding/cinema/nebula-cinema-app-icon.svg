@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Nebula Cinema app icon</title>
+  <desc id="desc">The five-blade Nebula Cinema play symbol on a premium near-black field.</desc>
+  <defs>
+    <radialGradient id="surface" cx="30%" cy="18%" r="90%"><stop offset="0" stop-color="#1A1B1E"/><stop offset=".58" stop-color="#090B10"/><stop offset="1" stop-color="#020408"/></radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop stop-color="#E7A940" stop-opacity=".18"/><stop offset="1" stop-color="#E7A940" stop-opacity="0"/></radialGradient>
+    <path id="blade" d="M128 22c38 0 74 18 96 48-29-11-61-8-86 7-23 14-39 37-45 63-12-41 1-86 35-118Z"/>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#surface)"/>
+  <circle cx="512" cy="512" r="430" fill="url(#glow)"/>
+  <g transform="translate(100 100) scale(3.22)">
+    <g fill="#F2EBDD"><use href="#blade" transform="rotate(72 128 128)"/><use href="#blade" transform="rotate(144 128 128)"/><use href="#blade" transform="rotate(216 128 128)"/><use href="#blade" transform="rotate(288 128 128)"/></g>
+    <use href="#blade" fill="#E7A940"/>
+    <path fill="#05080D" d="M103 78c0-8 9-13 16-8l69 49c7 5 7 15 0 20l-69 49c-7 5-16 0-16-8V78Z"/>
+    <path fill="#E7A940" d="m226 107 4 13 13 4-13 4-4 13-4-13-13-4 13-4 4-13Z"/>
+  </g>
+</svg>

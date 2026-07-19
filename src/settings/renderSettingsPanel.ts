@@ -68,42 +68,91 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
     .join("");
 
   return `
-    <div class="panel-header">
-      <span class="panel-mark">${settingsApp ? renderAppIcon(settingsApp, "panel-icon") : ""}</span>
-      <div>
-        <p class="eyebrow">System</p>
-        <h2>Settings</h2>
+    <header class="panel-header settings-masthead">
+      <div class="settings-brand">
+        <span class="panel-mark">${settingsApp ? renderAppIcon(settingsApp, "panel-icon") : ""}</span>
+        <div>
+          <p class="eyebrow">Nebula control room</p>
+          <h2>Settings</h2>
+        </div>
+      </div>
+      <div class="settings-masthead-status" aria-label="Settings context">
+        <span><i></i> Server online</span>
+        <span>${escapeHtml(accountSession.user.role)}</span>
       </div>
       <button id="close-panel" class="icon-command" type="button" aria-label="Close panel" title="Close">×</button>
-    </div>
-    <p class="panel-intro">Runtime settings and diagnostics for the dashboard shell.</p>
+    </header>
 
-    <div class="settings-categories" aria-label="Settings categories">
-      <button class="active" type="button" data-diagnostic-tab="all">Overview</button>
-      <button type="button" data-diagnostic-tab="account">Account</button>
-      ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="jobs">Jobs</button>` : ""}
-      ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="playback-policy">Playback</button>` : ""}
-      ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="transcode-acceleration">Transcoding</button>` : ""}
-      ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="rendition-storage">Storage</button>` : ""}
-      ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="activity">Activity</button>` : ""}
-      ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="remote-access">Remote Access</button>` : ""}
-      <button type="button" data-diagnostic-tab="renderer">Renderer</button>
-      <button type="button" data-diagnostic-tab="display">Display</button>
-      <button type="button" data-diagnostic-tab="performance">Performance</button>
-      <button type="button" data-diagnostic-tab="apps">Apps</button>
-      <button type="button" data-diagnostic-tab="client">Client</button>
-      <button type="button" data-diagnostic-tab="runtime">Runtime</button>
-    </div>
+    <div class="settings-layout">
+      <aside class="settings-sidebar">
+        <div class="settings-sidebar-intro">
+          <p class="eyebrow">System map</p>
+          <strong>Configure your Nebula</strong>
+          <p>Personal controls, server operations, and live system diagnostics.</p>
+        </div>
+        <nav class="settings-categories" aria-label="Settings categories">
+          <div class="settings-nav-group">
+            <small>Start</small>
+            <button class="active" type="button" data-diagnostic-tab="all">Overview</button>
+            <button type="button" data-diagnostic-tab="account">Account</button>
+          </div>
+          ${showJobsAdmin ? `
+            <div class="settings-nav-group">
+              <small>Server</small>
+              <button type="button" data-diagnostic-tab="jobs">Jobs</button>
+              <button type="button" data-diagnostic-tab="playback-policy">Playback</button>
+              <button type="button" data-diagnostic-tab="transcode-acceleration">Transcoding</button>
+              <button type="button" data-diagnostic-tab="rendition-storage">Storage</button>
+              <button type="button" data-diagnostic-tab="activity">Activity</button>
+              <button type="button" data-diagnostic-tab="remote-access">Remote Access</button>
+            </div>
+          ` : ""}
+          <div class="settings-nav-group">
+            <small>System</small>
+            <button type="button" data-diagnostic-tab="renderer">Renderer</button>
+            <button type="button" data-diagnostic-tab="display">Display</button>
+            <button type="button" data-diagnostic-tab="performance">Performance</button>
+            <button type="button" data-diagnostic-tab="apps">Applications</button>
+            <button type="button" data-diagnostic-tab="client">Connection</button>
+            <button type="button" data-diagnostic-tab="runtime">Runtime</button>
+          </div>
+        </nav>
+      </aside>
 
-    <div class="diagnostics-board">
-      ${renderAccountSettings(accountSession)}
-      ${showJobsAdmin ? renderJobsAdmin() : ""}
-      ${showJobsAdmin ? renderPlaybackPolicyAdmin() : ""}
-      ${showJobsAdmin ? renderTranscodeAccelerationAdmin() : ""}
-      ${showJobsAdmin ? renderRenditionStorageAdmin() : ""}
-      ${showJobsAdmin ? renderActivityAdmin() : ""}
-      ${showJobsAdmin ? renderTailscaleAdmin() : ""}
-      ${renderSection(
+      <div class="settings-workspace">
+        <header class="settings-workspace-heading">
+          <div><p class="eyebrow" data-settings-view-kicker>At a glance</p><h3 data-settings-view-title>Overview</h3></div>
+          <p data-settings-view-description>Server health, identity, and the controls you are most likely to need.</p>
+        </header>
+
+        <div class="diagnostics-board">
+          <section class="diagnostic-section settings-overview" data-diagnostic-section="overview">
+            <div class="settings-overview-hero">
+              <div><p class="eyebrow">System pulse</p><h3>Nebula is ready</h3><p>Your server is online and ${snapshot.apps.appCount} applications are available.</p></div>
+              <span class="settings-pulse" aria-hidden="true"><i></i><i></i><i></i></span>
+            </div>
+            <div class="settings-overview-metrics">
+              ${renderMetric("Signed in as", accountSession.user.displayName)}
+              ${renderMetric("Connection", serverMode)}
+              ${renderMetric("Renderer", snapshot.renderer.mode)}
+              ${renderMetric("Performance", `${formatNumber(snapshot.performance.fps)} FPS`)}
+            </div>
+            <div class="settings-quick-grid" aria-label="Quick settings">
+              <button type="button" data-settings-jump="account"><span>01</span><strong>Account</strong><small>Profile, security, and members</small></button>
+              ${showJobsAdmin ? `<button type="button" data-settings-jump="playback-policy"><span>02</span><strong>Playback</strong><small>Streams, limits, and delivery</small></button>` : ""}
+              ${showJobsAdmin ? `<button type="button" data-settings-jump="remote-access"><span>03</span><strong>Remote Access</strong><small>Tailscale and network paths</small></button>` : ""}
+              <button type="button" data-settings-jump="client"><span>04</span><strong>Connection</strong><small>Server target and client token</small></button>
+            </div>
+          </section>
+
+          ${renderAccountSettings(accountSession)}
+          ${showJobsAdmin ? renderJobsAdmin() : ""}
+          ${showJobsAdmin ? renderPlaybackPolicyAdmin() : ""}
+          ${showJobsAdmin ? renderTranscodeAccelerationAdmin() : ""}
+          ${showJobsAdmin ? renderRenditionStorageAdmin() : ""}
+          ${showJobsAdmin ? renderActivityAdmin() : ""}
+          ${showJobsAdmin ? renderTailscaleAdmin() : ""}
+          ${renderSection(
         "Renderer",
         [
           renderMetric("Mode", snapshot.renderer.mode),
@@ -112,9 +161,9 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
           renderMetric("Canvas format", snapshot.renderer.preferredFormat),
           renderMetric("Features", rendererFeatures)
         ].join("")
-      )}
+          )}
 
-      ${renderSection(
+          ${renderSection(
         "Display",
         [
           renderMetric("Viewport", snapshot.display.viewport),
@@ -124,9 +173,9 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
           renderMetric("Color scheme", snapshot.display.colorScheme),
           renderMetric("Reduced motion", snapshot.display.reducedMotion ? "Reduce" : "No preference")
         ].join("")
-      )}
+          )}
 
-      ${renderSection(
+          ${renderSection(
         "Performance",
         [
           renderMetric("FPS", formatNumber(snapshot.performance.fps)),
@@ -134,9 +183,9 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
           renderMetric("Samples", String(snapshot.performance.samples)),
           renderMetric("Uptime", `${formatNumber(snapshot.performance.uptimeSeconds)} s`)
         ].join("")
-      )}
+          )}
 
-      ${renderSection(
+          ${renderSection(
         "Apps",
         [
           renderMetric("Installed", String(snapshot.apps.appCount)),
@@ -145,9 +194,9 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
           renderMetric("Open panel", snapshot.apps.openPanel),
           `<div class="app-diagnostic-list">${appRows}</div>`
         ].join("")
-      )}
+          )}
 
-      <section class="diagnostic-section client-settings-section" data-diagnostic-section="client">
+          <section class="diagnostic-section client-settings-section" data-diagnostic-section="client">
         <h3>Client & Server</h3>
         <div class="client-settings-form">
           <div class="server-info-grid">
@@ -184,11 +233,11 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
             <span data-api-base-status></span>
           </div>
         </div>
-      </section>
+          </section>
 
-      ${renderSection("GPU Limits", rendererLimits)}
+          ${renderSection("GPU Limits", rendererLimits)}
 
-      ${renderSection(
+          ${renderSection(
         "Runtime",
         [
           renderMetric("Platform", snapshot.runtime.platform),
@@ -197,7 +246,9 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
           renderMetric("Updated", new Date(snapshot.timestamp).toLocaleTimeString()),
           renderMetric("User agent", snapshot.runtime.userAgent)
         ].join("")
-      )}
+          )}
+        </div>
+      </div>
     </div>
   `;
 }

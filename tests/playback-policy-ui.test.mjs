@@ -8,7 +8,7 @@ const settings = await readFile(new URL("../src/settings/renderSettingsPanel.ts"
 const main = await readFile(new URL("../src/main.ts", import.meta.url), "utf8");
 
 test("owner Settings exposes global and account playback policies with direct-play disclosure", () => {
-  assert.match(settings, /showJobsAdmin \? `<button type="button" data-diagnostic-tab="playback-policy"/);
+  assert.match(settings, /showJobsAdmin \? `[\s\S]*data-diagnostic-tab="playback-policy"/);
   assert.match(settings, /renderPlaybackPolicyAdmin\(\)/);
   assert.match(source, /Direct-play limitation:/);
   assert.match(source, /data-policy-global/);

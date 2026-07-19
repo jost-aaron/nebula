@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Nebula Cinema five-blade play badge</title>
+  <desc id="desc">The Nebula Cinema aperture and play symbol on a near-black square.</desc>
+  <defs>
+    <radialGradient id="surface" cx="28%" cy="18%" r="92%">
+      <stop offset="0" stop-color="#171A1E"/>
+      <stop offset="0.56" stop-color="#090C11"/>
+      <stop offset="1" stop-color="#030509"/>
+    </radialGradient>
+    <path id="blade" d="M128 22c38 0 74 18 96 48-29-11-61-8-86 7-23 14-39 37-45 63-12-41 1-86 35-118Z"/>
+  </defs>
+  <rect width="256" height="256" rx="38" fill="url(#surface)"/>
+  <g transform="translate(18 18) scale(.86)">
+    <g fill="#F2EBDD">
+      <use href="#blade" transform="rotate(72 128 128)"/><use href="#blade" transform="rotate(144 128 128)"/>
+      <use href="#blade" transform="rotate(216 128 128)"/><use href="#blade" transform="rotate(288 128 128)"/>
+    </g>
+    <use href="#blade" fill="#E7A940"/>
+    <path fill="#05080D" d="M103 78c0-8 9-13 16-8l69 49c7 5 7 15 0 20l-69 49c-7 5-16 0-16-8V78Z"/>
+    <path fill="#E7A940" d="m226 107 4 13 13 4-13 4-4 13-4-13-13-4 13-4 4-13Z"/>
+  </g>
+</svg>

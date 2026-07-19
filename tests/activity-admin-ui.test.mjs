@@ -17,7 +17,7 @@ test("desktop activity surface has pagination and all required filters", () => {
 });
 
 test("activity is owner-only in Settings and its lifecycle is disposed", () => {
-  assert.match(settings, /showJobsAdmin \? `<button type="button" data-diagnostic-tab="activity">Activity<\/button>`/);
+  assert.match(settings, /showJobsAdmin \? `[\s\S]*data-diagnostic-tab="activity">Activity<\/button>/);
   assert.match(settings, /showJobsAdmin \? renderActivityAdmin\(\)/);
   assert.match(main, /bindActivityAdmin\(appSurface\)/);
   assert.match(main, /disposeActivity\(\)/);

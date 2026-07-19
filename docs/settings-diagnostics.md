@@ -5,8 +5,17 @@ renderer and diagnostics collectors.
 
 ## Current Scope
 
-Launching the Settings app opens diagnostics sections inside the full-screen app
-surface.
+Launching Settings opens a dedicated control-room application shell. Desktop
+uses a persistent grouped sidebar and focused workspace; narrow layouts use a
+horizontally scrollable category rail with 44px or larger controls. Only the
+selected section is rendered visibly, preventing admin surfaces with their own
+display rules from overlapping one another.
+
+The curated Overview presents server state, identity, renderer/performance
+summaries, and shortcuts into common configuration areas. Categories are grouped
+as Start, Server, and System. Category selection updates the workspace title and
+description, resets only the workspace scroll position, supports directional-key
+focus, and preserves each feature panel's existing bind/dispose lifecycle.
 
 - Renderer
 - Display
@@ -22,7 +31,8 @@ listing/revocation, sign out, and owner-only member creation/disable. Password
 rotation revokes other sessions. Client remains the device-local Server URL and
 optional legacy service-token configuration.
 
-The panel is rendered by `src/settings/renderSettingsPanel.ts`.
+The application markup is rendered by `src/settings/renderSettingsPanel.ts` and
+its isolated visual system lives in `src/settings/settingsApp.css`.
 
 Diagnostics are collected by `src/diagnostics/collectDiagnostics.ts`.
 
@@ -80,7 +90,6 @@ the user is scrolling or reading.
 
 ## Extension Ideas
 
-- Add category navigation inside Settings.
 - Add input/gamepad diagnostics.
 - Add WebGPU device-lost status.
 - Add a copy diagnostics button.

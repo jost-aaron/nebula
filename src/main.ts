@@ -26,10 +26,40 @@ import { startRenderer } from "./webgpuRenderer";
 import type { AccountSessionState, CurrentSessionState } from "./shared/accountTypes";
 import "./styles.css";
 import "./cinema/tmdb.css";
+import "./cinema/cinemaBrand.css";
+import "./settings/settingsApp.css";
 import "./settings/tailscaleAdmin.css";
 
 const root = document.querySelector<HTMLDivElement>("#app");
 const canvas = document.querySelector<HTMLCanvasElement>("#gpu-scene");
+
+type BrowserFullscreenDocument = Document & {
+  webkitExitFullscreen?: () => Promise<void> | void;
+  webkitFullscreenElement?: Element | null;
+  webkitFullscreenEnabled?: boolean;
+};
+
+type BrowserFullscreenElement = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+};
+
+const browserFullscreenElement = () =>
+  document.fullscreenElement ?? (document as BrowserFullscreenDocument).webkitFullscreenElement ?? null;
+
+const browserFullscreenSupported = () =>
+  document.fullscreenEnabled || (document as BrowserFullscreenDocument).webkitFullscreenEnabled === true;
+
+const toggleBrowserFullscreen = async () => {
+  if (browserFullscreenElement()) {
+    if (document.exitFullscreen) await document.exitFullscreen();
+    else await (document as BrowserFullscreenDocument).webkitExitFullscreen?.();
+    return;
+  }
+
+  const page = document.documentElement as BrowserFullscreenElement;
+  if (page.requestFullscreen) await page.requestFullscreen({ navigationUI: "hide" });
+  else await page.webkitRequestFullscreen?.();
+};
 
 if (!root || !canvas) {
   throw new Error("Dashboard root or render canvas is missing.");
@@ -62,6 +92,10 @@ root.innerHTML = `
         <div class="status-cluster">
           <span id="gpu-status" class="system-pill">Checking GPU</span>
           <span id="controller-status" class="system-pill">Controller Ready</span>
+          <button id="browser-fullscreen" class="system-pill fullscreen-command" type="button" aria-label="Enter fullscreen" title="Enter fullscreen">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" /></svg>
+            <span data-fullscreen-label>Fullscreen</span>
+          </button>
           ${isGuest ? renderGuestIdentity() : renderAccountIdentity(accountSession.user!)}
           <time id="clock" class="clock"></time>
         </div>
@@ -103,11 +137,33 @@ const appSurface = document.querySelector<HTMLElement>("#app-surface");
 const gpuStatus = document.querySelector<HTMLSpanElement>("#gpu-status");
 const clock = document.querySelector<HTMLTimeElement>("#clock");
 const controllerStatus = document.querySelector<HTMLSpanElement>("#controller-status");
+const browserFullscreenButton = document.querySelector<HTMLButtonElement>("#browser-fullscreen");
 const shellRoot = document.querySelector<HTMLElement>(".shell");
 
-if (!grid || !featuredTitle || !featuredDescription || !launchButton || !detailsButton || !detailPanel || !appSurface || !gpuStatus || !clock || !controllerStatus || !shellRoot) {
+if (!grid || !featuredTitle || !featuredDescription || !launchButton || !detailsButton || !detailPanel || !appSurface || !gpuStatus || !clock || !controllerStatus || !browserFullscreenButton || !shellRoot) {
   throw new Error("Dashboard controls failed to initialize.");
 }
+
+const syncBrowserFullscreenControl = () => {
+  const active = Boolean(browserFullscreenElement());
+  const label = active ? "Exit fullscreen" : "Fullscreen";
+  browserFullscreenButton.hidden = !browserFullscreenSupported();
+  browserFullscreenButton.classList.toggle("active", active);
+  browserFullscreenButton.setAttribute("aria-label", active ? "Exit fullscreen" : "Enter fullscreen");
+  browserFullscreenButton.setAttribute("aria-pressed", String(active));
+  browserFullscreenButton.title = active ? "Exit fullscreen" : "Enter fullscreen";
+  const labelNode = browserFullscreenButton.querySelector<HTMLElement>("[data-fullscreen-label]");
+  if (labelNode) labelNode.textContent = label;
+};
+
+browserFullscreenButton.addEventListener("click", () => {
+  void toggleBrowserFullscreen().catch(() => {
+    browserFullscreenButton.title = "Fullscreen could not be changed by this browser";
+  });
+});
+document.addEventListener("fullscreenchange", syncBrowserFullscreenControl);
+document.addEventListener("webkitfullscreenchange", syncBrowserFullscreenControl);
+syncBrowserFullscreenControl();
 
 const focusedIndex = () => Math.max(0, appIds.indexOf(shellState.focusedAppId));
 const focusedApp = () => availableApps[focusedIndex()];
@@ -264,7 +320,7 @@ const bindSettingsTabs = (container: ParentNode) => {
   const sections = Array.from(container.querySelectorAll<HTMLElement>("[data-diagnostic-section]"));
 
   const sectionGroups: Record<string, string[]> = {
-    all: [],
+    all: ["overview"],
     account: ["account"],
     jobs: ["jobs"],
     "playback-policy": ["playback-policy"],
@@ -280,21 +336,72 @@ const bindSettingsTabs = (container: ParentNode) => {
     runtime: ["runtime"]
   };
 
+  const viewMetadata: Record<string, { kicker: string; title: string; description: string }> = {
+    all: { kicker: "At a glance", title: "Overview", description: "Server health, identity, and the controls you are most likely to need." },
+    account: { kicker: "Personal", title: "Account", description: "Manage your profile, password, sessions, members, and library access." },
+    jobs: { kicker: "Server operations", title: "Background Jobs", description: "Run and monitor library scans, metadata work, artwork, cleanup, and renditions." },
+    "playback-policy": { kicker: "Media delivery", title: "Playback", description: "Control stream concurrency, bitrate policy, and account-level limits." },
+    "transcode-acceleration": { kicker: "Media delivery", title: "Transcoding", description: "Inspect encoder support and choose deterministic hardware or software behavior." },
+    "rendition-storage": { kicker: "Media delivery", title: "Storage", description: "Manage reusable quality output, retention, capacity, and cleanup." },
+    activity: { kicker: "Server operations", title: "Activity", description: "Review bounded administration and security events without exposing sensitive data." },
+    "remote-access": { kicker: "Private network", title: "Remote Access", description: "Manage tailnet HTTPS and inspect direct or relayed Tailscale paths." },
+    renderer: { kicker: "Graphics", title: "Renderer", description: "Inspect the active rendering path, adapter capabilities, and GPU limits." },
+    display: { kicker: "Graphics", title: "Display", description: "Review viewport, screen, pixel density, orientation, and motion preferences." },
+    performance: { kicker: "Diagnostics", title: "Performance", description: "Monitor frame timing, sample count, and dashboard uptime." },
+    apps: { kicker: "Dashboard", title: "Applications", description: "Inspect installed applications and current shell focus state." },
+    client: { kicker: "Client", title: "Connection", description: "Choose this client's server target and optional service authentication token." },
+    runtime: { kicker: "Diagnostics", title: "Runtime", description: "Review platform, language, network state, and browser runtime details." }
+  };
+
+  const title = container.querySelector<HTMLElement>("[data-settings-view-title]");
+  const kicker = container.querySelector<HTMLElement>("[data-settings-view-kicker]");
+  const description = container.querySelector<HTMLElement>("[data-settings-view-description]");
+  const board = container.querySelector<HTMLElement>(".diagnostics-board");
+
+  const activate = (selected: string) => {
+    const visibleSections = sectionGroups[selected] ?? sectionGroups.all;
+    const metadata = viewMetadata[selected] ?? viewMetadata.all;
+
+    tabs.forEach((candidate) => {
+      const active = candidate.dataset.diagnosticTab === selected;
+      candidate.classList.toggle("active", active);
+      candidate.setAttribute("aria-current", active ? "page" : "false");
+    });
+
+    sections.forEach((section) => {
+      const sectionName = section.dataset.diagnosticSection ?? "";
+      section.hidden = !visibleSections.includes(sectionName);
+    });
+
+    if (title) title.textContent = metadata.title;
+    if (kicker) kicker.textContent = metadata.kicker;
+    if (description) description.textContent = metadata.description;
+    if (board) board.scrollTop = 0;
+  };
+
   tabs.forEach((tab) => {
     tab.addEventListener("click", () => {
       const selected = tab.dataset.diagnosticTab ?? "all";
-      const visibleSections = sectionGroups[selected] ?? [];
-
-      tabs.forEach((candidate) => {
-        candidate.classList.toggle("active", candidate === tab);
-      });
-
-      sections.forEach((section) => {
-        const sectionName = section.dataset.diagnosticSection ?? "";
-        section.hidden = visibleSections.length > 0 && !visibleSections.includes(sectionName);
-      });
+      activate(selected);
+    });
+    tab.addEventListener("keydown", (event) => {
+      if (!["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
+      event.preventDefault();
+      const direction = event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1;
+      const nextIndex = Math.max(0, Math.min(tabs.length - 1, tabs.indexOf(tab) + direction));
+      tabs[nextIndex]?.focus();
     });
   });
+
+  container.querySelectorAll<HTMLButtonElement>("[data-settings-jump]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = tabs.find((tab) => tab.dataset.diagnosticTab === button.dataset.settingsJump);
+      target?.click();
+      target?.focus();
+    });
+  });
+
+  activate(tabs.find((tab) => tab.classList.contains("active"))?.dataset.diagnosticTab ?? "all");
 };
 
 const bindClientSettings = (container: ParentNode) => {

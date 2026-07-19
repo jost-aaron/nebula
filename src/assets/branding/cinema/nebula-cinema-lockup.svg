@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 256" role="img" aria-labelledby="title desc">
+  <title id="title">Nebula Cinema</title>
+  <desc id="desc">Nebula Cinema horizontal logo with the five-blade play symbol.</desc>
+  <defs>
+    <path id="blade" d="M128 22c38 0 74 18 96 48-29-11-61-8-86 7-23 14-39 37-45 63-12-41 1-86 35-118Z"/>
+    <path id="n" d="M0 42V0l30 42V0"/><path id="e" d="M30 0H0v42h30M0 21h24"/>
+    <path id="b" d="M0 0v42M0 2h17q13 0 13 9t-13 10H0m17 0q14 0 14 10t-14 9H0"/>
+    <path id="u" d="M0 0v28q0 14 15 14t15-14V0"/><path id="l" d="M0 0v42h30"/>
+    <path id="a" d="M0 42 15 0l15 42M6 25h18"/><path id="c" d="M30 5Q25 0 15 0 0 0 0 21t15 21q10 0 15-5"/>
+    <path id="i" d="M0 0h30M15 0v42M0 42h30"/><path id="m" d="M0 42V0l15 20L30 0v42"/>
+  </defs>
+  <g transform="translate(8 8) scale(.94)">
+    <g fill="#F2EBDD">
+      <use href="#blade" transform="rotate(72 128 128)"/><use href="#blade" transform="rotate(144 128 128)"/>
+      <use href="#blade" transform="rotate(216 128 128)"/><use href="#blade" transform="rotate(288 128 128)"/>
+    </g>
+    <use href="#blade" fill="#E7A940"/>
+    <path fill="#05080D" d="M103 78c0-8 9-13 16-8l69 49c7 5 7 15 0 20l-69 49c-7 5-16 0-16-8V78Z"/>
+    <path fill="#E7A940" d="m226 107 4 13 13 4-13 4-4 13-4-13-13-4 13-4 4-13Z"/>
+  </g>
+  <g fill="none" stroke="#F2EBDD" stroke-width="4.5" stroke-linecap="square" stroke-linejoin="round">
+    <use href="#n" transform="translate(310 95)"/><use href="#e" transform="translate(354 95)"/>
+    <use href="#b" transform="translate(398 95)"/><use href="#u" transform="translate(442 95)"/>
+    <use href="#l" transform="translate(486 95)"/><use href="#a" transform="translate(530 95)"/>
+    <use href="#c" transform="translate(594 95)"/><use href="#i" transform="translate(638 95)"/>
+    <use href="#n" transform="translate(682 95)"/><use href="#e" transform="translate(726 95)"/>
+    <use href="#m" transform="translate(770 95)"/><use href="#a" transform="translate(814 95)"/>
+  </g>
+  <path fill="#E7A940" d="M310 166h534v3H310z" opacity=".9"/>
+</svg>

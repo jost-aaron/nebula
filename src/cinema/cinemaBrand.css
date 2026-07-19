@@ -1,0 +1,544 @@
+/* Five-Blade Play visual system. Loaded after legacy Cinema styles. */
+.app-surface.cinema-app-surface,
+.cinema-app-surface {
+  background: #030508;
+}
+
+.cinema-shell {
+  --cinema-bone: #f2ebdd;
+  --cinema-bone-muted: rgba(242, 235, 221, 0.62);
+  --cinema-cyan: #e7a940;
+  --cinema-cyan-soft: rgba(231, 169, 64, 0.14);
+  --cinema-amber: #e7a940;
+  --cinema-amber-bright: #f6c76f;
+  --cinema-panel: rgba(9, 10, 13, 0.82);
+  --cinema-border: rgba(242, 235, 221, 0.14);
+  color: var(--cinema-bone);
+  background:
+    radial-gradient(ellipse at 16% 38%, rgba(197, 123, 35, 0.13), transparent 31%),
+    radial-gradient(ellipse at 68% 4%, rgba(87, 94, 107, 0.08), transparent 35%),
+    linear-gradient(145deg, #090b0f 0%, #04070b 52%, #020407 100%);
+}
+
+.cinema-shell::before {
+  background:
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.012) 50%, transparent),
+    radial-gradient(circle at 18% 42%, rgba(231, 169, 64, 0.07), transparent 24%);
+}
+
+.cinema-shell::after {
+  display: none;
+}
+
+.cinema-top-nav {
+  min-height: 60px;
+  grid-template-columns: auto auto minmax(230px, 1fr) auto;
+  gap: clamp(12px, 1.6vw, 28px);
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--cinema-border);
+}
+
+.cinema-brand {
+  gap: 10px;
+  padding-right: 18px;
+  border-right: 1px solid var(--cinema-border);
+  color: var(--cinema-bone);
+}
+
+.cinema-brand-mark {
+  width: 46px;
+  height: 46px;
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  background: transparent;
+  box-shadow: none;
+}
+
+.cinema-brand-mark img {
+  display: block;
+  width: 46px;
+  height: 46px;
+  object-fit: contain;
+}
+
+.cinema-brand strong {
+  color: #fffaf2;
+  font-size: 0.96rem;
+  font-weight: 680;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.cinema-brand small {
+  margin-top: 3px;
+  color: rgba(242, 235, 221, 0.38);
+  font-size: 0.56rem;
+  letter-spacing: 0.16em;
+}
+
+.cinema-brand:hover strong {
+  color: var(--cinema-amber-bright);
+}
+
+.cinema-nav-tabs {
+  height: 100%;
+  justify-content: flex-start;
+  gap: clamp(14px, 1.5vw, 26px);
+}
+
+.cinema-nav-tabs button {
+  position: relative;
+  min-width: 0;
+  height: 100%;
+  min-height: 42px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: rgba(242, 235, 221, 0.58);
+  background: transparent;
+  font-weight: 560;
+}
+
+.cinema-nav-tabs button::after {
+  position: absolute;
+  right: 0;
+  bottom: -13px;
+  left: 0;
+  height: 2px;
+  border-radius: 2px;
+  content: "";
+  background: var(--cinema-amber);
+  opacity: 0;
+  transform: scaleX(0.4);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.cinema-nav-tabs button:hover,
+.cinema-nav-tabs button.active {
+  border: 0;
+  color: #ffffff;
+  background: transparent;
+  box-shadow: none;
+}
+
+.cinema-nav-tabs button.active::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.cinema-global-search {
+  justify-self: center;
+  width: min(100%, 420px);
+}
+
+.cinema-global-search input {
+  min-height: 42px;
+  border-color: var(--cinema-border);
+  border-radius: 12px;
+  color: var(--cinema-bone);
+  background: rgba(10, 12, 16, 0.74);
+}
+
+.cinema-global-search input:focus {
+  border-color: rgba(231, 169, 64, 0.52);
+  box-shadow: 0 0 0 3px rgba(231, 169, 64, 0.08);
+}
+
+.cinema-global-search span {
+  color: rgba(242, 235, 221, 0.48);
+}
+
+.cinema-dashboard-command,
+.cinema-mobile-more {
+  border: 0;
+  color: rgba(242, 235, 221, 0.76);
+  background: transparent;
+}
+
+.cinema-dashboard-command:hover,
+.cinema-dashboard-command:focus-visible,
+.cinema-mobile-more:hover,
+.cinema-mobile-more:focus-visible {
+  border-color: transparent;
+  color: var(--cinema-amber-bright);
+  background: transparent;
+}
+
+.cinema-content {
+  border-top: 0;
+  padding-top: clamp(18px, 2.4vh, 34px);
+}
+
+.cinema-library.browsing {
+  display: block;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.cinema-library.browsing > * + * {
+  margin-top: 20px;
+}
+
+.cinema-library.browsing .cinema-continue .cinema-grid {
+  min-height: 330px;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(150px, 190px);
+  grid-template-columns: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.cinema-library-row > header {
+  border-color: var(--cinema-border);
+}
+
+.cinema-library-heading .eyebrow,
+.cinema-continue .eyebrow,
+.cinema-title-panel .eyebrow {
+  color: var(--cinema-amber-bright);
+  letter-spacing: 0.12em;
+}
+
+.cinema-library-heading h3,
+.cinema-title-panel h2,
+.cinema-continue h3 {
+  color: #ffffff;
+  font-weight: 560;
+}
+
+.cinema-library-heading > span,
+.cinema-card-copy small,
+.cinema-continue > header > span,
+.cinema-catalog-status,
+.cinema-empty,
+.cinema-title-panel p:not(.eyebrow),
+.cinema-title-meta {
+  color: var(--cinema-bone-muted);
+}
+
+.cinema-category-segments {
+  border-color: var(--cinema-border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.cinema-category-segments button {
+  color: var(--cinema-bone-muted);
+}
+
+.cinema-category-segments button:hover,
+.cinema-category-segments button.active {
+  border-color: rgba(231, 169, 64, 0.38);
+  color: #fff;
+  background: rgba(231, 169, 64, 0.12);
+}
+
+.cinema-poster {
+  border-color: var(--cinema-border);
+  background:
+    linear-gradient(145deg, rgba(231, 169, 64, 0.13), rgba(242, 235, 221, 0.025)),
+    #080a0d;
+}
+
+.cinema-card:hover .cinema-poster,
+.cinema-card:focus-visible .cinema-poster {
+  border-color: rgba(231, 169, 64, 0.72);
+  box-shadow:
+    0 0 0 2px rgba(231, 169, 64, 0.1),
+    0 24px 54px rgba(0, 0, 0, 0.52);
+}
+
+.cinema-card-play {
+  color: #07090c;
+  background: var(--cinema-bone);
+}
+
+.cinema-card-badge {
+  color: var(--cinema-bone);
+  background: rgba(5, 6, 9, 0.74);
+}
+
+.cinema-card-progress i,
+.cinema-preview-timeline i {
+  background: var(--cinema-amber);
+  box-shadow: 0 0 12px rgba(231, 169, 64, 0.5);
+}
+
+.cinema-poster-fallback {
+  color: #08090b;
+  background:
+    radial-gradient(circle at 32% 20%, #fff8eb, transparent 42%),
+    linear-gradient(145deg, #e8dfcf, #bc7d28);
+}
+
+.cinema-library.browsing .cinema-empty,
+.cinema-watchlist-view.browsing .cinema-empty,
+.cinema-chapter-strip,
+.cinema-next-up,
+.cinema-title-panel,
+.cinema-playback-settings {
+  border-color: var(--cinema-border);
+  background: rgba(255, 255, 255, 0.022);
+}
+
+.cinema-play-orb,
+.cinema-actions button:first-child,
+.cinema-transport .cinema-transport-play {
+  border-color: rgba(242, 235, 221, 0.78);
+  color: #06080b;
+  background: linear-gradient(145deg, #fffaf0, #d9cdbb);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.32);
+}
+
+.cinema-actions button:first-child:hover,
+.cinema-play-orb:hover,
+.cinema-play-orb:focus-visible,
+.cinema-transport .cinema-transport-play:hover,
+.cinema-transport .cinema-transport-play:focus-visible {
+  border-color: var(--cinema-amber-bright);
+  background: linear-gradient(145deg, #fffaf0, #e7a940);
+  outline-color: rgba(231, 169, 64, 0.28);
+}
+
+.cinema-edit-command,
+.cinema-catalog-status,
+.cinema-catalog-note {
+  border-color: rgba(231, 169, 64, 0.24);
+  color: var(--cinema-amber-bright);
+  background: rgba(231, 169, 64, 0.06);
+}
+
+.cinema-playback-settings strong,
+.cinema-chapter-cards button.active strong {
+  color: var(--cinema-amber-bright);
+}
+
+.cinema-chapter-cards button.active .cinema-chapter-thumb {
+  border-color: var(--cinema-amber);
+  box-shadow: 0 0 0 2px rgba(231, 169, 64, 0.12);
+}
+
+.cinema-server-card {
+  border-color: rgba(94, 215, 165, 0.25);
+  background: rgba(17, 39, 33, 0.28);
+}
+
+.cinema-transport {
+  border-color: rgba(242, 235, 221, 0.18);
+  background: linear-gradient(105deg, rgba(12, 12, 14, 0.96), rgba(5, 7, 10, 0.94));
+}
+
+.cinema-transport button:hover,
+.cinema-transport button:focus-visible {
+  border-color: rgba(231, 169, 64, 0.68);
+  color: var(--cinema-amber-bright);
+  background: rgba(231, 169, 64, 0.12);
+}
+
+.cinema-transport input[type="range"]::-webkit-slider-runnable-track {
+  background: linear-gradient(90deg, var(--cinema-amber) 0 var(--cinema-progress), rgba(242, 235, 221, 0.42) var(--cinema-progress) var(--cinema-buffered), rgba(242, 235, 221, 0.16) var(--cinema-buffered) 100%);
+}
+
+.cinema-transport input[type="range"]::-webkit-slider-thumb,
+.cinema-transport input[type="range"]::-moz-range-thumb {
+  border-color: #07090c;
+  background: var(--cinema-bone);
+  box-shadow: 0 0 0 2px rgba(231, 169, 64, 0.24);
+}
+
+.cinema-transport input[type="range"]::-moz-range-progress {
+  background: var(--cinema-amber);
+}
+
+.cinema-control-menu {
+  border-color: rgba(231, 169, 64, 0.24);
+  background: rgba(8, 9, 12, 0.98);
+}
+
+.cinema-transport .cinema-player-subtitles select,
+.cinema-transport .cinema-player-quality select {
+  border-color: rgba(231, 169, 64, 0.22);
+  color: var(--cinema-bone);
+  background: rgba(22, 20, 17, 0.94);
+}
+
+.cinema-wave {
+  opacity: 0.58;
+  background: radial-gradient(ellipse at 52% 90%, rgba(231, 169, 64, 0.16), transparent 68%);
+}
+
+.cinema-wave-line.primary {
+  stroke: rgba(231, 169, 64, 0.42);
+  filter: drop-shadow(0 0 10px rgba(231, 169, 64, 0.28));
+}
+
+.cinema-wave-line.secondary {
+  stroke: rgba(242, 235, 221, 0.2);
+  filter: none;
+}
+
+.cinema-wave-line.tertiary {
+  stroke: rgba(231, 169, 64, 0.13);
+}
+
+.cinema-footer-status {
+  color: rgba(242, 235, 221, 0.48);
+  border-top: 1px solid var(--cinema-border);
+}
+
+.cinema-shell button:focus-visible,
+.cinema-shell input:focus-visible,
+.cinema-shell select:focus-visible {
+  outline: 2px solid var(--cinema-amber);
+  outline-offset: 3px;
+}
+
+.cinema-app-icon {
+  fill: currentColor;
+  stroke: none;
+}
+
+.cinema-app-icon-cutout {
+  fill: var(--accent, #e7a940);
+}
+
+@media (max-width: 1220px) and (min-width: 761px) {
+  .cinema-top-nav {
+    grid-template-columns: auto minmax(300px, 1fr) minmax(150px, 210px) auto;
+    gap: 10px;
+  }
+
+  .cinema-brand small {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .cinema-top-nav {
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    gap: 10px;
+    border-bottom-color: var(--cinema-border);
+    overflow: hidden;
+  }
+
+  .cinema-brand {
+    padding-right: 0;
+    border-right: 0;
+  }
+
+  .cinema-brand-mark,
+  .cinema-brand-mark img {
+    width: 44px;
+    height: 44px;
+  }
+
+  .cinema-brand small {
+    display: none;
+  }
+
+  .cinema-nav-tabs {
+    width: 100%;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    overflow: hidden;
+  }
+
+  .cinema-nav-tabs button {
+    min-width: 0;
+    padding-inline: 3px;
+    font-size: 0.74rem;
+  }
+
+  .cinema-nav-tabs button::after {
+    bottom: -9px;
+  }
+
+  .cinema-content {
+    padding-top: 18px;
+  }
+
+  .cinema-global-search {
+    width: 100%;
+    min-width: 0;
+    justify-self: stretch;
+  }
+
+  .cinema-title-panel .cinema-actions {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cinema-title-panel .cinema-actions button {
+    min-width: 0;
+    width: 100%;
+    white-space: normal;
+  }
+
+  .cinema-title-panel .cinema-actions button:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .cinema-video-stage .cinema-transport {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 44px;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 9px;
+  }
+
+  .cinema-video-stage .cinema-transport-timeline {
+    grid-column: 1;
+    grid-row: 1;
+    grid-template-columns: 30px minmax(0, 1fr) 30px;
+    gap: 5px;
+  }
+
+  .cinema-video-stage .cinema-transport-actions {
+    grid-column: 1;
+    grid-row: 2;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 7px;
+  }
+
+  .cinema-video-stage .cinema-transport-volume {
+    display: none;
+  }
+
+  .cinema-video-stage .cinema-transport-group {
+    gap: 7px;
+  }
+
+  .cinema-video-stage .cinema-transport .cinema-control-menu-button {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: 50%;
+  }
+
+  .cinema-video-stage .cinema-control-menu-button > span {
+    display: none;
+  }
+
+  .cinema-video-stage .cinema-transport time {
+    font-size: 0.62rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .cinema-video-stage .cinema-transport-timeline {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cinema-video-stage .cinema-transport-timeline time {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}

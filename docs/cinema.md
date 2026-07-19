@@ -26,6 +26,15 @@ The Cinema UI lives in:
 src/cinema/renderCinemaView.ts
 ```
 
+Cinema uses the production Five-Blade Play identity under
+`src/assets/branding/cinema/`. The canonical SVG family includes transparent
+and dark-background symbols, a horizontal lockup, a square app icon, and a
+monochrome mark; matching PNG exports are provided for distribution surfaces.
+The aperture uses four warm bone-white blades, one amber-gold blade, a central
+play symbol, and a four-point star. The UI extends that near-black, ivory, and
+amber visual system so Cinema and Studio feel like members of the same media
+family without sharing audio-specific imagery.
+
 It renders:
 
 - An explicit Dashboard/close command in the Cinema header.
@@ -34,9 +43,13 @@ It renders:
 - A persistent per-account watchlist for saved video titles.
 - A dedicated title details submenu after selecting a title.
 - Lazy video playback through a native `<video>` engine with Nebula Cinema's
-  custom play/pause, seek, volume, mute, subtitle, quality, and fullscreen
+  custom play/pause, 10-second skip, seek, volume, mute, subtitle, quality, and fullscreen
   controls. Fullscreen includes the custom transport rather than falling back
-  to browser-native chrome.
+  to browser-native chrome, and the fullscreen command toggles back to the
+  normal Cinema surface from the same control.
+- The transport exposes Back 10 and Forward 10 controls. Left Arrow and Right
+  Arrow trigger the same skips while the player is active, except when a form
+  field or slider owns keyboard focus.
 - The transport sits flush with the video edge, shows played and buffered
   progress separately, and keeps subtitle and quality selectors in compact
   on-demand popovers. While video is playing, it fades after 2.5 seconds of

@@ -140,6 +140,35 @@ h1 {
   color: #ffe29a;
 }
 
+.fullscreen-command {
+  gap: 7px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.fullscreen-command svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.fullscreen-command:hover,
+.fullscreen-command:focus-visible,
+.fullscreen-command.active {
+  border-color: rgba(132, 228, 239, 0.5);
+  color: #bceff5;
+  background: rgba(80, 190, 204, 0.13);
+}
+
+.fullscreen-command:focus-visible {
+  outline: 2px solid #8cebf4;
+  outline-offset: 3px;
+}
+
 .hero-stage {
   min-height: 310px;
   display: flex;
@@ -1619,6 +1648,7 @@ h1 {
   max-height: 100%;
   object-fit: contain;
   background: #020407;
+  transition: height 220ms ease;
 }
 
 .cinema-audio-player {
@@ -3861,6 +3891,10 @@ h1 {
     font-size: 0.94rem;
   }
 
+  .fullscreen-command {
+    min-width: 30px;
+  }
+
   .hero-stage {
     min-height: 0;
     align-items: center;
@@ -4269,6 +4303,17 @@ h1 {
     justify-content: flex-start;
     overflow-x: auto;
     scrollbar-width: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .fullscreen-command span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 
@@ -7050,7 +7095,7 @@ h1 {
   cursor: none;
 }
 
-.cinema-video-stage.controls-hidden:not(:focus-within) .cinema-transport {
+.cinema-video-stage.controls-hidden .cinema-transport {
   opacity: 0;
   pointer-events: none;
   transform: translateY(10px);
@@ -7075,9 +7120,47 @@ h1 {
 
 .cinema-transport-actions {
   display: grid;
-  grid-template-columns: 44px 36px minmax(70px, 110px) minmax(84px, auto) minmax(84px, auto) 36px;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: 8px;
   align-items: center;
+}
+
+.cinema-transport-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cinema-transport-group-left {
+  justify-content: flex-start;
+}
+
+.cinema-transport-group-center {
+  justify-content: center;
+}
+
+.cinema-transport-group-right {
+  justify-content: flex-end;
+}
+
+.cinema-skip-command {
+  position: relative;
+}
+
+.cinema-skip-command .cinema-ui-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.cinema-skip-command > span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding-top: 1px;
+  font-size: 0.43rem;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .cinema-transport button {
@@ -7170,22 +7253,18 @@ h1 {
 }
 
 .cinema-transport .cinema-control-menu-button {
-  display: inline-flex;
-  justify-content: center;
-  gap: 7px;
-  width: auto;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
   min-width: 0;
-  padding: 0 10px;
-  border-radius: 9px;
+  padding: 0;
+  border-radius: 50%;
   overflow: hidden;
 }
 
 .cinema-control-menu-button span {
-  overflow: hidden;
-  font-size: 0.72rem;
-  font-weight: 760;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: none;
 }
 
 .cinema-control-menu {
@@ -7257,6 +7336,37 @@ h1 {
   height: 100%;
 }
 
+.cinema-video-stage:not(.controls-hidden) .cinema-player {
+  align-self: start;
+  height: calc(100% - var(--cinema-transport-height, 0px));
+}
+
+.cinema-video-stage:not(.controls-hidden) .cinema-player-overlay {
+  bottom: var(--cinema-transport-height, 0px);
+}
+
+.cinema-video-stage.is-fullscreen .cinema-transport .cinema-control-menu-button {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.cinema-video-stage.is-fullscreen .cinema-control-menu-button > span {
+  display: none;
+}
+
+.cinema-video-stage:-webkit-full-screen .cinema-transport .cinema-control-menu-button {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.cinema-video-stage:-webkit-full-screen .cinema-control-menu-button > span {
+  display: none;
+}
+
 @media (max-width: 700px) {
   .cinema-content,
   .cinema-watch-surface {
@@ -7296,7 +7406,11 @@ h1 {
   }
 
   .cinema-transport-actions {
-    grid-template-columns: 42px 34px minmax(0, 1fr) minmax(0, 1fr) 34px;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 7px;
+  }
+
+  .cinema-transport-group {
     gap: 7px;
   }
 

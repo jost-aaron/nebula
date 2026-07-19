@@ -15,10 +15,10 @@ export const dashboardApps: DashboardApp[] = [
     id: "cinema",
     name: "Cinema",
     kind: "media",
-    status: "prototype",
-    accent: "#00d4ff",
-    icon: "Clapperboard",
-    description: "A future native video player surface with library, playback, and queue hooks."
+    status: "ready",
+    accent: "#e7a940",
+    icon: "Play",
+    description: "Local movies and television with native-style playback, watchlists, and personal history."
   },
   {
     id: "arcade",

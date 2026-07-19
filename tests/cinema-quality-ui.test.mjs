@@ -26,5 +26,7 @@ test("Cinema uses native-or-MSE HLS and tears it down with delivery lifecycle", 
 test("quality controls remain reachable in the phone player transport", () => {
   assert.match(styles, /\.cinema-quality-menu[\s\S]*width:\s*min\(310px/);
   assert.match(styles, /\.cinema-control-menu\[hidden\][\s\S]*display:\s*none/);
+  assert.match(styles, /\.cinema-transport \.cinema-control-menu-button \{[\s\S]*?width: 36px;[\s\S]*?height: 36px;[\s\S]*?border-radius: 50%/);
+  assert.match(styles, /\.cinema-control-menu-button span \{[\s\S]*?display: none/);
   assert.match(styles, /@media \(max-width: 700px\) \{[\s\S]*?\.cinema-transport-actions[\s\S]*?grid-template-columns:/);
 });

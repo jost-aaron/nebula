@@ -25,6 +25,7 @@ import type {
   CinemaMetadataUpdateRequest,
   CinemaWatchlistUpdateRequest
 } from "../shared/cinemaTypes";
+
 import type { CinemaTmdbCandidate, CinemaTmdbStatusResponse } from "../shared/cinemaTmdbTypes";
 import type { MediaChapter } from "../shared/catalogTypes";
 import type { ContinueWatchingEntry, PlaybackEventKind } from "../shared/playbackTypes";
@@ -37,6 +38,11 @@ import { RENDITION_PROFILE_IDS, type MediaRendition, type PlaybackQualityPrefere
 import type { PlaybackPlanResponse } from "../shared/playbackPlanTypes";
 import { createBrowserUuid } from "../shared/browserUuid";
 import { createHlsPlayback, supportsHlsPlayback, type HlsPlaybackHandle } from "./hlsPlayback";
+
+const cinemaBrandMarkUrl = new URL(
+  "../assets/branding/cinema/nebula-cinema-symbol.svg",
+  import.meta.url
+).href;
 
 type CinemaView = "library" | "watchlist" | "title-detail" | "player" | "metadata-editor" | "servers" | "identify";
 
@@ -153,18 +159,55 @@ const renderCinemaIcon = (iconName: keyof typeof icons, className = "cinema-ui-i
   return node.outerHTML;
 };
 
+type WebkitFullscreenDocument = Document & {
+  webkitExitFullscreen?: () => Promise<void> | void;
+  webkitFullscreenElement?: Element | null;
+};
+
+type WebkitFullscreenElement = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+};
+
+type WebkitFullscreenMediaElement = HTMLMediaElement & {
+  webkitDisplayingFullscreen?: boolean;
+  webkitExitFullscreen?: () => void;
+};
+
+const currentFullscreenElement = () =>
+  document.fullscreenElement ?? (document as WebkitFullscreenDocument).webkitFullscreenElement ?? null;
+
+const enterFullscreen = (element: HTMLElement) => {
+  if (element.requestFullscreen) return element.requestFullscreen();
+  return (element as WebkitFullscreenElement).webkitRequestFullscreen?.();
+};
+
+const exitFullscreen = () => {
+  if (document.exitFullscreen) return document.exitFullscreen();
+  return (document as WebkitFullscreenDocument).webkitExitFullscreen?.();
+};
+
+const toggleCinemaFullscreen = async (stage: HTMLElement, player: HTMLMediaElement) => {
+  const webkitPlayer = player as WebkitFullscreenMediaElement;
+  if (currentFullscreenElement()) {
+    await exitFullscreen();
+    return;
+  }
+  if (webkitPlayer.webkitDisplayingFullscreen) {
+    webkitPlayer.webkitExitFullscreen?.();
+    return;
+  }
+  await enterFullscreen(stage);
+};
+
 const renderTopNav = (view: CinemaView) => `
   <header class="cinema-top-nav">
     <button class="cinema-brand" type="button" data-cinema-action="library" aria-label="Cinema library">
       <span class="cinema-brand-mark">
-        <svg viewBox="0 0 44 44" aria-hidden="true" focusable="false">
-          <path class="cinema-brand-orbit" d="M7 26 C10 11 28 5 37 15 C46 25 31 42 16 36 C5 32 6 18 18 9" />
-          <path class="cinema-brand-glyph" d="M13 31 V13 L31 31 V13" />
-          <circle cx="35" cy="10" r="2.4" />
-        </svg>
+        <img src="${cinemaBrandMarkUrl}" alt="" aria-hidden="true" />
       </span>
       <span>
         <strong>Nebula Cinema</strong>
+        <small>Local picture house</small>
       </span>
     </button>
     <nav class="cinema-nav-tabs" aria-label="Cinema sections">
@@ -179,7 +222,7 @@ const renderTopNav = (view: CinemaView) => `
     </label>
     <div class="cinema-dashboard-actions">
       <button class="cinema-dashboard-command" type="button" data-cinema-action="home">
-        ${renderCinemaIcon("ArrowLeft")} Dashboard
+        ${renderCinemaIcon("LayoutDashboard")} Dashboard
       </button>
       <button class="cinema-mobile-more" type="button" data-cinema-action="more" aria-label="Title options">${renderCinemaIcon("MoreHorizontal")}</button>
     </div>
@@ -507,12 +550,20 @@ const renderVideoPlayerView = (entry: CinemaEntry, subtitles: SubtitleTracksResp
           <time data-cinema-duration>0:00</time>
         </div>
         <div class="cinema-transport-actions">
-          <button class="cinema-transport-play" type="button" data-cinema-action="player-toggle" data-cinema-play-toggle aria-label="Play video">${renderCinemaIcon("Play")}</button>
-          <button type="button" data-cinema-action="player-mute" data-cinema-mute-toggle aria-label="Mute">${renderCinemaIcon("Volume2")}</button>
-          <input class="cinema-transport-volume" type="range" min="0" max="1" value="1" step="0.05" data-cinema-volume aria-label="Volume" />
-          <button class="cinema-control-menu-button" type="button" data-cinema-action="player-subtitles" aria-label="Subtitles" aria-expanded="false">${renderCinemaIcon("Captions")}<span data-cinema-subtitle-label>${escapeHtml(subtitles?.tracks.find((track) => track.id === subtitles.selectedSubtitleId)?.label || "Off")}</span></button>
-          <button class="cinema-control-menu-button" type="button" data-cinema-action="player-quality" aria-label="Quality" aria-expanded="false">${renderCinemaIcon("Gauge")}<span data-cinema-quality-label>${escapeHtml(qualityResultLabel(quality))}</span></button>
-          <button type="button" data-cinema-action="player-fullscreen" aria-label="Fullscreen video">${renderCinemaIcon("Maximize")}</button>
+          <div class="cinema-transport-group cinema-transport-group-left">
+            <button type="button" data-cinema-action="player-mute" data-cinema-mute-toggle aria-label="Mute">${renderCinemaIcon("Volume2")}</button>
+            <input class="cinema-transport-volume" type="range" min="0" max="1" value="1" step="0.05" data-cinema-volume aria-label="Volume" />
+          </div>
+          <div class="cinema-transport-group cinema-transport-group-center">
+            <button class="cinema-skip-command" type="button" data-cinema-action="player-skip-back" aria-label="Skip backward 10 seconds" title="Back 10 seconds">${renderCinemaIcon("RotateCcw")}<span aria-hidden="true">10</span></button>
+            <button class="cinema-transport-play" type="button" data-cinema-action="player-toggle" data-cinema-play-toggle aria-label="Play video">${renderCinemaIcon("Play")}</button>
+            <button class="cinema-skip-command" type="button" data-cinema-action="player-skip-forward" aria-label="Skip forward 10 seconds" title="Forward 10 seconds">${renderCinemaIcon("RotateCw")}<span aria-hidden="true">10</span></button>
+          </div>
+          <div class="cinema-transport-group cinema-transport-group-right">
+            <button class="cinema-control-menu-button" type="button" data-cinema-action="player-subtitles" aria-label="Subtitles" aria-expanded="false">${renderCinemaIcon("Captions")}<span data-cinema-subtitle-label>${escapeHtml(subtitles?.tracks.find((track) => track.id === subtitles.selectedSubtitleId)?.label || "Off")}</span></button>
+            <button class="cinema-control-menu-button" type="button" data-cinema-action="player-quality" aria-label="Quality" aria-expanded="false">${renderCinemaIcon("Gauge")}<span data-cinema-quality-label>${escapeHtml(qualityResultLabel(quality))}</span></button>
+            <button type="button" data-cinema-action="player-fullscreen" aria-label="Fullscreen video">${renderCinemaIcon("Maximize")}</button>
+          </div>
         </div>
         <div class="cinema-control-menu" data-cinema-subtitle-menu hidden>
           <label class="cinema-player-subtitles"><span>Subtitles</span><select data-cinema-player-subtitle aria-label="Subtitle track"><option value="">Off</option>${subtitles?.tracks.map((track) => `<option value="${escapeHtml(track.id)}"${track.id === subtitles.selectedSubtitleId ? " selected" : ""}>${escapeHtml(track.label || track.language || "Unknown")}</option>`).join("") ?? ""}</select></label>
@@ -1138,13 +1189,25 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
           }
         }).catch(() => setStatus("Playing locally; progress sync is unavailable."));
       };
+      let keyboardControlsActive = false;
+      let pointerOverTransport = false;
+      const syncTransportHeight = () => {
+        const height = transport?.getBoundingClientRect().height ?? 0;
+        stage.style.setProperty("--cinema-transport-height", `${Math.ceil(height)}px`);
+      };
+      const transportResizeObserver = transport && typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(syncTransportHeight)
+        : null;
+      if (transport) transportResizeObserver?.observe(transport);
+      syncTransportHeight();
       const controlsAreEngaged = () => {
         const menuOpen = Array.from(stage.querySelectorAll<HTMLElement>(".cinema-control-menu"))
           .some((menu) => !menu.hidden);
-        const focusedControl = transport?.contains(document.activeElement)
+        const focusedControl = keyboardControlsActive
+          && transport?.contains(document.activeElement)
           && document.activeElement instanceof HTMLElement
           && document.activeElement.matches(":focus-visible");
-        return menuOpen || Boolean(focusedControl);
+        return menuOpen || pointerOverTransport || Boolean(focusedControl);
       };
       const clearControlsHideTimer = () => {
         if (controlsHideTimer !== null) {
@@ -1156,10 +1219,29 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         clearControlsHideTimer();
         stage.classList.remove("controls-hidden");
         if (!scheduleHide || player.paused || player.ended) return;
+        const hideDelay = stage.classList.contains("is-fullscreen") ? 1_000 : 2_500;
         controlsHideTimer = window.setTimeout(() => {
           controlsHideTimer = null;
           if (!player.paused && !player.ended && !controlsAreEngaged()) stage.classList.add("controls-hidden");
-        }, 2_500);
+        }, hideDelay);
+      };
+      const seekBySeconds = (seconds: number) => {
+        const duration = Number.isFinite(player.duration) && player.duration > 0
+          ? player.duration
+          : Number.POSITIVE_INFINITY;
+        player.currentTime = Math.min(duration, Math.max(0, player.currentTime + seconds));
+        revealControls();
+      };
+      const onPlayerKeyDown = (event: KeyboardEvent) => {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+        const target = event.target;
+        if (target instanceof HTMLInputElement
+          || target instanceof HTMLSelectElement
+          || target instanceof HTMLTextAreaElement
+          || (target instanceof HTMLElement && target.isContentEditable)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        seekBySeconds(event.key === "ArrowLeft" ? -10 : 10);
       };
       const syncPlayerControls = () => {
         const duration = Number.isFinite(player.duration) && player.duration > 0 ? player.duration : 0;
@@ -1191,6 +1273,29 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
           button.setAttribute("aria-pressed", String(muted));
         });
       };
+      const syncFullscreenControl = () => {
+        const fullscreenElement = currentFullscreenElement();
+        const webkitPlayer = player as WebkitFullscreenMediaElement;
+        const isFullscreen = fullscreenElement === stage
+          || Boolean(fullscreenElement && stage.contains(fullscreenElement))
+          || webkitPlayer.webkitDisplayingFullscreen === true;
+        stage.classList.toggle("is-fullscreen", isFullscreen);
+        content.querySelectorAll<HTMLButtonElement>("[data-cinema-action='player-fullscreen']").forEach((button) => {
+          button.innerHTML = renderCinemaIcon(isFullscreen ? "Minimize" : "Maximize");
+          button.setAttribute("aria-label", isFullscreen ? "Exit fullscreen video" : "Fullscreen video");
+          button.setAttribute("aria-pressed", String(isFullscreen));
+          button.title = isFullscreen ? "Exit fullscreen" : "Fullscreen";
+        });
+        if (!player.paused && !player.ended) revealControls();
+      };
+      const fullscreenButton = stage.querySelector<HTMLButtonElement>("[data-cinema-action='player-fullscreen']");
+      const onFullscreenButtonClick = (event: MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        revealControls();
+        void toggleCinemaFullscreen(stage, player).catch(() => setStatus("Fullscreen could not be changed by this browser."));
+      };
+      fullscreenButton?.addEventListener("click", onFullscreenButtonClick);
       const renderPlaybackState = () => {
         stage.classList.toggle("is-playing", !player.paused && !player.ended);
         revealControls(!player.paused && !player.ended);
@@ -1265,11 +1370,18 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       player.addEventListener("loadedmetadata", syncPlayerControls);
       player.addEventListener("progress", syncPlayerControls);
       player.addEventListener("volumechange", syncPlayerControls);
-      stage.addEventListener("pointermove", () => revealControls());
-      stage.addEventListener("pointerdown", () => revealControls());
-      stage.addEventListener("keydown", () => revealControls());
-      stage.addEventListener("focusin", () => revealControls(false));
+      stage.addEventListener("pointermove", () => { keyboardControlsActive = false; revealControls(); });
+      stage.addEventListener("pointerdown", () => { keyboardControlsActive = false; revealControls(); });
+      stage.addEventListener("keydown", () => { keyboardControlsActive = true; revealControls(); });
+      transport?.addEventListener("pointerenter", () => { pointerOverTransport = true; revealControls(false); });
+      transport?.addEventListener("pointerleave", () => { pointerOverTransport = false; revealControls(); });
+      stage.addEventListener("focusin", () => revealControls(keyboardControlsActive ? false : !pointerOverTransport));
       stage.addEventListener("focusout", () => queueMicrotask(() => revealControls()));
+      window.addEventListener("keydown", onPlayerKeyDown, true);
+      document.addEventListener("fullscreenchange", syncFullscreenControl);
+      document.addEventListener("webkitfullscreenchange", syncFullscreenControl);
+      player.addEventListener("webkitbeginfullscreen", syncFullscreenControl);
+      player.addEventListener("webkitendfullscreen", syncFullscreenControl);
       const stopPlayback = () => {
         clearControlsHideTimer();
         deliveryGeneration += 1;
@@ -1279,6 +1391,13 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
           report("stop");
         }
         window.removeEventListener("pagehide", stopPlayback);
+        window.removeEventListener("keydown", onPlayerKeyDown, true);
+        document.removeEventListener("fullscreenchange", syncFullscreenControl);
+        document.removeEventListener("webkitfullscreenchange", syncFullscreenControl);
+        player.removeEventListener("webkitbeginfullscreen", syncFullscreenControl);
+        player.removeEventListener("webkitendfullscreen", syncFullscreenControl);
+        fullscreenButton?.removeEventListener("click", onFullscreenButtonClick);
+        transportResizeObserver?.disconnect();
         hlsPlayback?.destroy();
         hlsPlayback = null;
         if (deliveryId) void cancelCinemaDelivery(deliveryId).catch(() => {});
@@ -1289,6 +1408,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       player.addEventListener("stalled", () => setStatus("Playback is waiting for more data from the server."));
       player.addEventListener("error", () => setStatus("This video could not be played here."));
       renderPlaybackState();
+      syncFullscreenControl();
 
       const seekWhenReady = (position: number | null) => {
         if (position === null || position <= 0) return;
@@ -1386,7 +1506,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     }
 
     if (fullscreen && stage) {
-      void stage.requestFullscreen?.();
+      void enterFullscreen(stage);
     }
   };
 
@@ -1869,6 +1989,18 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       return;
     }
 
+    if (action === "player-skip-back" || action === "player-skip-forward") {
+      const player = content.querySelector<HTMLMediaElement>("[data-cinema-player]");
+      if (player) {
+        const duration = Number.isFinite(player.duration) && player.duration > 0
+          ? player.duration
+          : Number.POSITIVE_INFINITY;
+        const seconds = action === "player-skip-back" ? -10 : 10;
+        player.currentTime = Math.min(duration, Math.max(0, player.currentTime + seconds));
+      }
+      return;
+    }
+
     if (action === "player-subtitles" || action === "player-quality") {
       const menuSelector = action === "player-subtitles" ? "[data-cinema-subtitle-menu]" : "[data-cinema-quality-menu]";
       const menu = content.querySelector<HTMLElement>(menuSelector);
@@ -1912,9 +2044,8 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       const player = content.querySelector<HTMLMediaElement>("[data-cinema-player]");
       const stage = player?.closest<HTMLElement>(".cinema-video-stage");
 
-      if (stage) {
-        void stage.requestFullscreen?.();
-      }
+      if (stage && player) void toggleCinemaFullscreen(stage, player);
+      return;
     }
 
     if (action === "back-title") {

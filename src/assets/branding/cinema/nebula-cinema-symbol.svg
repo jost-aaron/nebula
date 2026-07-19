@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Nebula Cinema five-blade play symbol</title>
+  <desc id="desc">Five curved aperture blades surround a right-facing play symbol, with one amber blade and a four-point star.</desc>
+  <defs>
+    <path id="blade" d="M128 22c38 0 74 18 96 48-29-11-61-8-86 7-23 14-39 37-45 63-12-41 1-86 35-118Z"/>
+  </defs>
+  <g fill="#F2EBDD">
+    <use href="#blade" transform="rotate(72 128 128)"/>
+    <use href="#blade" transform="rotate(144 128 128)"/>
+    <use href="#blade" transform="rotate(216 128 128)"/>
+    <use href="#blade" transform="rotate(288 128 128)"/>
+  </g>
+  <use href="#blade" fill="#E7A940"/>
+  <path fill="#05080D" d="M103 78c0-8 9-13 16-8l69 49c7 5 7 15 0 20l-69 49c-7 5-16 0-16-8V78Z"/>
+  <path fill="#E7A940" d="m226 107 4 13 13 4-13 4-4 13-4-13-13-4 13-4 4-13Z"/>
+</svg>
