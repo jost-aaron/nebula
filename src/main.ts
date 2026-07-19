@@ -414,7 +414,7 @@ const launchApp = async (app: DashboardApp) => {
   }
 
   if (isStudioApp) {
-    bindStudioView(appSurface, closeActiveApp);
+    bindStudioView(appSurface, closeActiveApp, { personalPlayback: !isGuest });
   }
 
   requestAnimationFrame(() => {

@@ -4,11 +4,29 @@ import { json } from "./http.mjs";
 import { readMetadata, scanMediaLibrary } from "./mediaLibrary.mjs";
 import { isAudioFile, mimeType } from "./storage.mjs";
 import { parseByteRange } from "./ranges.mjs";
+import { projectRepositoryItems } from "./catalog/projections.mjs";
 
-export const createMusicRoutes = (storage, accountStore, { guestService = null, libraryPermissions = null } = {}) => {
+export const createMusicRoutes = (storage, accountStore, { catalog = null, guestService = null, libraryPermissions = null } = {}) => {
+  const catalogEntries = () => catalog
+    ? projectRepositoryItems(catalog.repository, { availability: "available", mediaKind: "audio" })
+    : [];
+
   const listMusicLibrary = async (request, response) => {
     const metadata = await readMetadata(storage.cinemaMetadataPath);
     const scanned = await scanMediaLibrary(storage, metadata, { mediaKind: "audio" });
+    let catalogByPath = new Map(catalogEntries().map((entry) => [entry.path, entry]));
+    if (catalog?.scan && scanned.some((entry) => !catalogByPath.has(entry.path))) {
+      await catalog.scan();
+      catalogByPath = new Map(catalogEntries().map((entry) => [entry.path, entry]));
+    }
+    scanned.forEach((entry) => {
+      const catalogEntry = catalogByPath.get(entry.path);
+      if (catalogEntry) Object.assign(entry, {
+        availability: catalogEntry.availability,
+        id: catalogEntry.id,
+        sourceId: catalogEntry.sourceId
+      });
+    });
     const context = request.nebulaAuth;
     const entries = libraryPermissions ? scanned.filter((entry) => libraryPermissions.canAccessPath(context, entry.path, "audio")) : scanned;
     if (context) {

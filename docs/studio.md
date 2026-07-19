@@ -37,6 +37,11 @@ It renders:
   low-energy ambient animation when playback is paused, buffering, unsupported,
   or sourced from a server the browser cannot safely analyze.
 - Native `<audio data-studio-player controls>` playback.
+- Authenticated, per-user playback lifecycle reporting with periodic progress,
+  pause, stop, and completion events.
+- Continue Listening and Listening History rails ordered by recent playback.
+- A centered in-app resume prompt that can continue from the saved position or
+  restart the selected track. Guest listening remains non-persistent.
 - Server, source-file, format, and related-library information.
 - Friendly browser playback status and error messages for unsupported formats,
   including FLAC in browsers that cannot decode it.
@@ -64,12 +69,21 @@ Studio groups music with these rules:
 - `GET /api/music/library` - recursively scan `content/` for supported audio.
 - `GET /api/music/media?path=<path>` - stream an audio file.
 - `HEAD /api/music/media?path=<path>` - return audio metadata headers.
+- `GET /api/playback/history` - return the authenticated user's recent playback
+  state, including completed tracks.
+- `POST /api/playback/events` - record authenticated Studio playback lifecycle
+  events using stable catalog item and source IDs.
 
 The media endpoint supports HTTP byte ranges and returns `206 Partial Content`
 for one valid normal, open-ended, or suffix range. Invalid, multi-range,
 empty-file range, and unsatisfiable requests return `416`.
 
-The library is server-shared. Queue/history remain in client memory in v1.
+The library is server-shared. Queue order remains client-local, while playback
+history and resume positions are persisted per authenticated user in the shared
+Nebula database. The first library request reconciles newly discovered audio
+with the catalog before returning tracks, ensuring lifecycle events always use
+stable item and source IDs. First-run guests can play music but cannot read or
+write this personal history.
 Authenticated library responses issue expiring, audio-path-bound media tickets
 so browser and Capacitor `<audio>` playback can use byte ranges without exposing
 an account session token.

@@ -8,10 +8,10 @@ import test from "node:test";
 import { createApiHandler } from "../server/api.mjs";
 import { createStorage } from "../server/storage.mjs";
 
-const startApi = async () => {
+const startApi = async (options = {}) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "nebula-test-"));
   const storage = await createStorage({ contentRoot: root });
-  const handler = createApiHandler(storage);
+  const handler = createApiHandler(storage, null, null, options);
   const server = createServer(async (request, response) => {
     if (!(await handler(request, response))) {
       response.writeHead(404).end();
@@ -34,6 +34,45 @@ const postJson = (url, body) => fetch(url, {
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify(body)
+});
+
+test("Studio reconciles newly discovered audio before returning stable playback IDs", async (t) => {
+  let reconciled = false;
+  let scans = 0;
+  const itemId = randomUUID();
+  const sourceId = randomUUID();
+  const repository = {
+    listArtwork: () => [],
+    listExternalIds: () => [],
+    listItems: () => reconciled ? [{
+      id: itemId,
+      itemType: "track",
+      mediaKind: "audio",
+      metadata: {},
+      sortTitle: "track",
+      title: "track",
+      source: {
+        availability: "available",
+        id: sourceId,
+        itemId,
+        modifiedMs: 1,
+        path: "track.mp3",
+        size: 5
+      }
+    }] : []
+  };
+  const api = await startApi({ catalog: { repository, scan: async () => { scans += 1; reconciled = true; } } });
+  t.after(() => api.close());
+  await writeFile(path.join(api.root, "track.mp3"), "audio");
+
+  for (let request = 0; request < 2; request += 1) {
+    const response = await fetch(`${api.baseUrl}/api/music/library`);
+    assert.equal(response.status, 200);
+    const entry = (await response.json()).entries[0];
+    assert.equal(entry.id, itemId);
+    assert.equal(entry.sourceId, sourceId);
+  }
+  assert.equal(scans, 1);
 });
 
 test("resumable uploads reject extra chunks and reserve destinations", async (t) => {

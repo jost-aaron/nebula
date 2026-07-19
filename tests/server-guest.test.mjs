@@ -68,7 +68,7 @@ test("guest principal is denied persistence and administration but may read medi
   const request = (method, path) => ({ headers: { cookie: `nebula_session=${session.token}`, ...(method === "POST" ? { "x-nebula-csrf": session.csrfToken } : {}) }, method, socket: { remoteAddress: "127.0.0.1" }, url: path });
   const response = () => ({ end() {}, setHeader() {}, writeHead(status) { this.status = status; } });
   for (const path of ["/api/cinema/library", "/api/music/library", "/api/catalog/items"]) assert.equal(await guard.authorize(request("GET", path), response()), true);
-  for (const [method, path] of [["GET", "/api/files"], ["GET", "/api/jobs"], ["POST", "/api/playback/events"], ["PATCH", "/api/cinema/watchlist"], ["GET", "/api/admin/backups"], ["GET", "/api/auth/accounts"]]) {
+  for (const [method, path] of [["GET", "/api/files"], ["GET", "/api/jobs"], ["GET", "/api/playback/history"], ["POST", "/api/playback/events"], ["PATCH", "/api/cinema/watchlist"], ["GET", "/api/admin/backups"], ["GET", "/api/auth/accounts"]]) {
     const result = response();
     assert.equal(await guard.authorize(request(method, path), result), false, `${method} ${path}`);
     assert.equal(result.status, 403);

@@ -51,6 +51,24 @@ export const createPlaybackRepository = ({ db, migrate = false } = {}) => {
     sourceId: row.source_id
   }));
 
+  const historySql = `
+    SELECT * FROM playback_states
+    WHERE user_id = ? AND last_played_at IS NOT NULL
+    ORDER BY last_played_at DESC, item_id ASC`;
+
+  const listHistory = (userId, limit = 50) => db.prepare(
+    limit === null ? historySql : `${historySql} LIMIT ?`
+  ).all(...(limit === null ? [userId] : [userId, limit])).map((row) => ({
+    completed: Boolean(row.completed),
+    durationSeconds: row.duration_seconds,
+    itemId: row.item_id,
+    lastPlayedAt: row.last_played_at,
+    playCount: row.play_count,
+    positionSeconds: row.position_seconds,
+    progress: row.duration_seconds ? row.position_seconds / row.duration_seconds : 0,
+    sourceId: row.source_id
+  }));
+
   const recordEvent = (event) => {
     db.exec("BEGIN IMMEDIATE");
     try {
@@ -135,5 +153,5 @@ export const createPlaybackRepository = ({ db, migrate = false } = {}) => {
     return getState(userId, itemId);
   };
 
-  return { getSession, getState, listContinueWatching, recordEvent, setWatched };
+  return { getSession, getState, listContinueWatching, listHistory, recordEvent, setWatched };
 };

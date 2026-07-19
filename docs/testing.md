@@ -191,6 +191,12 @@ Check:
   art/fallback art, title metadata, server/status information, and next-up queue.
 - Studio playback uses native `<audio data-studio-player controls>` and no
   large black video frame.
+- Authenticated Studio playback reports start, progress, pause, stop, and
+  completion events against stable catalog IDs.
+- Studio shows per-user Continue Listening and Listening History rails, and a
+  centered resume/restart dialog for unfinished tracks.
+- Guest Studio playback remains non-persistent and cannot access playback
+  history.
 - Studio shows a friendly player status if browser playback fails or a format
   is unsupported.
 - Cinema video titles still use the normal video player and fullscreen command.
