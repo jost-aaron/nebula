@@ -27,14 +27,41 @@ runs as an explicit UID/GID, and checks liveness. No image is published.
   cache (including the embedded Vite cache). Backups contain database/metadata
   bundles but **never media**.
 
-Create directories without letting Compose create root-owned bind mounts:
+## Operator CLI and fresh-host install
+
+Clone or check out a reviewed Nebula revision on a Linux host with Docker, then
+run the repository-owned CLI. This is the one-command install path after Docker
+is installed:
 
 ```sh
-sudo install -d -o 1000 -g 1000 -m 0750 \
-  /srv/nebula/data /srv/nebula/content /srv/nebula/backups
-cp .env.example .env
-chmod 0600 .env
+sudo ./scripts/nebula-server.sh install
 ```
+
+The command checks Docker daemon access and Compose v2 before changing the host,
+creates `/srv/nebula/{data,content,backups}` as mode `0750`, writes a mode `0600`
+`.env` from conservative documented defaults, validates and starts
+`compose.deploy.yaml`, waits for `/readyz`, and prints the owner setup URL. When
+run through `sudo`, the directories are owned by the invoking user's numeric
+UID/GID. An existing `.env` is retained byte-for-byte; existing storage is never
+deleted. Re-running `install` is safe and reconciles the current Compose stack.
+
+Inspect the generated `.env` before making the service reachable beyond
+loopback. For a different storage root or noninteractive provisioning, use
+flags or their documented environment equivalents:
+
+```sh
+sudo ./scripts/nebula-server.sh \
+  --base-dir /mnt/nebula \
+  --bind 127.0.0.1 \
+  --port 5173 \
+  install
+```
+
+Use `./scripts/nebula-server.sh --help` for every option. `--env-file` and
+`--compose-file` make configuration locations explicit. `init` only creates
+missing storage/configuration and validates it; `validate` never starts the
+stack. The CLI does not edit Git, generate passwords/tokens, remove volumes,
+reset accounts, or replace configuration.
 
 Adjust `NEBULA_UID`, `NEBULA_GID`, and paths in `.env` together. The selected
 user needs read/write/execute access to all three directories. Content may be
@@ -45,16 +72,20 @@ SQLite files, or delivery caches.
 
 ## First boot
 
-Validate before starting:
+The equivalent lifecycle commands are:
 
 ```sh
-docker compose --env-file .env -f compose.deploy.yaml config --quiet
-docker compose --env-file .env -f compose.deploy.yaml build
-docker compose --env-file .env -f compose.deploy.yaml up -d
-docker compose --env-file .env -f compose.deploy.yaml ps
-curl -fsS http://127.0.0.1:5173/healthz
-curl -fsS http://127.0.0.1:5173/readyz
+./scripts/nebula-server.sh validate
+./scripts/nebula-server.sh up
+./scripts/nebula-server.sh status
+./scripts/nebula-server.sh logs --tail 200 --follow
+./scripts/nebula-server.sh down
 ```
+
+`up` builds as needed, starts in the background, and waits for readiness. Use
+`--no-wait` only when an external supervisor owns readiness. All commands use
+the same `.env` and `compose.deploy.yaml`; localhost development Compose remains
+unchanged.
 
 Open the configured URL and create the first owner. There is no generated
 password or recovery flow. Use a unique 12-128 character password and retain it
@@ -156,6 +187,24 @@ Back up media separately with a filesystem-aware tool while preventing writes,
 and preserve ownership/modes. A usable disaster recovery set is the inspected
 Nebula backup bundle plus a consistent copy/snapshot of content.
 
+For a service-admin backup without putting the token in shell history or the
+process argument list, place the configured `NEBULA_API_TOKEN` in an
+owner-readable file and invoke:
+
+```sh
+install -m 0600 /dev/null "$HOME/.nebula-admin-token"
+${EDITOR:-vi} "$HOME/.nebula-admin-token"
+./scripts/nebula-server.sh backup \
+  --token-file "$HOME/.nebula-admin-token" \
+  --backup-id "before-upgrade-$(date -u +%Y%m%d)"
+```
+
+The CLI requires mode `0600`, uses a private temporary curl configuration, and
+does not print the token. The resulting bundle still excludes content. Inspect
+the API response and copy/snapshot content separately before maintenance. Remove
+the token file when it is no longer needed. Account owners who do not enable a
+service token should use the authenticated backup API described above.
+
 ### No-clobber restore runbook
 
 There is intentionally no online restore API. The safe procedure never writes
@@ -205,9 +254,19 @@ image ID, and rehearse against copies:
 ```sh
 git rev-parse HEAD
 docker compose --env-file .env -f compose.deploy.yaml images
-docker compose --env-file .env -f compose.deploy.yaml build --pull
-docker compose --env-file .env -f compose.deploy.yaml up -d
+./scripts/nebula-server.sh backup \
+  --token-file "$HOME/.nebula-admin-token" \
+  --backup-id "before-upgrade-$(date -u +%Y%m%d)"
+git fetch --tags
+git status --short
+git switch --detach <reviewed-tag-or-commit>
+./scripts/nebula-server.sh update
 ```
+
+`update` validates the retained configuration, runs the deployment Compose
+equivalent of `build --pull` and `up -d`, then waits for readiness. It deliberately
+does not fetch, pull, switch, or otherwise mutate the checkout; revision choice
+remains an explicit operator action. Do not switch revisions with a dirty tree.
 
 Migrations run at startup and may make an upgraded data root unsuitable for an
 older binary. Rollback means stopping the new version, restoring the pre-upgrade
