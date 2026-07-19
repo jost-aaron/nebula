@@ -397,6 +397,7 @@ const launchApp = async (app: DashboardApp) => {
 
   appSurface.hidden = false;
   shellRoot.inert = true;
+  appSurface.setAttribute("aria-label", app.name);
   appSurface.className = `app-surface launching ${isSearchApp ? "search-app-surface" : ""} ${isSettingsApp ? "settings-app-surface" : ""} ${isFilesApp ? "files-app-surface" : ""} ${isCinemaApp ? "cinema-app-surface" : ""} ${isStudioApp ? "studio-app-surface" : ""}`;
   appSurface.style.setProperty("--accent", app.accent);
   appSurface.innerHTML = isCinemaApp || isStudioApp

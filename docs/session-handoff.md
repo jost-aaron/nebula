@@ -26,7 +26,8 @@ The current app includes:
 - Cinema app with a dedicated full-screen video surface, browsing-first library,
   title details, watchlist, chapters, next-up rails, and lazy playback.
 - Studio app with a dedicated full-screen music surface, searchable audio
-  library, queue, selected-track summary, and native audio playback.
+  library, queue, selected-track summary, native audio playback, authenticated
+  listening history, Continue Listening, and app-owned resume/start-over flow.
 - Local-first accounts with first-owner setup, owner/member roles, profile and
   password settings, revocable sessions/devices, member administration,
   centralized API authorization, and personal Cinema watchlists.
@@ -46,6 +47,8 @@ The current app includes:
 - Server-authored 240p, 360p, 480p, 720p, and 1080p HLS quality selection with progressive
   playback, verified persistent reuse, scheduled optimization, owner storage
   policy, safe LRU cleanup, readiness, and bounded metrics.
+- A no-clobber single-host deployment CLI for install, validation, lifecycle,
+  logs, updates, and backups over `compose.deploy.yaml`.
 
 The latest user direction is to keep building toward a modern console/Plex-like
 media dashboard.
@@ -169,6 +172,11 @@ Studio:
 
 - Uses `/api/music/library` to scan `content/` for audio files.
 - Uses `/api/music/media?path=<path>` for range-enabled native audio playback.
+- Uses stable Catalog IDs and `/api/playback/events` plus
+  `/api/playback/history` for authenticated listening progress, completion,
+  recent history, Continue Listening, and resume/start-over choices.
+- Guest playback remains intentionally non-persistent and does not expose
+  personal listening history.
 - Supports MP3, FLAC, M4A, WAV, AAC, and OGG files through the local content
   policy.
 - Shows local audio in Studio, not Cinema.
@@ -234,17 +242,14 @@ At handoff time:
 
 ## Known Gaps
 
-- Browser coverage exists for the account gate, dashboard, Cinema resume and
-  delivery playback, while broader full-app interaction coverage remains
-  incomplete.
+- Browser coverage is intentionally focused on high-value integrated paths;
+  new app workflows still need matching Playwright scenarios as they are added.
 - Command-line simulator testing currently screenshots the launched dashboard,
   but tap-through Cinema/Files safe-area checks still need a manual simulator
   pass.
 - TMDB matching is explicit and optional; fully automatic candidate selection
   is intentionally not enabled.
 - Cinema thumbnails are generated client-side, not persisted.
-- Cinema reports playback lifecycle events; Studio still uses its native audio
-  compatibility path without equivalent playback-state integration.
 - No password reset, MFA/passkeys, account deletion/role changes, second owner,
   folder-level Files ACLs, or Keychain-backed native token storage yet.
 - App-surface rendering and feature-specific bindings remain in `src/main.ts`;
