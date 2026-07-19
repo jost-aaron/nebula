@@ -149,9 +149,11 @@ Mouse behavior:
 - `Settings` and `Search` are ready shell/system apps.
 - First-run owner setup, sign-in, identity, Account Settings, member
   creation/disable, password changes, and session revocation are ready.
-- The Wave 1 media backend indexes the shared content root into stable catalog
-  UUIDs and persists authenticated playback progress. Cinema/Studio lifecycle
-  reporting and Continue Watching UI remain the next integration step.
+- The media backend indexes the shared content root into stable catalog UUIDs,
+  persists authenticated playback progress, and supports account-bound direct,
+  remux, progressive HLS, reusable and scheduled renditions, plus owner-managed
+  rendition storage policy. Studio playback-state integration remains future
+  work.
 - `Arcade` and `Party` are still planned placeholders.
 
 ## Content And Media

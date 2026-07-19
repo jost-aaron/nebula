@@ -11,6 +11,11 @@ selection remains downstream of playback planning and policy admission.
 catalog-linked persistence contract for reusable interactive or scheduled
 outputs. See `docs/renditions.md`.
 
+`server/renditionPolicy/` owns the singleton storage policy, durable cleanup
+scheduling, quota/minimum-free enforcement, safe LRU eviction, and aggregate
+storage status. It never accepts caller-selected filesystem paths or eviction
+candidates.
+
 ## Layers
 
 ```mermaid

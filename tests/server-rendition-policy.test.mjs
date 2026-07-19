@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { applyDomainMigrations } from "../server/database.mjs";
+import { applyCatalogMigration } from "../server/catalog/index.mjs";
 import { createRenditionCleanupScheduler, createRenditionPolicyRepository, createRenditionPolicyService, renditionPolicyMigration, validateRenditionPolicy } from "../server/renditionPolicy/index.mjs";
+import { renditionsMigration } from "../server/renditions/index.mjs";
 
 const fixture = () => {
   const database = new DatabaseSync(":memory:");
@@ -18,6 +20,24 @@ test("renditions-v2 migration is centrally composed, idempotent, and bounded", (
   assert.equal(database.prepare("SELECT COUNT(*) count FROM nebula_domain_migrations WHERE migration_id='renditions-v2'").get().count, 1);
   assert.deepEqual(repository.get().allowedProfileIds, ["480p", "720p", "1080p"]);
   assert.throws(() => database.prepare("UPDATE rendition_storage_policy SET low_water_percent=95, high_water_percent=90 WHERE id=1").run());
+  database.close();
+});
+
+test("renditions-v2 upgrades an existing rendition database without changing output records", () => {
+  const database = new DatabaseSync(":memory:");
+  applyCatalogMigration(database);
+  applyDomainMigrations(database, [renditionsMigration]);
+  database.prepare("INSERT INTO media_libraries (id, name, media_kind, created_at, updated_at) VALUES (?, ?, ?, ?, ?)").run("library-1", "Movies", "video", "2026-01-01", "2026-01-01");
+  database.prepare("INSERT INTO media_library_roots (id, library_id, root_key, path, media_kind, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run("root-1", "library-1", "content", "/content", "video", "2026-01-01", "2026-01-01");
+  database.prepare("INSERT INTO media_items (id, library_id, item_type, media_kind, title, sort_title, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run("item-1", "library-1", "movie", "video", "Movie", "Movie", "2026-01-01", "2026-01-01");
+  database.prepare("INSERT INTO media_sources (id, item_id, root_id, content_path, media_kind, size_bytes, modified_ms, availability, content_revision, first_seen_at, last_seen_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run("source-1", "item-1", "root-1", "movie.mp4", "video", 100, 1, "available", 1, "2026-01-01", "2026-01-01", "2026-01-01", "2026-01-01");
+  database.prepare(`INSERT INTO media_renditions
+    (id, source_id, source_revision, profile_id, profile_version, state, retention, origin, created_at, updated_at)
+    VALUES ('rendition-1', 'source-1', 1, '480p', 1, 'pending', 'cache', 'interactive', '2026-01-01', '2026-01-01')`).run();
+
+  applyDomainMigrations(database, [renditionPolicyMigration]);
+  assert.deepEqual({ ...database.prepare("SELECT id, retention, state FROM media_renditions").get() }, { id: "rendition-1", retention: "cache", state: "pending" });
+  assert.equal(createRenditionPolicyRepository(database).get().cleanupIntervalMinutes, 60);
   database.close();
 });
 

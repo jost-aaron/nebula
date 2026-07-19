@@ -21,6 +21,22 @@ plays local files to a durable media platform with:
 - Observable background processing.
 - A foundation for remuxing and transcoding.
 
+## Implementation Status
+
+As of July 2026, Waves 0 through 3 are complete and the core Wave 4 operational
+tracks are integrated. Nebula now has stable catalog identities, per-user
+playback state, FFprobe ingestion, durable jobs, Cinema lifecycle reporting,
+direct play, remux, software HLS, optional hardware acceleration, playback
+policy, audit history, permissions, playlists/collections, subtitles, backup,
+readiness, and metrics.
+
+The transcoding expansion is also complete: fixed 480p/720p/1080p profiles,
+progressive HLS, Cinema quality switching, source-revision-safe persistent
+reuse, scheduled optimization, owner storage policy, quota/minimum-free
+cleanup, fixed-label metrics, and responsive Settings controls are merged.
+Future work should treat the Immediate Assignment section below as historical
+sequencing guidance rather than an active task queue.
+
 ## Current Assumptions
 
 - The TMDB provider implementation is merged; future persistence changes must

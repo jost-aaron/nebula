@@ -17,6 +17,8 @@ import { probeMigration } from "../server/probe/index.mjs";
 import { createJobsRepository, createJobsService, createJobsWorker, jobsMigration } from "../server/jobs/index.mjs";
 import { createPlaybackPolicyRepository, createPlaybackPolicyService, playbackPolicyMigration } from "../server/playbackPolicy/index.mjs";
 import { renditionsMigration } from "../server/renditions/index.mjs";
+import { createRenditionStore } from "../server/renditions/index.mjs";
+import { createRenditionPolicyRepository, createRenditionPolicyService, renditionPolicyMigration } from "../server/renditionPolicy/index.mjs";
 import {
   createCatalogCheck,
   createDatabaseCheck,
@@ -66,9 +68,16 @@ const startAdminServer = async ({ serviceToken = "admin-service-secret" } = {}) 
   const storage = await createStorage({ contentRoot, dataRoot });
   const database = await openNebulaDatabase(storage.accountDatabasePath);
   const accountStore = await createAccountStore({ database });
-  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, playbackPolicyMigration, renditionsMigration]);
+  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, playbackPolicyMigration, renditionsMigration, renditionPolicyMigration]);
   const jobsRepository = createJobsRepository({ db: database });
   const jobsService = createJobsService({ repository: jobsRepository });
+  const renditionStore = createRenditionStore({ database, dataRoot: storage.dataRoot });
+  await renditionStore.initialize();
+  const renditionPolicy = createRenditionPolicyService({
+    jobs: jobsService,
+    repository: createRenditionPolicyRepository(database),
+    store: renditionStore
+  });
   const jobsWorker = createJobsWorker({ handlers: {}, repository: jobsRepository });
   jobsWorker.start({ pollIntervalMs: 25 });
   const backupService = createBackupService({
@@ -110,7 +119,7 @@ const startAdminServer = async ({ serviceToken = "admin-service-secret" } = {}) 
     },
     service: observabilityService
   });
-  const apiHandler = createApiHandler(storage, accountStore, authGuard, { backup: backupService, jobs: jobsService, playbackPolicy, transcodeAcceleration });
+  const apiHandler = createApiHandler(storage, accountStore, authGuard, { backup: backupService, jobs: jobsService, playbackPolicy, renditionPolicy, transcodeAcceleration });
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
     if (await observabilityRoutes(request, response, url)) return;
@@ -242,4 +251,35 @@ test("transcode acceleration status and configuration require owner/service admi
   assert.equal((await jsonRequest(`${api.baseUrl}/api/admin/transcode-acceleration`, { bearer: "admin-service-secret" })).status, 200);
   const preflight = await fetch(`${api.baseUrl}/api/admin/transcode-acceleration`, { method: "OPTIONS", headers: { origin: "capacitor://localhost", "access-control-request-method": "PUT", "access-control-request-headers": "authorization,content-type" } });
   assert.ok([204, 403].includes(preflight.status));
+});
+
+test("rendition policy and cleanup require owner or service administration", async (t) => {
+  const api = await startAdminServer(); t.after(() => api.close());
+  const owner = await setupOwner(api, "browser");
+  await api.accountStore.createMember({ displayName: "Member", password: memberPassword, username: "member" });
+  const member = await jsonRequest(`${api.baseUrl}/api/auth/login`, { body: { clientType: "native", password: memberPassword, username: "member" }, method: "POST" }).then((response) => response.json());
+
+  assert.equal((await jsonRequest(`${api.baseUrl}/api/admin/rendition-policy`, { bearer: member.sessionToken })).status, 403);
+  const current = await jsonRequest(`${api.baseUrl}/api/admin/rendition-policy`, { cookie: owner.cookie }).then((response) => response.json());
+  assert.deepEqual(current.policy.allowedProfileIds, ["480p", "720p", "1080p"]);
+  delete current.policy.updatedAt;
+
+  assert.equal((await jsonRequest(`${api.baseUrl}/api/admin/rendition-policy`, { body: current.policy, cookie: owner.cookie, method: "PUT" })).status, 403);
+  const saved = await jsonRequest(`${api.baseUrl}/api/admin/rendition-policy`, {
+    body: { ...current.policy, cacheInteractive: false, cleanupIntervalMinutes: 15 },
+    cookie: owner.cookie,
+    csrf: owner.body.csrfToken,
+    method: "PUT"
+  });
+  assert.equal(saved.status, 200);
+  assert.equal((await saved.json()).policy.cacheInteractive, false);
+
+  const cleanup = await jsonRequest(`${api.baseUrl}/api/admin/renditions/cleanup`, { bearer: "admin-service-secret", body: {}, method: "POST" });
+  assert.equal(cleanup.status, 202);
+  assert.equal((await cleanup.json()).job.type, "cleanup");
+
+  const preflight = await fetch(`${api.baseUrl}/api/admin/rendition-policy`, { method: "OPTIONS", headers: { origin: "capacitor://localhost", "access-control-request-method": "PUT", "access-control-request-headers": "authorization,content-type" } });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get("access-control-allow-origin"), "capacitor://localhost");
+  assert.match(preflight.headers.get("access-control-allow-methods") ?? "", /PUT/);
 });
