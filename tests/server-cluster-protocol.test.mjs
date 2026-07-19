@@ -7,6 +7,7 @@ import {
   validateClusterManifestPage,
   validateClusterNodeDescriptor,
   validateClusterPairingRequest,
+  validateClusterPairingResponse,
   validateClusterSignedEnvelope
 } from "../server/cluster/protocol.mjs";
 
@@ -52,9 +53,12 @@ test("cluster node descriptors require exact private Tailscale HTTPS origins", (
 });
 
 test("pairing contracts accept only bounded one-time codes and known node fields", () => {
-  assert.equal(validateClusterPairingRequest({ pairingCode: "pairing_code_123", requester: node() }).requester.name, "Basement");
-  assert.throws(() => validateClusterPairingRequest({ pairingCode: "short", requester: node() }), (error) => error.code === "invalid_pairing_code");
-  assert.throws(() => validateClusterPairingRequest({ pairingCode: "pairing_code_123", requester: { ...node(), protocolVersion: 2 } }), (error) => error.code === "unsupported_protocol");
+  const request = { clusterId: "cluster_fixture_01", pairingCode: "pairing_code_123", requester: node() };
+  assert.equal(validateClusterPairingRequest(request).requester.name, "Basement");
+  assert.throws(() => validateClusterPairingRequest({ ...request, pairingCode: "short" }), (error) => error.code === "invalid_pairing_code");
+  assert.throws(() => validateClusterPairingRequest({ ...request, requester: { ...node(), protocolVersion: 2 } }), (error) => error.code === "unsupported_protocol");
+  assert.equal(validateClusterPairingResponse({ clusterId: request.clusterId, node: node() }).node.nodeId, node().nodeId);
+  assert.throws(() => validateClusterPairingResponse({ clusterId: request.clusterId, node: node(), token: "secret" }), (error) => error.code === "unknown_field");
 });
 
 test("manifest contracts are path-free, revision-bound, and bounded", () => {

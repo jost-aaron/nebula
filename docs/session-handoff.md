@@ -62,6 +62,11 @@ media cluster over Tailscale. Read `docs/media-sharding-implementation-plan.md`
 before implementing cluster identity, catalog federation, deduplication, or
 distributed playback.
 
+The cluster Phase 0 contracts and Phase 1 trust implementation are active in
+development. Phase 1 is opt-in through `NEBULA_CLUSTER_ENABLED=true` and covers
+identity, pairing, signed requests, replay defense, and revocation only. Unified
+catalog and playback work remain later phases.
+
 ## Must Follow
 
 - Do not install dependencies or applications on the host.

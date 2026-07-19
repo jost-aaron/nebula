@@ -14,6 +14,7 @@ export const REQUIRED_TABLES = Object.freeze([
   "media_renditions",
   "media_sources", "media_external_ids", "media_artwork", "media_scan_runs",
   "playback_states", "playback_sessions", "playback_events", "background_jobs",
+  "cluster_identity", "cluster_nodes", "cluster_pairing_codes", "cluster_request_nonces",
   "media_probe_results", "media_streams", "media_chapters", "playback_policy_config"
 ]);
 

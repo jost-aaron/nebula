@@ -28,6 +28,11 @@ services:
       - NEBULA_TRANSCODE_ACCELERATION=${NEBULA_TRANSCODE_ACCELERATION:-software-only}
       - NEBULA_TAILSCALE_UI_ENABLED=true
       - NEBULA_TAILSCALE_CONTROL_PATH=/run/nebula-tailscale
+      - NEBULA_CLUSTER_ENABLED=${NEBULA_CLUSTER_ENABLED:-false}
+      - NEBULA_CLUSTER_ENDPOINT=${NEBULA_CLUSTER_ENDPOINT:-}
+      - NEBULA_CLUSTER_NODE_NAME=${NEBULA_CLUSTER_NODE_NAME:-Nebula}
+      - NEBULA_CLUSTER_ROLE=${NEBULA_CLUSTER_ROLE:-hybrid}
+      - NEBULA_CLUSTER_HTTP_PROXY=http://127.0.0.1:1055
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5173/healthz"]
       interval: 10s
@@ -51,6 +56,7 @@ services:
       TS_SERVE_CONFIG: /config/serve.json
       TS_STATE_DIR: /var/lib/tailscale
       TS_USERSPACE: "true"
+      TS_OUTBOUND_HTTP_PROXY_LISTEN: "127.0.0.1:1055"
       TS_ENABLE_HEALTH_CHECK: "true"
       TS_LOCAL_ADDR_PORT: "127.0.0.1:9002"
       NEBULA_DASHBOARD_GID: "0"

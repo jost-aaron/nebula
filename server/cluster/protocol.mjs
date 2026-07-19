@@ -107,9 +107,18 @@ export const validateClusterNodeDescriptor = (input) => {
 
 export const validateClusterPairingRequest = (input) => {
   const value = plainObject(input, "pairing request");
-  exactKeys(value, new Set(["pairingCode", "requester"]), "pairing request");
+  exactKeys(value, new Set(["clusterId", "pairingCode", "requester"]), "pairing request");
+  if (typeof value.clusterId !== "string" || !/^cluster_[A-Za-z0-9_-]{8,127}$/.test(value.clusterId)) fail("invalid_cluster", "clusterId is invalid.");
   if (typeof value.pairingCode !== "string" || !TOKEN_PATTERN.test(value.pairingCode)) fail("invalid_pairing_code", "pairingCode is invalid.");
   validateClusterNodeDescriptor(value.requester);
+  return value;
+};
+
+export const validateClusterPairingResponse = (input) => {
+  const value = plainObject(input, "pairing response");
+  exactKeys(value, new Set(["clusterId", "node"]), "pairing response");
+  if (typeof value.clusterId !== "string" || !/^cluster_[A-Za-z0-9_-]{8,127}$/.test(value.clusterId)) fail("invalid_cluster", "clusterId is invalid.");
+  validateClusterNodeDescriptor(value.node);
   return value;
 };
 

@@ -37,12 +37,23 @@ classification; reject malformed, oversized, and symlinked snapshots; and
 confirm that endpoint addresses, node keys, and Tailscale user identities do
 not appear in owner API responses.
 
+Media-cluster Phase 1 tests cover strict protocol shapes, exact Tailscale HTTPS
+origins, fixed userspace proxy configuration, Ed25519 identity persistence,
+hashed one-time pairing codes, signed body/method/path binding, persistent nonce
+replay rejection, clock windows, revocation, bounded responses, and owner/shard
+route separation. They use generated keys and isolated SQLite databases and do
+not require tailnet credentials.
+
 Static/Compose checks that need no tailnet credentials:
 
 ```sh
 docker compose --env-file .env.example -f compose.deploy.yaml config --quiet
 docker compose --env-file .env.example -f compose.deploy.yaml config --services
 docker compose run --rm dashboard node --test \
+  tests/server-cluster-client.test.mjs \
+  tests/server-cluster-protocol.test.mjs \
+  tests/server-cluster-routes.test.mjs \
+  tests/server-cluster-trust.test.mjs \
   tests/nebula-server-cli.test.mjs \
   tests/server-tailscale-enrollment.test.mjs \
   tests/server-vite-config.test.mjs \
@@ -83,6 +94,14 @@ in `deployment.md`, use an isolated tailnet/copied Nebula data and verify:
    page, and changes to Connected after authorization. Disable it and confirm
    localhost stays healthy, `tailscaled` exits, and state remains. Confirm a
    member receives `403` and the dashboard has no daemon or Docker socket.
+8. For experimental cluster verification, enroll two isolated Nebula/Tailscale
+   nodes with distinct data and state directories. Enable the cluster variables
+   on both, create a pairing code on the shard, pair it from the coordinator,
+   verify signed health succeeds, replay the same envelope and expect rejection,
+   revoke the shard, and verify subsequent signed requests fail. Confirm the
+   dashboard reaches the shard through only `127.0.0.1:1055` and that the proxy
+   is not published on the host. Unified browsing and playback are not Phase 1
+   acceptance criteria.
 
 Harmless operator CLI smoke checks:
 

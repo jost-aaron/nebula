@@ -256,6 +256,46 @@ keep it separate from Nebula database backups and media. A Tailscale outage
 removes remote access only; dashboard health/readiness and local loopback access
 do not depend on the sidecar.
 
+### Experimental media-cluster trust layer
+
+Nebula's first media-sharding phase adds disabled-by-default node identity,
+pairing, signed requests, replay protection, and revocation. It does **not** yet
+federate libraries or distribute playback. Leave `NEBULA_CLUSTER_ENABLED=false`
+for ordinary deployments.
+
+Each future coordinator or shard requires its own persistent Nebula data and
+Tailscale node state. After every node has a private Serve URL, configure each
+node with its own exact values:
+
+```dotenv
+NEBULA_CLUSTER_ENABLED=true
+NEBULA_CLUSTER_ENDPOINT=https://nebula-basement.example-tail.ts.net
+NEBULA_CLUSTER_NODE_NAME=Basement
+NEBULA_CLUSTER_ROLE=shard
+```
+
+Roles are `coordinator`, `shard`, or `hybrid`. The current primary server should
+normally be `hybrid`; media-only nodes use `shard`. Never reuse a Nebula data
+directory or Tailscale state directory between nodes.
+
+The userspace companion listens for outbound HTTP proxy traffic only at shared
+loopback `127.0.0.1:1055`. Nebula uses that fixed proxy to contact paired
+`*.ts.net` origins. The proxy is not host-published and is not configurable from
+the UI. This is required because userspace Tailscale does not create transparent
+kernel routes. Do not replace it with TUN, host networking, `NET_ADMIN`, or an
+arbitrary proxy URL.
+
+Cluster private keys, pairing-code hashes, trusted public keys, replay nonces,
+and revocation state are stored in `/app/data/nebula.sqlite` and included in
+Nebula database backups. Raw pairing codes are returned once, expire after ten
+minutes, and are never persisted. Protect backups accordingly.
+
+Until the Cluster Settings UI ships, exercise pairing only through an approved
+test harness or API client. The owner-only coordinator routes are under
+`/api/admin/cluster`; shard pairing and health ingress are restricted to the
+fixed `/api/shard/v1` protocol. Tailscale admission does not replace signatures
+or Nebula owner authorization.
+
 Representative least-privilege tailnet Grants are operator-managed and
 additive to existing policy:
 

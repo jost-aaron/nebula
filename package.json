@@ -16,7 +16,8 @@
     "@capacitor/core": "^8.4.1",
     "@capacitor/ios": "^8.4.1",
     "hls.js": "1.6.16",
-    "lucide": "^0.468.0"
+    "lucide": "^0.468.0",
+    "undici": "7.28.0"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",

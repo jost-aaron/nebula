@@ -19,6 +19,7 @@ import { createPlaybackPolicyRepository, createPlaybackPolicyService, playbackPo
 import { renditionsMigration } from "../server/renditions/index.mjs";
 import { createRenditionStore } from "../server/renditions/index.mjs";
 import { createRenditionPolicyRepository, createRenditionPolicyService, renditionPolicyMigrations } from "../server/renditionPolicy/index.mjs";
+import { clusterMigration } from "../server/cluster/index.mjs";
 import {
   createCatalogCheck,
   createDatabaseCheck,
@@ -68,7 +69,7 @@ const startAdminServer = async ({ serviceToken = "admin-service-secret" } = {}) 
   const storage = await createStorage({ contentRoot, dataRoot });
   const database = await openNebulaDatabase(storage.accountDatabasePath);
   const accountStore = await createAccountStore({ database });
-  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, playbackPolicyMigration, renditionsMigration, ...renditionPolicyMigrations]);
+  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, playbackPolicyMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration]);
   const jobsRepository = createJobsRepository({ db: database });
   const jobsService = createJobsService({ repository: jobsRepository });
   const renditionStore = createRenditionStore({ database, dataRoot: storage.dataRoot });

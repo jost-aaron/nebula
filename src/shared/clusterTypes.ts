@@ -28,6 +28,7 @@ export interface ClusterNodeDescriptor {
 }
 
 export interface ClusterPairingRequest {
+  clusterId: string;
   pairingCode: string;
   requester: ClusterNodeDescriptor;
 }

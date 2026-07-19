@@ -31,6 +31,10 @@ import { createRenditionService, createRenditionStore, renditionsMigration } fro
 import { createRenditionCleanupScheduler, createRenditionPolicyRepository, createRenditionPolicyService, renditionPolicyMigrations } from "./renditionPolicy/index.mjs";
 import { createTailscaleEnrollmentService } from "./tailscaleEnrollment.mjs";
 import {
+  clusterMigration, createClusterIngressRoutes, createClusterPairingClient,
+  createClusterRepository, createClusterTrustService
+} from "./cluster/index.mjs";
+import {
   createCatalogCheck,
   createDatabaseCheck,
   createDirectoryCheck,
@@ -55,12 +59,21 @@ const accountStore = await createAccountStore({ database });
 const guestService = createGuestService({ accountStore });
 const tailscaleEnrollment = createTailscaleEnrollmentService();
 accountStore.setOwnerCreatedHook(() => guestService.revokeAll());
-applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration, renditionsMigration, ...renditionPolicyMigrations]);
+applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration]);
 const auditService = createAuditService({
   db: database,
   maxEvents: Number(process.env.NEBULA_AUDIT_MAX_EVENTS ?? 10_000),
   retentionDays: Number(process.env.NEBULA_AUDIT_RETENTION_DAYS ?? 90)
 });
+const clusterEnabled = process.env.NEBULA_CLUSTER_ENABLED === "true";
+const clusterService = clusterEnabled ? createClusterTrustService({
+  capabilities: { directPlay: true, hls: true, remux: true, renditionProfiles: ["240p", "360p", "480p", "720p", "1080p"], transcode: true },
+  endpoint: process.env.NEBULA_CLUSTER_ENDPOINT,
+  name: process.env.NEBULA_CLUSTER_NODE_NAME ?? "Nebula",
+  repository: createClusterRepository(database),
+  role: process.env.NEBULA_CLUSTER_ROLE ?? "hybrid"
+}) : null;
+const clusterIngress = clusterService ? createClusterIngressRoutes(clusterService) : null;
 const catalogRepository = createCatalogRepository(database);
 const libraryPermissions = createLibraryPermissionsService({ database });
 const mediaLists = createMediaListsService({ database, permissions: libraryPermissions });
@@ -210,6 +223,7 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   audit: auditService,
   backup: backupService,
   catalog: { libraryPermissions, probeReader, repository: catalogRepository, scan: scanCatalog },
+  ...(clusterService ? { cluster: { audit: auditService, pairingClient: createClusterPairingClient(), service: clusterService } } : {}),
   jobs: jobsService,
   guestService,
   libraryPermissions,
@@ -258,6 +272,10 @@ const httpServer = createHttpServer(async (request, response) => {
     applyApiCorsHeaders(request, response);
 
     if (handleApiPreflight(request, response)) {
+      return;
+    }
+
+    if (clusterIngress && await clusterIngress(request, response, url)) {
       return;
     }
 
