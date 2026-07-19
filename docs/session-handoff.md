@@ -57,7 +57,10 @@ The current app includes:
   direct, peer-relay, DERP, and idle connections.
 
 The latest user direction is to keep building toward a modern console/Plex-like
-media dashboard.
+media dashboard. The next major feature under design is a coordinator-and-shards
+media cluster over Tailscale. Read `docs/media-sharding-implementation-plan.md`
+before implementing cluster identity, catalog federation, deduplication, or
+distributed playback.
 
 ## Must Follow
 

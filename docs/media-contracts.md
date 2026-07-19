@@ -107,3 +107,19 @@ Wave 0 is complete when these contracts are merged into `main`, all existing
 tests pass, and Catalog and Playback worktrees branch from that commit. Any
 contract change after that point requires main-agent review before a worker
 depends on it.
+
+## Cluster Federation Addendum
+
+The sharding protocol extends these boundaries without changing local Catalog
+identity. Shard-local item/source UUIDs remain opaque local identifiers. A
+coordinator-owned federated projection groups logical works, editions, sources,
+and exact replicas while retaining their contributing node and local IDs.
+
+`src/shared/clusterTypes.ts` defines the versioned transport shapes.
+`server/cluster/protocol.mjs` is the fail-closed runtime validation boundary.
+Cluster implementations must read `docs/media-sharding-implementation-plan.md`
+and `docs/media-sharding-threat-model.md` before changing those contracts.
+
+Only the integration owner may change cluster shared types, protocol versions,
+central migration composition, `server/api.mjs`, or `server/dev.mjs` after
+parallel implementation begins.

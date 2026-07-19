@@ -19,6 +19,17 @@ for multiple dashboard apps and future native-style media playback.
 - Harden and package the single-host deployment CLI beyond its current
   no-clobber preview installer before recommending public-internet exposure.
 
+## Media Sharding Direction
+
+The next major media-platform expansion is a coordinator-and-shards cluster for
+private Tailscale deployments. Clients should connect to one coordinator, see a
+deduplicated Cinema and Studio catalog across every paired shard, and receive
+media directly from the best authorized shard with exact-replica failover.
+
+Start with session-level load balancing rather than splitting one playback
+stream across servers. Multi-origin HLS remains a later measured experiment.
+Read `docs/media-sharding-implementation-plan.md` before starting this work.
+
 ## App System
 
 The current app registry is static data in `src/apps.ts`. A more capable system
