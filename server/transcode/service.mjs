@@ -44,7 +44,8 @@ const validatePlan = (plan) => {
 
 export const createTranscodeService = ({
   concurrency = 2, contentRoot, outputRoot, resolveSource,
-  acceleration = null, renditionStore = null, resolveSubtitle = null, runner = runFfmpegTranscode, runnerOptions, uuid = randomUUID
+  acceleration = null, renditionStore = null, resolveSubtitle = null, runner = runFfmpegTranscode, runnerOptions,
+  shouldPersistRendition = () => true, uuid = randomUUID
 } = {}) => {
   if (!contentRoot || !outputRoot) throw new TypeError("contentRoot and outputRoot are required.");
   if (typeof resolveSource !== "function") throw new TypeError("resolveSource must be a function.");
@@ -88,6 +89,12 @@ export const createTranscodeService = ({
       && plan.output?.subtitle?.delivery !== "burn-in"
       ? { profile: renditionProfile, sourceId: source.id, sourceRevision: source.contentRevision }
       : null;
+    let persistentRenditionKey = renditionKey;
+    try {
+      if (persistentRenditionKey && shouldPersistRendition({ origin, plan, retention, source }) === false) persistentRenditionKey = null;
+    } catch {
+      persistentRenditionKey = null;
+    }
     let subtitleFilter = null;
     if (plan.output?.subtitle?.delivery === "burn-in") {
       if (typeof resolveSubtitle !== "function") throw new TranscodeError("subtitle_unavailable", "The selected subtitle cannot be burned in.");
@@ -136,8 +143,8 @@ export const createTranscodeService = ({
       state.status = "running";
       try {
         if (controller.signal.aborted) throw new TranscodeError("cancelled", "Transcode was cancelled.");
-        if (renditionKey) {
-          const claim = await claimRenditionBuild(renditionKey);
+        if (persistentRenditionKey) {
+          const claim = await claimRenditionBuild(persistentRenditionKey);
           const reusable = claim.reusable;
           if (reusable) {
             state.directory = reusable.directory;
@@ -148,7 +155,7 @@ export const createTranscodeService = ({
             return session;
           }
           state.releaseRenditionBuild = claim.release;
-          await renditionStore.begin(renditionKey, { origin, retention });
+          await renditionStore.begin(persistentRenditionKey, { origin, retention });
           state.renditionBuilding = true;
         }
         await mkdir(directory, { recursive: false });
@@ -179,8 +186,8 @@ export const createTranscodeService = ({
           state.acceleration = { backend: "software", outcome: "fallback", reason: "hardware_job_failed", required: false };
           result = await run("software"); record("software", "success");
         }
-        if (renditionKey) {
-          const published = await renditionStore.publish(renditionKey, directory, {
+        if (persistentRenditionKey) {
+          const published = await renditionStore.publish(persistentRenditionKey, directory, {
             audioBitrate: renditionProfile.audioBitrate,
             bitrate: renditionProfile.totalBitrate,
             height: plan.output.height,
@@ -199,7 +206,7 @@ export const createTranscodeService = ({
       } finally { signal?.removeEventListener("abort", forwardAbort); }
     }, controller.signal).catch(async (error) => {
       state.error = error; state.status = error?.code === "cancelled" ? "cancelled" : "failed";
-      if (renditionKey && state.renditionBuilding) await renditionStore.fail(renditionKey, error);
+      if (persistentRenditionKey && state.renditionBuilding) await renditionStore.fail(persistentRenditionKey, error);
       state.releaseRenditionBuild?.(); state.releaseRenditionBuild = null;
       await rm(directory, { recursive: true, force: true }); throw error;
     });

@@ -14,6 +14,7 @@ import { filterApps, renderSearchResults, renderSearchView } from "./search/rend
 import { renderSettingsPanel } from "./settings/renderSettingsPanel";
 import { bindPlaybackPolicyAdmin } from "./settings/playbackPolicyAdmin";
 import { bindTranscodeAccelerationAdmin } from "./settings/transcodeAccelerationAdmin";
+import { bindRenditionStorageAdmin } from "./settings/renditionStorageAdmin";
 import { bindStudioView, renderStudioView } from "./studio/renderStudioView";
 import { startRenderer } from "./webgpuRenderer";
 import type { AccountSessionState, CurrentSessionState } from "./shared/accountTypes";
@@ -226,6 +227,7 @@ const bindSettingsTabs = (container: ParentNode) => {
     jobs: ["jobs"],
     "playback-policy": ["playback-policy"],
     "transcode-acceleration": ["transcode-acceleration"],
+    "rendition-storage": ["rendition-storage"],
     activity: ["activity"],
     apps: ["apps"],
     display: ["display"],
@@ -388,8 +390,9 @@ const launchApp = async (app: DashboardApp) => {
       const disposeJobs = bindJobsAdmin(appSurface);
       const disposePlaybackPolicy = bindPlaybackPolicyAdmin(appSurface);
       const disposeAcceleration = bindTranscodeAccelerationAdmin(appSurface);
+      const disposeRenditionStorage = bindRenditionStorageAdmin(appSurface);
       const disposeActivity = bindActivityAdmin(appSurface);
-      disposeActiveApp = () => { disposeJobs(); disposePlaybackPolicy(); disposeAcceleration(); disposeActivity(); };
+      disposeActiveApp = () => { disposeJobs(); disposePlaybackPolicy(); disposeAcceleration(); disposeRenditionStorage(); disposeActivity(); };
     }
   }
 

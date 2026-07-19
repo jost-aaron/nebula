@@ -13,6 +13,7 @@ import { createMediaListsRoutes } from "./mediaLists/routes.mjs";
 import { createSubtitleRoutes } from "./subtitles/routes.mjs";
 import { createAccelerationRoutes } from "./transcode/routes.mjs";
 import { createRenditionRoutes } from "./renditions/routes.mjs";
+import { createRenditionPolicyRoutes } from "./renditionPolicy/routes.mjs";
 
 export const createApiHandler = (storage, accountStore, authGuard, options = {}) => {
   const routeHandlers = [
@@ -21,6 +22,7 @@ export const createApiHandler = (storage, accountStore, authGuard, options = {})
     ...(options.backup ? [createBackupRoutes(options.backup, options.audit)] : []),
     ...(options.playbackPolicy ? [createPlaybackPolicyRoutes(options.playbackPolicy)] : []),
     ...(options.transcodeAcceleration ? [createAccelerationRoutes(options.transcodeAcceleration)] : []),
+    ...(options.renditionPolicy ? [createRenditionPolicyRoutes(options.renditionPolicy, options.audit)] : []),
     ...(options.catalog ? [createCatalogRoutes(options.catalog, options.audit)] : []),
     ...(options.mediaLists ? [createMediaListsRoutes(options.mediaLists, options.audit)] : []),
     ...(options.subtitles ? [createSubtitleRoutes(options.subtitles)] : []),
@@ -41,7 +43,7 @@ export const createApiHandler = (storage, accountStore, authGuard, options = {})
           name: "Nebula Server",
           status: "online",
           serverTime: new Date().toISOString(),
-          capabilities: ["audit-history", "background-jobs", "catalog", "cinema-library", "cinema-identify", "collections", "files", "hardware-transcode", "library-permissions", "metadata-editing", "music-library", "persistent-renditions", "scheduled-renditions", "playback-delivery", "playback-policy", "playback-state", "playlists", "probe", "rendition-profiles", "subtitles"]
+          capabilities: ["audit-history", "background-jobs", "catalog", "cinema-library", "cinema-identify", "collections", "files", "hardware-transcode", "library-permissions", "metadata-editing", "music-library", "persistent-renditions", "scheduled-renditions", "rendition-storage-policy", "playback-delivery", "playback-policy", "playback-state", "playlists", "probe", "rendition-profiles", "subtitles"]
         });
         return true;
       }

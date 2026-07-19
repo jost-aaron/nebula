@@ -27,11 +27,13 @@ import { auditMigration, createAuditService } from "./audit/index.mjs";
 import { createMediaListsService, mediaListsMigration } from "./mediaLists/index.mjs";
 import { createSubtitleService, subtitleMigration } from "./subtitles/index.mjs";
 import { createRenditionService, createRenditionStore, renditionsMigration } from "./renditions/index.mjs";
+import { createRenditionCleanupScheduler, createRenditionPolicyRepository, createRenditionPolicyService, renditionPolicyMigration } from "./renditionPolicy/index.mjs";
 import {
   createCatalogCheck,
   createDatabaseCheck,
   createDirectoryCheck,
   createDiskCheck,
+  createRenditionStorageCheck,
   createObservabilityRoutes,
   createObservabilityService,
   createWorkerCheck
@@ -51,7 +53,7 @@ const database = await openNebulaDatabase(storage.accountDatabasePath);
 const accountStore = await createAccountStore({ database });
 const guestService = createGuestService({ accountStore });
 accountStore.setOwnerCreatedHook(() => guestService.revokeAll());
-applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration, renditionsMigration]);
+applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration, renditionsMigration, renditionPolicyMigration]);
 const auditService = createAuditService({
   db: database,
   maxEvents: Number(process.env.NEBULA_AUDIT_MAX_EVENTS ?? 10_000),
@@ -101,10 +103,12 @@ const accelerationManager = createAccelerationManager({
   probe: createAccelerationProbe({ accessDevice: async (backend) => { if (backend !== "vaapi") return false; try { await access("/dev/dri/renderD128"); return true; } catch { return false; } } })
 });
 const renditionStore = createRenditionStore({ database, dataRoot: storage.dataRoot });
+const renditionPolicyRepository = createRenditionPolicyRepository(database);
 const transcodeService = createTranscodeService({
   acceleration: accelerationManager, contentRoot: storage.contentRoot, outputRoot: path.join(deliveryCacheRoot, "transcode"), resolveSource: resolveCatalogSource, concurrency: 1,
   renditionStore,
-  resolveSubtitle: ({ itemId, sourceId, subtitleId }, principal) => subtitleService.resolveBurnIn({ itemId, sourceId }, subtitleId, principal)
+  resolveSubtitle: ({ itemId, sourceId, subtitleId }, principal) => subtitleService.resolveBurnIn({ itemId, sourceId }, subtitleId, principal),
+  shouldPersistRendition: ({ origin }) => origin !== "interactive" || renditionPolicyRepository.get().cacheInteractive
 });
 await Promise.all([remuxService.initialize(), renditionStore.initialize(), transcodeService.initialize()]);
 const playbackPolicy = createPlaybackPolicyService({ repository: createPlaybackPolicyRepository(database) });
@@ -124,6 +128,8 @@ const probeService = createProbeService({
 });
 const jobsRepository = createJobsRepository({ db: database });
 const jobsService = createJobsService({ repository: jobsRepository });
+const renditionPolicy = createRenditionPolicyService({ audit: auditService, jobs: jobsService,
+  repository: renditionPolicyRepository, store: renditionStore });
 const renditionService = createRenditionService({
   audit: auditService,
   canAccessItem: (context, itemId) => context?.kind === "service" || libraryPermissions.canAccessItem(
@@ -131,7 +137,7 @@ const renditionService = createRenditionService({
       : context?.kind === "guest" ? { kind: "guest" } : null,
     itemId
   ),
-  catalog: catalogRepository, jobs: jobsService, planner: playbackPlanner,
+  catalog: catalogRepository, jobs: jobsService, planner: playbackPlanner, policy: renditionPolicy,
   probeReader, store: renditionStore, transcode: transcodeService
 });
 const jobsWorker = createJobsWorker({
@@ -147,7 +153,9 @@ const jobsWorker = createJobsWorker({
     buildRendition: (payload, context) => renditionService.build(payload, context),
     refreshMetadata: async () => ({ skipped: "metadata orchestration pending" }),
     cacheArtwork: async () => ({ skipped: "artwork cache pending" }),
-    cleanup: async () => ({ candidates: catalogRepository.listCleanupCandidates().length })
+    cleanup: (payload, context) => payload?.scope === "renditions"
+      ? renditionPolicy.cleanup(payload, context)
+      : ({ candidates: catalogRepository.listCleanupCandidates().length })
   }),
   repository: jobsRepository
 });
@@ -180,7 +188,8 @@ const observabilityService = createObservabilityService({
     { name: "jobs_worker", run: createWorkerCheck({ snapshot: jobsWorker.snapshot }) },
     { name: "catalog", run: createCatalogCheck({ snapshot: catalogReadinessSnapshot }) },
     { name: "content_disk", run: createDiskCheck({ directory: storage.contentRoot, name: "content_disk" }) },
-    { name: "cache_disk", run: createDiskCheck({ directory: deliveryCacheRoot, name: "cache_disk" }) }
+    { name: "cache_disk", run: createDiskCheck({ directory: deliveryCacheRoot, name: "cache_disk" }) },
+    { name: "rendition_storage", run: createRenditionStorageCheck({ status: renditionPolicy.status }) }
   ]
 });
 const handleObservability = createObservabilityRoutes({
@@ -204,11 +213,15 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   playbackDelivery,
   playbackPolicy,
   renditions: renditionService,
+  renditionPolicy,
   transcodeAcceleration: { refresh: accelerationManager.refresh, setMode: accelerationManager.setMode, status: transcodeService.status },
   subtitles: subtitleService
 });
 jobsWorker.start();
 jobsService.enqueue({ type: "scan", payload: { rootId: catalogRoot.id }, dedupeKey: `startup:${catalogRoot.id}` });
+const renditionCleanupScheduler = createRenditionCleanupScheduler({ enqueue: renditionPolicy.enqueueCleanup, getPolicy: renditionPolicy.get });
+renditionPolicy.enqueueCleanup("startup");
+renditionCleanupScheduler.start();
 
 const vite = await createViteServer({
   cacheDir: path.join(storage.dataRoot, "vite-cache"),
@@ -262,6 +275,7 @@ let shuttingDown = false;
 const shutdown = async () => {
   if (shuttingDown) return;
   shuttingDown = true;
+  renditionCleanupScheduler.stop();
   await new Promise((resolve) => httpServer.close(resolve));
   await jobsWorker.stop();
   await playbackDelivery.shutdown();

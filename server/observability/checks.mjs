@@ -70,3 +70,27 @@ export const createDiskCheck = ({ name, directory, minimumFreeBytes = 1024 ** 3,
   }
 };
 
+export const createRenditionStorageCheck = ({ status }) => async () => {
+  try {
+    const snapshot = await status();
+    if (snapshot.disk.freeBytes === null) return result("rendition_storage", false, "stat_failed");
+    const readyGroups = snapshot.usage.groups.filter((group) => group.state === "ready");
+    const aggregate = (retention, field) => readyGroups.filter((group) => group.retention === retention).reduce((sum, group) => sum + group[field], 0);
+    const cacheBytes = aggregate("cache", "bytes");
+    const cacheCount = aggregate("cache", "count");
+    const pinnedBytes = aggregate("pinned", "bytes");
+    const pinnedCount = aggregate("pinned", "count");
+    const capacity = snapshot.policy.quotaBytes;
+    const quotaRecoverable = capacity === null || pinnedBytes <= capacity;
+    const diskRecoverable = snapshot.disk.freeBytes + cacheBytes >= snapshot.policy.minimumFreeBytes;
+    const ready = quotaRecoverable && diskRecoverable;
+    return result("rendition_storage", ready, ready ? "ok" : "low_space", {
+      cacheBytes, cacheCount,
+      evictionAge: snapshot.operations?.evictions?.age ?? 0,
+      evictionPressure: snapshot.operations?.evictions?.pressure ?? 0,
+      pinnedBytes, pinnedCount,
+      quotaBytes: capacity ?? 0,
+      readyBytes: snapshot.usage.totalReadyBytes
+    });
+  } catch { return result("rendition_storage", false, "snapshot_failed"); }
+};

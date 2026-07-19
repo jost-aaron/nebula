@@ -7,12 +7,17 @@ const HELP = Object.freeze({
   nebula_catalog_failed_scans: "Catalog roots whose latest scan failed.",
   nebula_catalog_pending_probes: "Catalog probe jobs pending or running.",
   nebula_catalog_scanning_roots: "Catalog roots currently scanning.",
-  nebula_process_uptime_seconds: "Nebula server process uptime."
+  nebula_process_uptime_seconds: "Nebula server process uptime.",
+  nebula_rendition_bytes: "Rendition bytes by bounded retention class.",
+  nebula_rendition_count: "Rendition count by bounded retention class.",
+  nebula_rendition_evictions_total: "Rendition evictions by bounded reason.",
+  nebula_rendition_quota_bytes: "Configured rendition storage quota in bytes."
 });
 
-const COMPONENTS = new Set(["database", "content_root", "jobs_worker", "catalog", "content_disk", "cache_disk"]);
+const COMPONENTS = new Set(["database", "content_root", "jobs_worker", "catalog", "content_disk", "cache_disk", "rendition_storage"]);
+const TYPES = Object.freeze({ nebula_rendition_evictions_total: "counter" });
 const family = (name, samples) => samples.length
-  ? `# HELP ${name} ${HELP[name]}\n# TYPE ${name} gauge\n${samples.map(({ labels = "", value }) => `${name}${labels} ${value}`).join("\n")}\n`
+  ? `# HELP ${name} ${HELP[name]}\n# TYPE ${name} ${TYPES[name] ?? "gauge"}\n${samples.map(({ labels = "", value }) => `${name}${labels} ${value}`).join("\n")}\n`
   : "";
 const label = (key, value) => `{${key}="${value}"}`;
 
@@ -34,6 +39,14 @@ export const renderPrometheusMetrics = ({ readiness, uptimeSeconds }) => {
       const storage = component.name === "content_disk" ? "content" : "cache";
       if (values.freeBytes !== undefined) samples.nebula_disk_free_bytes.push({ labels: label("storage", storage), value: values.freeBytes });
       if (values.totalBytes !== undefined) samples.nebula_disk_total_bytes.push({ labels: label("storage", storage), value: values.totalBytes });
+    } else if (component.name === "rendition_storage") {
+      samples.nebula_rendition_bytes.push({ labels: label("retention", "cache"), value: values.cacheBytes ?? 0 });
+      samples.nebula_rendition_bytes.push({ labels: label("retention", "pinned"), value: values.pinnedBytes ?? 0 });
+      samples.nebula_rendition_count.push({ labels: label("retention", "cache"), value: values.cacheCount ?? 0 });
+      samples.nebula_rendition_count.push({ labels: label("retention", "pinned"), value: values.pinnedCount ?? 0 });
+      samples.nebula_rendition_evictions_total.push({ labels: label("reason", "age"), value: values.evictionAge ?? 0 });
+      samples.nebula_rendition_evictions_total.push({ labels: label("reason", "pressure"), value: values.evictionPressure ?? 0 });
+      samples.nebula_rendition_quota_bytes.push({ value: values.quotaBytes ?? 0 });
     }
   }
   return Object.keys(HELP).map((name) => family(name, samples[name])).join("");

@@ -16,6 +16,9 @@ const publicRow = (row) => row ? ({
   videoBitrate: row.video_bitrate, width: row.width
 }) : null;
 
+const usageRow = (row) => ({ bytes: Number(row.bytes) || 0, count: Number(row.count) || 0,
+  retention: row.retention, state: row.state });
+
 const safeStoragePath = async (root, storageKey) => {
   if (typeof storageKey !== "string" || !storageKey || path.isAbsolute(storageKey)) return null;
   const normalized = path.normalize(storageKey);
@@ -90,6 +93,41 @@ export const createRenditionStore = ({ database, dataRoot, now = timestamp, uuid
     database.prepare("DELETE FROM media_renditions WHERE id = ?").run(id);
     return true;
   };
+  const usage = () => {
+    const groups = database.prepare(`SELECT retention, state, COUNT(*) AS count, COALESCE(SUM(size_bytes), 0) AS bytes
+      FROM media_renditions GROUP BY retention, state ORDER BY retention, state`).all().map(usageRow);
+    return {
+      groups,
+      totalBytes: groups.reduce((sum, group) => sum + group.bytes, 0),
+      totalReadyBytes: groups.filter((group) => group.state === "ready").reduce((sum, group) => sum + group.bytes, 0)
+    };
+  };
+  const listEvictionCandidates = ({ before = null, limit = 50 } = {}) => database.prepare(`SELECT r.*, s.item_id
+    FROM media_renditions r JOIN media_sources s ON s.id = r.source_id
+    WHERE r.retention = 'cache' AND r.state = 'ready'
+      AND (? IS NULL OR COALESCE(r.last_accessed_at, r.completed_at, r.updated_at) < ?)
+    ORDER BY COALESCE(r.last_accessed_at, r.completed_at, r.updated_at) ASC, r.id ASC LIMIT ?`)
+    .all(before, before, Math.max(1, Math.min(1000, Number(limit) || 50))).map(publicRow);
+  const pruneRecords = ({ failedBefore, staleBefore }) => {
+    const failed = database.prepare("DELETE FROM media_renditions WHERE state = 'failed' AND updated_at < ?").run(failedBefore).changes;
+    const stale = database.prepare("DELETE FROM media_renditions WHERE state = 'stale' AND updated_at < ?").run(staleBefore).changes;
+    return { failed, stale };
+  };
+  const reconcileFilesystem = async () => {
+    await initialized;
+    const known = new Set(database.prepare("SELECT storage_key FROM media_renditions WHERE storage_key IS NOT NULL").all().map((row) => row.storage_key));
+    let missing = 0; let orphans = 0;
+    for (const row of database.prepare("SELECT * FROM media_renditions WHERE state = 'ready'").all()) {
+      if (!row.storage_key || !await safeStoragePath(root, row.storage_key)) { await invalidate(row, "asset_missing"); missing += 1; }
+    }
+    for (const entry of await readdir(root, { withFileTypes: true })) {
+      if (!entry.isDirectory() || known.has(entry.name)) continue;
+      const candidate = path.join(root, entry.name);
+      const resolved = await realpath(candidate).catch(() => null);
+      if (resolved && contained(root, resolved)) { await rm(resolved, { recursive: true, force: true }); orphans += 1; }
+    }
+    return { missing, orphans };
+  };
   const invalidate = async (row, code = "asset_invalid") => {
     database.prepare("UPDATE media_renditions SET state = 'stale', error_code = ?, error_message = ?, updated_at = ? WHERE id = ?")
       .run(code, "Persisted rendition failed verification.", now(), row.id);
@@ -158,7 +196,8 @@ export const createRenditionStore = ({ database, dataRoot, now = timestamp, uuid
     database.prepare("UPDATE media_renditions SET state = 'failed', error_code = ?, error_message = ?, updated_at = ? WHERE id = ?")
       .run(String(error?.code ?? "build_failed").slice(0, 64), "Rendition generation failed.", now(), row.id);
   };
-  return { begin, fail, findReady, get, initialize: () => initialized, listForItem, publish, remove, root, setRetention };
+  return { begin, fail, findReady, get, initialize: () => initialized, listEvictionCandidates,
+    listForItem, pruneRecords, publish, reconcileFilesystem, remove, root, setRetention, usage };
 };
 
 export { verifyHlsDirectory };

@@ -127,3 +127,26 @@ service-admin context. Members can consume ready output only through normal
 account-bound playback delivery authorization. The Jobs settings surface shows
 and filters rendition work but deliberately has no generic rendition enqueue
 button.
+
+## Storage Policy And Cleanup
+
+Owners manage reusable rendition storage from **Settings → Storage**. The
+centrally composed `renditions-v2` migration stores one bounded policy in the
+shared database without using `PRAGMA user_version`. Policy covers optional
+quota, high/low water marks, minimum free space, cache age, failed/stale record
+retention, cleanup cadence and batch size, interactive caching preference,
+scheduled pinning, and allowed scheduled profiles.
+
+Cleanup is a durable, deduplicated `cleanup:renditions` job. Browser callers
+cannot submit paths, roots, candidate IDs, limits, or deletion arguments. The
+worker reconciles missing assets and safe orphan directories, prunes old
+terminal records, then selects only ready cache entries in deterministic LRU
+order. Pinned renditions are never automatically evicted. A lightweight timer
+only enqueues the durable job; it never deletes files itself.
+
+Admin status reports bounded aggregate bytes and counts by retention/state,
+quota, disk capacity, cleanup duration, and eviction totals. Metrics use only
+fixed cache/pinned retention labels and age/pressure reason labels. Readiness
+fails for inaccessible storage or when pinned output makes quota or minimum-free
+recovery impossible; ordinary high-water pressure remains diagnostic and is
+resolved by cleanup.

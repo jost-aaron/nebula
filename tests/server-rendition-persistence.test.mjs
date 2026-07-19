@@ -40,7 +40,7 @@ const writeCompleteHls = async (directory, marker = "segment") => {
   return { masterPlaylist: path.join(directory, "master.m3u8"), mediaPlaylist: path.join(directory, "media.m3u8") };
 };
 
-const serviceFor = (scope, { revision = 1, runner, uuid } = {}) => {
+const serviceFor = (scope, { revision = 1, runner, shouldPersistRendition, uuid } = {}) => {
   const store = createRenditionStore({ database: scope.database, dataRoot: scope.dataRoot });
   const service = createTranscodeService({
     contentRoot: scope.contentRoot,
@@ -48,10 +48,28 @@ const serviceFor = (scope, { revision = 1, runner, uuid } = {}) => {
     renditionStore: store,
     resolveSource: async () => ({ ...ids, availability: "available", contentRevision: revision, id: ids.sourceId, path: "movie.mp4" }),
     runner,
+    shouldPersistRendition,
     uuid
   });
   return { service, store };
 };
+
+test("interactive profile output remains disposable when caching is disabled", async (t) => {
+  const scope = await scopeFor(t);
+  const worker = serviceFor(scope, {
+    runner: async (_input, directory) => writeCompleteHls(directory, "disposable"),
+    shouldPersistRendition: () => false,
+    uuid: () => "disposable-session"
+  });
+  const session = await worker.service.createSession(profilePlan(), { userId: "alice" });
+  await session.completion;
+  const asset = await session.resolveAsset("segment-00000.ts");
+  assert.equal(asset.includes(`${path.sep}delivery-cache${path.sep}`), true);
+  assert.equal(scope.database.prepare("SELECT COUNT(*) AS count FROM media_renditions").get().count, 0);
+  await session.cleanup();
+  assert.equal(await access(asset).then(() => true, () => false), false);
+  await worker.service.shutdown();
+});
 
 test("completed profile renditions survive delivery cleanup and transcode service restart", async (t) => {
   const scope = await scopeFor(t);

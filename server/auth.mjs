@@ -55,7 +55,7 @@ const capabilityForRoute = (request, url) => {
   const path = url.pathname;
   if (path === "/api/auth/server-settings/tmdb") return "server.admin";
   if (path === "/api/auth/accounts" || path.startsWith("/api/auth/accounts/")) return "server.admin";
-  if (path === "/api/admin/observability/readiness" || path === "/api/admin/audit" || path === "/api/admin/backups" || path.startsWith("/api/admin/backups/") || path.startsWith("/api/admin/playback-policy") || path.startsWith("/api/admin/transcode-acceleration")) return "server.admin";
+  if (path === "/api/admin/observability/readiness" || path === "/api/admin/audit" || path === "/api/admin/backups" || path.startsWith("/api/admin/backups/") || path.startsWith("/api/admin/playback-policy") || path.startsWith("/api/admin/transcode-acceleration") || path.startsWith("/api/admin/rendition-policy") || path.startsWith("/api/admin/renditions")) return "server.admin";
   if (path.startsWith("/api/collections")) return ["GET", "HEAD"].includes(method) ? "media.read" : "server.admin";
   if (path.startsWith("/api/playlists")) return "media.read";
   if (path.startsWith("/api/auth/")) return "account.use";

@@ -4,6 +4,7 @@ import {
   createCatalogCheck,
   createDatabaseCheck,
   createDiskCheck,
+  createRenditionStorageCheck,
   createObservabilityRoutes,
   createObservabilityService,
   createWorkerCheck,
@@ -55,14 +56,33 @@ test("Prometheus output has only bounded component and storage labels", () => {
   const output = renderPrometheusMetrics({ uptimeSeconds: 12.5, readiness: { components: [
     { name: "jobs_worker", ready: true, measurements: { active: 2, heartbeatAgeSeconds: 0.25 } },
     { name: "catalog", ready: true, measurements: { failedScans: 0, pendingProbes: 3, scanningRoots: 1 } },
-    { name: "cache_disk", ready: false, measurements: { freeBytes: 10, totalBytes: 100 } }
+    { name: "cache_disk", ready: false, measurements: { freeBytes: 10, totalBytes: 100 } },
+    { name: "rendition_storage", ready: true, measurements: { cacheBytes: 40, cacheCount: 2, evictionAge: 3, evictionPressure: 4, pinnedBytes: 60, pinnedCount: 1, quotaBytes: 100 } }
   ] } });
   assert.match(output, /nebula_component_ready\{component="jobs_worker"\} 1/);
   assert.match(output, /nebula_disk_free_bytes\{storage="cache"\} 10/);
   assert.match(output, /nebula_catalog_pending_probes 3/);
+  assert.match(output, /nebula_rendition_count\{retention="cache"\} 2/);
+  assert.match(output, /# TYPE nebula_rendition_evictions_total counter/);
+  assert.match(output, /nebula_rendition_evictions_total\{reason="pressure"\} 4/);
+  assert.match(output, /nebula_rendition_quota_bytes 100/);
   assert.doesNotMatch(output, /id=|path=|user=|session=|filename=/);
   assert.equal(output.match(/# HELP nebula_component_ready/g)?.length, 1);
   assert.ok(output.endsWith("\n"));
+});
+
+test("rendition storage readiness fails only when pinned output makes recovery impossible", async () => {
+  const status = (freeBytes, cacheBytes, pinnedBytes, quotaBytes = 100) => ({
+    disk: { freeBytes, totalBytes: 1_000 }, operations: { evictions: { age: 0, pressure: 0 } },
+    policy: { minimumFreeBytes: 50, quotaBytes },
+    usage: { groups: [
+      { bytes: cacheBytes, count: 2, retention: "cache", state: "ready" },
+      { bytes: pinnedBytes, count: 1, retention: "pinned", state: "ready" }
+    ], totalReadyBytes: cacheBytes + pinnedBytes }
+  });
+  assert.equal((await createRenditionStorageCheck({ status: async () => status(10, 40, 90) })()).ready, true);
+  assert.equal((await createRenditionStorageCheck({ status: async () => status(10, 20, 90) })()).ready, false);
+  assert.equal((await createRenditionStorageCheck({ status: async () => status(100, 0, 101) })()).ready, false);
 });
 
 test("routes keep liveness and opaque readiness public while protecting diagnostics and metrics", async () => {

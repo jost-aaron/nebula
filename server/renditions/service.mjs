@@ -4,7 +4,7 @@ const httpError = (status, message, code) => Object.assign(new Error(message), {
 const validId = (value) => typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value);
 const jobKey = (source, profile) => `rendition:${source.id}:r${source.contentRevision}:${profile.id}:v${profile.version}`;
 
-export const createRenditionService = ({ audit, canAccessItem = null, catalog, jobs, planner, probeReader, store, transcode }) => {
+export const createRenditionService = ({ audit, canAccessItem = null, catalog, jobs, planner, policy = null, probeReader, store, transcode }) => {
   const resolve = (itemId, sourceId = null) => {
     if (!validId(itemId)) throw httpError(400, "Invalid media item ID.", "invalid_item_id");
     const item = catalog.getItem(itemId);
@@ -48,11 +48,13 @@ export const createRenditionService = ({ audit, canAccessItem = null, catalog, j
     const ids = Array.isArray(request?.profileIds) ? [...new Set(request.profileIds.map(String))] : [];
     if (!ids.length || ids.length > 3) throw httpError(400, "Select one or more rendition profiles.", "invalid_profiles");
     const profiles = new Map(eligibleProfiles(source).map((profile) => [profile.id, profile]));
+    const storagePolicy = policy?.get?.();
+    if (storagePolicy) for (const id of [...profiles.keys()]) if (!storagePolicy.allowedProfileIds.includes(id)) profiles.delete(id);
     if (ids.some((id) => !profiles.has(id))) throw httpError(422, "A selected profile is not eligible for this source.", "profile_unavailable");
     if (request.retention !== undefined && !["cache", "pinned"].includes(request.retention)) {
       throw httpError(400, "Invalid rendition retention.", "invalid_retention");
     }
-    const retention = request.retention === "pinned" ? "pinned" : "cache";
+    const retention = request.retention === "pinned" || (request.retention === undefined && storagePolicy?.pinScheduledByDefault) ? "pinned" : "cache";
     const builds = ids.map((profileId) => {
       const profile = profiles.get(profileId);
       const ready = store.listForItem(itemId).find((entry) => entry.sourceId === source.id
