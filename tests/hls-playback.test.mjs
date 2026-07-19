@@ -92,12 +92,28 @@ test("support detection and playback prefer native HLS", async () => {
   const playback = createHlsPlayback({
     media,
     manifestUrl: "/stream/master.m3u8?ticket=secret",
-    hlsConstructor: FakeHls
+    hlsConstructor: FakeHls,
+    userAgent: "Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15"
   });
   assert.equal(playback.mode, "native");
   assert.equal(instances.length, 0);
   assert.equal(media.src, "/stream/master.m3u8?ticket=secret");
   media.dispatchEvent(new Event("loadedmetadata"));
+  await playback.ready;
+});
+
+test("Chromium false-positive native HLS support still uses hls.js", async () => {
+  const media = new FakeMedia("probably");
+  const { FakeHls, instances } = createFakeHls();
+  const playback = createHlsPlayback({
+    media,
+    manifestUrl: "/stream/master.m3u8",
+    hlsConstructor: FakeHls,
+    userAgent: "Mozilla/5.0 AppleWebKit/537.36 Chrome/150.0.0.0 Safari/537.36"
+  });
+  assert.equal(playback.mode, "hls.js");
+  assert.equal(instances.length, 1);
+  instances[0].emit("hlsManifestParsed");
   await playback.ready;
 });
 

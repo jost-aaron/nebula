@@ -31,6 +31,7 @@ export interface CreateHlsPlaybackOptions {
   onError?: (error: HlsPlaybackError) => void;
   hlsConstructor?: HlsConstructor;
   pageUrl?: string;
+  userAgent?: string;
 }
 
 export function supportsHlsPlayback(
@@ -51,6 +52,10 @@ function isSameOrigin(manifestUrl: string, pageUrl?: string): boolean {
   }
 }
 
+function isSafari(userAgent: string): boolean {
+  return /Safari\//.test(userAgent) && !/(?:Chrome|Chromium|CriOS|Edg|EdgiOS|OPR|FxiOS)\//.test(userAgent);
+}
+
 function classifyError(data: Pick<ErrorData, "type">): HlsPlaybackError {
   if (data.type === ErrorTypes.NETWORK_ERROR) {
     return { fatal: true, kind: "network", message: "The HLS stream could not be loaded." };
@@ -65,6 +70,8 @@ export function createHlsPlayback(options: CreateHlsPlaybackOptions): HlsPlaybac
   const { media, manifestUrl, onReady, onError, pageUrl } = options;
   const HlsImplementation = options.hlsConstructor ?? Hls;
   const nativeSupported = Boolean(media.canPlayType(HLS_MIME_TYPE));
+  const mseSupported = HlsImplementation.isSupported();
+  const nativePreferred = nativeSupported && (!mseSupported || isSafari(options.userAgent ?? globalThis.navigator?.userAgent ?? ""));
   const previousSrc = media.getAttribute("src");
   let destroyed = false;
   let settled = false;
@@ -111,7 +118,7 @@ export function createHlsPlayback(options: CreateHlsPlaybackOptions): HlsPlaybac
     media.load();
   };
 
-  if (nativeSupported) {
+  if (nativePreferred) {
     media.addEventListener("loadedmetadata", finishReady, { once: true });
     media.addEventListener("error", onNativeError, { once: true });
     media.src = manifestUrl;
@@ -119,7 +126,7 @@ export function createHlsPlayback(options: CreateHlsPlaybackOptions): HlsPlaybac
     return { mode: "native", ready, destroy };
   }
 
-  if (!HlsImplementation.isSupported()) {
+  if (!mseSupported) {
     finishError({ fatal: true, kind: "other", message: "HLS playback is not supported." });
     return { mode: "hls.js", ready, destroy };
   }
