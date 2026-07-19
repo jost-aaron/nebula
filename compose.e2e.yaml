@@ -25,6 +25,7 @@ services:
       - dashboard
     environment:
       PLAYWRIGHT_BASE_URL: http://dashboard:5173
+      E2E_RUN_ID: ${E2E_RUN_ID:?Set E2E_RUN_ID}
       CI: "true"
     init: true
     ipc: host

@@ -1,44 +1,125 @@
 import { randomUUID } from "node:crypto";
 import { test, expect } from "@playwright/test";
-import { expectNoHorizontalOverflow, openApp } from "./helpers";
+import { closeActiveApp, expectNoHorizontalOverflow, openApp, resetShellFocus } from "./helpers";
 
-test("app-first navigation and keyboard Escape behavior", async ({ page }) => {
-  await page.goto("/");
-  await expect(page.getByRole("region", { name: "Applications" })).toBeVisible();
+test("pointer, keyboard, and gated wheel navigation preserve shell focus contracts", async ({ page }) => {
+  await resetShellFocus(page);
+  const applications = page.getByRole("region", { name: "Applications" });
+  const grid = page.getByRole("toolbar", { name: "Applications" });
+  const tiles = grid.locator(".app-tile");
+  await expect(applications).toBeVisible();
   await expect(page.locator(".rail-button")).toHaveCount(0);
   await expect(page.locator("html")).toHaveAttribute("data-focus-index", "0");
+  await expect(grid.locator(".app-tile[aria-current='true']")).toHaveCount(1);
+  await expect(grid.locator(".app-tile[tabindex='0']")).toHaveCount(1);
+
+  const studioTile = grid.locator(".app-tile[data-app-id='studio']");
+  await studioTile.hover();
+  await expect(studioTile).toHaveAttribute("aria-current", "true");
+  await studioTile.click();
+  await expect(studioTile).toBeFocused();
+  await page.mouse.move(0, 0);
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-focus-index", "2");
+  await expect(grid.locator(".app-tile[data-app-id='studio']")).toHaveAttribute("aria-current", "true");
 
   await page.keyboard.press("ArrowRight");
-  await expect(page.locator("html")).toHaveAttribute("data-focus-index", "1");
+  const filesTile = grid.locator(".app-tile[data-app-id='files']");
+  await expect(filesTile).toHaveAttribute("aria-current", "true");
+  await expect(filesTile).toBeFocused();
+  await page.keyboard.press("Enter");
+  const surface = page.locator("#app-surface");
+  await expect(surface).toBeVisible();
+  await expect(surface).toHaveAttribute("role", "dialog");
+  await expect(surface).toHaveAttribute("aria-modal", "true");
+  await expect(page.locator(".shell")).toHaveAttribute("inert", "");
+  await page.keyboard.press("Escape");
+  await expect(surface).toBeHidden();
+  await expect(filesTile).toBeFocused();
+
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("ArrowLeft");
   await expect(page.locator("html")).toHaveAttribute("data-focus-index", "0");
-  await page.keyboard.press("Enter");
-  await expect(page.locator("[data-cinema-app]")).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(page.locator("#app-surface")).toBeHidden();
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.locator("html")).toHaveAttribute("data-focus-index", "0");
 
+  await grid.evaluate((element) => element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 70 })));
+  await expect(page.locator("html")).toHaveAttribute("data-focus-index", "0");
+  await grid.evaluate((element) => element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 70 })));
+  await expect(page.locator("html")).toHaveAttribute("data-focus-index", "1");
+  await grid.evaluate((element) => element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 300 })));
+  await expect(page.locator("html")).toHaveAttribute("data-focus-index", "1");
+  await page.waitForTimeout(800);
+  await grid.evaluate((element) => element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 140 })));
+  await expect(page.locator("html")).toHaveAttribute("data-focus-index", "2");
+
+  for (let index = 0; index < 10; index += 1) await page.keyboard.press("ArrowRight");
+  await expect(page.locator("html")).toHaveAttribute("data-focus-index", "6");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator("html")).toHaveAttribute("data-focus-index", "6");
+
+  const searchTile = grid.locator(".app-tile[data-app-id='search']");
+  await searchTile.dblclick();
+  await expect(surface).toBeVisible();
+  await expect.poll(() => surface.locator(".app-window").evaluate((element) => element.scrollTop)).toBe(0);
+  const searchClose = surface.getByRole("button", { name: "Close app" });
+  await expect(searchClose).toBeInViewport();
+  await searchClose.click();
+  await expect(surface).toBeHidden();
+  await expect(searchTile).toBeFocused();
+
+  for (let index = 0; index < 6; index += 1) await page.keyboard.press("ArrowLeft");
   await page.getByRole("button", { name: "View details" }).click();
-  await expect(page.locator("#detail-panel")).toBeVisible();
+  const details = page.locator("#detail-panel");
+  await expect(details).toBeVisible();
+  await expect(details).toHaveAttribute("role", "dialog");
+  await expect(details).toHaveAttribute("aria-modal", "false");
+  await expect(details.getByRole("button", { name: "Close app" })).toBeFocused();
   await page.keyboard.press("Escape");
-  await expect(page.locator("#detail-panel")).toBeHidden();
+  await expect(details).toBeHidden();
+  await expect(page.getByRole("button", { name: "View details" })).toBeFocused();
 });
 
-test("Cinema, Studio, and Files expose deterministic smoke paths", async ({ page }) => {
+test("Cinema, Files, Search, and Settings expose meaningful open and close paths", async ({ page }) => {
   await openApp(page, "Cinema");
   await expect(page.locator("[data-cinema-category='movies']")).toBeVisible();
   await expect(page.locator("[data-cinema-category='tv']")).toBeVisible();
   await expect(page.locator("[data-cinema-grid]")).toContainText("E2E Movie");
   await expect(page.locator("[data-cinema-player]")).toHaveCount(0);
-  await page.getByRole("button", { name: /Dashboard/ }).click();
-
-  await openApp(page, "Studio");
-  await expect(page.locator("[data-studio-content]")).toContainText("E2E Track");
-  await expect(page.locator("[data-studio-player]")).toHaveCount(0);
-  await page.getByRole("button", { name: /Dashboard/ }).click();
+  await closeActiveApp(page);
 
   await openApp(page, "Files");
   await expect(page.locator("[data-file-list]")).toContainText("fixture-note.txt");
   await expect(page.getByRole("button", { name: "Upload", exact: true })).toBeVisible();
+  await closeActiveApp(page);
+
+  await openApp(page, "Search");
+  const search = page.getByPlaceholder("Search apps");
+  await expect(search).toBeFocused();
+  await search.fill("Settings");
+  await expect(page.locator("[data-search-results]")).toContainText("Settings");
+  await closeActiveApp(page);
+
+  await openApp(page, "Settings");
+  await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible();
+  await closeActiveApp(page);
+});
+
+test("390x844 shell controls stay visible, reachable, and free of page overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expectNoHorizontalOverflow(page);
+  await expect(page.locator("[data-account-menu-toggle]")).toBeInViewport();
+  await expect(page.getByRole("button", { name: /^(Open|Preview)$/ })).toBeInViewport();
+  await expect(page.getByRole("button", { name: "View details" })).toBeInViewport();
+  const appGrid = page.getByRole("toolbar", { name: "Applications" });
+  await expect(appGrid).toBeInViewport();
+  await appGrid.locator(".app-tile[data-app-id='search']").click();
+  await page.getByRole("button", { name: /^(Open|Preview)$/ }).click();
+  await expectNoHorizontalOverflow(page);
+  await expect(page.getByPlaceholder("Search apps")).toBeInViewport();
+  await expect(page.locator("#app-surface").getByRole("button", { name: "Close app" })).toBeInViewport();
 });
 
 test("Cinema subtitles, playback, and the in-app resume dialog work together", async ({ page }) => {

@@ -548,7 +548,7 @@ const bindSearchControls = (container: ParentNode) => {
   });
 
   renderResults();
-  window.setTimeout(() => input.focus(), 0);
+  window.setTimeout(() => input.focus({ preventScroll: true }), 0);
 };
 
 const openFocusedApp = () => {

@@ -35,6 +35,7 @@ import type { SubtitlePreference, SubtitleTracksResponse } from "../shared/subti
 import { buildItemRenditions, deleteRendition, listItemRenditions, listRenditionProfiles, setRenditionRetention } from "../api/renditionsApi";
 import { RENDITION_PROFILE_IDS, type MediaRendition, type PlaybackQualityPreference, type RenditionProfile, type RenditionProfileId } from "../shared/renditionTypes";
 import type { PlaybackPlanResponse } from "../shared/playbackPlanTypes";
+import { createBrowserUuid } from "../shared/browserUuid";
 import { createHlsPlayback, supportsHlsPlayback, type HlsPlaybackHandle } from "./hlsPlayback";
 
 type CinemaView = "library" | "watchlist" | "title-detail" | "player" | "metadata-editor" | "servers" | "identify";
@@ -822,7 +823,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     const hls = supportsHlsPlayback(player);
     const storageKey = "nebula.cinema.deviceId";
     let deviceId = window.localStorage.getItem(storageKey);
-    if (!deviceId) { deviceId = crypto.randomUUID(); window.localStorage.setItem(storageKey, deviceId); }
+    if (!deviceId) { deviceId = createBrowserUuid(); window.localStorage.setItem(storageKey, deviceId); }
     return {
       audioCodecs: mp4 ? ["aac"] : [], containers: mp4 ? ["mp4"] : [], deviceId,
       maxAudioChannels: null, maxBitrate: null, maxHeight: null, maxWidth: null,
@@ -1100,7 +1101,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
           const result = await reportCinemaPlayback({
             durationSeconds,
             event,
-            eventId: crypto.randomUUID(),
+            eventId: createBrowserUuid(),
             itemId: playingEntry.id!,
             positionSeconds,
             sessionId,

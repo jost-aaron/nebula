@@ -5,6 +5,7 @@ import type { MusicEntry } from "../shared/musicTypes";
 import { addMediaListItem, createMediaList, listMediaLists } from "../api/mediaListsApi";
 import type { MediaList } from "../shared/mediaListTypes";
 import type { PlaybackEventKind, PlaybackHistoryEntry } from "../shared/playbackTypes";
+import { createBrowserUuid } from "../shared/browserUuid";
 
 interface StudioServerInfo {
   address: string;
@@ -590,7 +591,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
         const result = await reportStudioPlayback({
           durationSeconds,
           event,
-          eventId: crypto.randomUUID(),
+          eventId: createBrowserUuid(),
           itemId: playingEntry.id!,
           positionSeconds,
           sessionId,

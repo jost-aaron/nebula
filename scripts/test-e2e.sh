@@ -5,6 +5,7 @@ root_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 run_id="$(date +%s)-$$"
 run_root="$root_dir/.tmp/e2e/$run_id"
 export COMPOSE_PROJECT_NAME="nebula-e2e-$run_id"
+export E2E_RUN_ID="$run_id"
 export DASHBOARD_PORT="${DASHBOARD_PORT:-$(python3 - <<'PY'
 import socket
 with socket.socket() as sock:
@@ -27,7 +28,6 @@ trap cleanup EXIT INT TERM
 
 mkdir -p "$E2E_CONTENT_DIR/Movies" "$E2E_CONTENT_DIR/Music" "$E2E_DATA_DIR" "$root_dir/playwright-report" "$root_dir/test-results"
 printf 'WEBVTT\n\n00:00.000 --> 00:01.000\nNebula subtitle fixture\n' > "$E2E_CONTENT_DIR/Movies/E2E Movie.en.default.vtt"
-printf 'deterministic audio fixture\n' > "$E2E_CONTENT_DIR/Music/E2E Track.mp3"
 printf 'Nebula Playwright fixture\n' > "$E2E_CONTENT_DIR/fixture-note.txt"
 
 echo "Playwright dashboard: http://127.0.0.1:$DASHBOARD_PORT"
@@ -37,6 +37,10 @@ compose run --rm --no-deps dashboard ffmpeg -nostdin -v error \
   -f lavfi -i sine=frequency=440:sample_rate=48000:duration=4 \
   -c:v libvpx-vp9 -pix_fmt yuv420p -c:a libopus -y \
   "/app/content/Movies/E2E Movie.webm"
+compose run --rm --no-deps dashboard ffmpeg -nostdin -v error \
+  -f lavfi -i sine=frequency=523.25:sample_rate=48000:duration=18 \
+  -c:a libmp3lame -b:a 128k -metadata title="E2E Track" -metadata artist="Nebula Tests" -y \
+  "/app/content/Music/E2E Track.mp3"
 compose up --detach dashboard
 
 attempt=0

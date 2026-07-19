@@ -709,6 +709,8 @@ h1 {
 
 .search-window {
   width: min(860px, calc(100vw - 56px));
+  height: min(720px, calc(100vh - 56px));
+  max-height: calc(100vh - 56px);
 }
 
 .app-window.settings-window {
@@ -756,6 +758,7 @@ h1 {
 
 .search-window .search-view {
   min-height: 0;
+  overflow-y: auto;
   padding: clamp(22px, 4vw, 42px);
 }
 

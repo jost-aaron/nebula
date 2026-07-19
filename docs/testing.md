@@ -297,10 +297,12 @@ Run the browser suite only through its Docker wrapper:
 
 The wrapper assigns a unique Compose project and free host port, then replaces
 both `/app/data` and `/app/content` with per-run temporary bind mounts. It seeds
-small deterministic video, audio, and text fixtures, disables TMDB credentials,
-and runs Chromium inside the pinned Playwright image. The suite never reads the
-normal `nebula-data` volume or developer `content/`, and it does not require port
-5173 or outbound network access at test time.
+small deterministic video, real 18-second MP3 audio, subtitle, and text fixtures,
+disables TMDB credentials, gives the run unique account credentials, and runs
+Chromium inside the pinned Playwright image. The suite never reads the normal
+`nebula-data` volume or developer `content/`, and it does not require port 5173
+or outbound network access at test time. Cleanup removes only the run's temporary
+bind mounts and uniquely named Compose resources.
 
 Failure screenshots, videos, and traces are retained under `test-results/` and
 the HTML report is written to `playwright-report/`; both directories are ignored.
@@ -310,9 +312,23 @@ Pass normal Playwright filters after the wrapper when narrowing a failure:
 ./scripts/test-e2e.sh --project=owner --grep "Cinema"
 ```
 
-Coverage includes first-owner setup and cookie restoration, member sign-in and
-role visibility, app-first and keyboard navigation, Cinema/Studio/Files smoke
-paths, owner Jobs/Activity/Playback controls, and the 390x844 responsive contract.
+Coverage includes eligible first-run guest entry and exit, first-owner setup,
+cookie restoration, isolated sign-out, member sign-in, and owner/guest/member
+visibility. Full-app interactions cover pointer and hover selection, roving
+tabindex, keyboard arrows/Enter/Escape, clamped boundaries, deliberate gated
+wheel steps, focus restoration, app/dialog close paths, and Cinema, Files,
+Search, and Settings smoke flows. Studio uses the generated audio fixture to
+exercise real browser play/pause reporting, Continue Listening and Recently
+Played, accessible resume-dialog semantics, and both resume and restart requests;
+guest playback verifies that no personal playback API or history UI is exposed.
+Desktop and 390x844 checks assert reachable controls and no document-level
+horizontal overflow.
+
+Chromium media assertions intentionally avoid exact playback timestamps. They
+wait only for bounded forward progress and validate the resume/restart positions
+reported by the app. If the pinned headless Chromium image loses MP3 playback
+support, the Studio scenario fails explicitly at `HTMLMediaElement.play()`; it
+must not be marked passed by mocking media time or playback events.
 
 ## iOS Safe-Area Test
 
