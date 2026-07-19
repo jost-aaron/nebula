@@ -2,7 +2,7 @@ FROM node:25-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache ffmpeg
+RUN apk add --no-cache bash ffmpeg
 
 COPY package.json package-lock.json ./
 RUN npm ci

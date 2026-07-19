@@ -16,6 +16,22 @@ preflights, bounded/malformed JSON, resumable upload races and chunk bounds, and
 Cinema/Studio byte ranges.
 It also includes native-session source contracts for Keychain accessibility,
 legacy local-storage removal, server scoping, and fail-closed cleanup.
+Deployment CLI tests run in the same suite with fake Docker commands. They cover
+argument parsing, prerequisite failure before host mutation, conservative
+configuration generation, idempotent no-clobber initialization, backup token
+file permissions, and exact `compose.deploy.yaml` command construction; they do
+not start a production stack.
+
+Harmless operator CLI smoke checks:
+
+```sh
+./scripts/nebula-server.sh --help
+./scripts/nebula-server.sh validate
+docker compose run --rm dashboard node --test tests/nebula-server-cli.test.mjs
+```
+
+`validate` requires an existing deployment `.env`; it renders the deployment
+Compose configuration but does not build or start containers.
 
 Account coverage also includes salted scrypt verification, setup exactly once,
 first-run guest eligibility, irreversible owner initialization, local-only
