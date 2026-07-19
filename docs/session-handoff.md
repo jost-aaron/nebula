@@ -212,6 +212,10 @@ At handoff time:
   passed at desktop and 390×844 during the rendition implementation.
 - Rendition policy owner/service authorization, member denial, cookie CSRF,
   Capacitor CORS preflight, and v1-to-v2 preservation have automated coverage.
+- Real-media QA verified progressive 480p playback while FFmpeg was active and
+  scheduled pinned 720p playback after restart without a second encode.
+- Chromium HLS capability false positives are routed through hls.js; Safari/iOS
+  continues to use native HLS.
 - `./scripts/ios-sync-dev-server.sh` passed.
 - `./scripts/ios-build-simulator.sh` passed.
 - iPhone 17 Pro simulator launch/screenshot passed for the dashboard safe-area

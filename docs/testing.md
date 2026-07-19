@@ -358,7 +358,23 @@ reuse after delivery cleanup and service restart, exact revision invalidation,
 corrupt/missing asset rebuilds, first-segment playback before publication,
 same-key interactive build deduplication, authorization before lookup, and
 absolute/traversal storage-key rejection. Scheduled-job lifecycle, retention,
-quota, and LRU cleanup tests remain for later waves.
+quota, and LRU cleanup now have focused integration coverage.
+
+### Real-Media Transcoding Smoke Test
+
+Complement automated fixtures with one real library title:
+
+1. Start a fixed profile at position zero and confirm the video clock advances
+   from a hls.js `blob:` URL while FFmpeg and a `building` rendition are still
+   present.
+2. Queue another profile through Cinema **Optimize**, wait for a successful
+   durable job and a checksummed `ready` rendition, then restart Compose.
+3. Select that profile after restart and confirm playback advances without a
+   new FFmpeg process or rendition job.
+
+This was last completed against the 48-minute local Cinema fixture in July
+2026. It exposed and fixed Chromium falsely advertising native HLS support;
+Chromium now uses hls.js while Safari/iOS retains native HLS.
 
 Run the focused persistence regression set through Docker:
 
