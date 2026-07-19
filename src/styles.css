@@ -267,6 +267,11 @@ h1 {
   z-index: 2;
 }
 
+.app-tile:focus-visible {
+  outline: 3px solid #ffffff;
+  outline-offset: 4px;
+}
+
 .tile-art {
   width: 46px;
   height: 46px;

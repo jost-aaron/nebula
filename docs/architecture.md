@@ -25,6 +25,7 @@ flowchart TD
   Shell["#app dashboard shell"]
   Renderer["src/webgpuRenderer.ts"]
   Main["src/main.ts"]
+  ShellLogic["src/shell"]
   Registry["src/apps.ts"]
   Diagnostics["src/diagnostics"]
   Cinema["src/cinema"]
@@ -44,6 +45,7 @@ flowchart TD
   Browser --> Shell
   Renderer --> Canvas
   Main --> Shell
+  ShellLogic --> Main
   Registry --> Main
   Diagnostics --> Main
   Cinema --> Main
@@ -71,10 +73,16 @@ flowchart TD
 
 - Builds the shell markup.
 - Renders app tiles and detail panels.
-- Handles keyboard and pointer input.
-- Manages app-first dashboard navigation.
+- Dispatches shell commands from DOM events and binds app-specific surfaces.
 - Launches focused apps into the full-screen app surface.
 - Starts the WebGPU renderer.
+
+`src/shell/`
+
+- Owns typed shell state transitions and stable-ID focus selection.
+- Validates and scopes safe focus persistence to the current account or guest.
+- Defines shared keyboard, wheel, pointer, and gamepad command contracts.
+- Owns wheel/repeat gates, standard gamepad mapping, and leak-free polling.
 
 `src/apps.ts`
 
@@ -323,31 +331,39 @@ flowchart TD
 
 ## Shell State
 
-The current state is deliberately small:
+The current state remains deliberately small and is owned by
+`src/shell/state.ts`:
 
 ```ts
-let focusedIndex = 0;
-let launchedApp: DashboardApp | null = null;
-let activeApp: DashboardApp | null = null;
+interface ShellState {
+  focusedAppId: string;
+  detailAppId: string | null;
+  activeAppId: string | null;
+}
 ```
 
 The shell is constructed only after auth status and current-account restoration
 complete. Setup/sign-in is a separate surface, so protected apps never flash
 before authentication resolves.
 
-`focusedIndex` controls the featured app and focused tile.
+`focusedAppId` controls the featured app and roving-tabindex tile. Only this
+safe preference is persisted, with a schema version and principal ID. Restore
+is ignored when the app no longer exists or the signed-in principal changes.
+Detail/app surfaces and authenticated UI state are never persisted.
 
 Selection follows the app-first interaction model:
 
 - Hovering or clicking an app tile selects it.
 - Arrow keys move selection without wrapping past the first or last app.
+- A connected standard gamepad uses either stick/D-pad for selection, A for
+  Open, and B for Back, with delayed repeat for held navigation.
 - Wheel/trackpad scrolling over the Applications strip advances selection one
   app at a time after a gated threshold.
 - Click-dragging the Applications strip pans the row without launching apps.
 
-`launchedApp` controls app detail panel visibility and content.
+`detailAppId` controls app detail panel visibility and content.
 
-`activeApp` controls the full-screen app surface opened by the primary Open
+`activeAppId` controls the full-screen app surface opened by the primary Open
 command.
 
 ## Rendering Pattern
@@ -389,12 +405,10 @@ principal and marker transaction when resolving them.
 Avoid pushing application logic into the shader renderer. The renderer should
 know enough to draw a background, not own shell state.
 
-Avoid making `src/main.ts` much larger without introducing modules. Good next
-splits are:
+Avoid making `src/main.ts` much larger. State, persistence, and shared input now
+live under `src/shell/`; good next splits are:
 
-- `src/shellState.ts`
 - `src/renderers/panels.ts`
 - `src/renderers/grid.ts`
 - `src/appSurface.ts`
-- `src/input.ts`
 - `server/filesApi.mjs`

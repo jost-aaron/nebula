@@ -71,8 +71,10 @@ without either configuration source.
 
 ## Project Map
 
-- `src/main.ts` - dashboard shell, app selection state, detail panels,
-  full-screen app launch surfaces, keyboard/mouse handlers.
+- `src/main.ts` - dashboard DOM rendering, detail panels, and app-surface
+  integration.
+- `src/shell/` - typed shell state, safe focus persistence, shared input
+  commands/gates, and Gamepad API lifecycle.
 - `src/apps.ts` - app registry and app metadata types.
 - `src/diagnostics/` - renderer, display, runtime, app, and performance
   diagnostics collectors.

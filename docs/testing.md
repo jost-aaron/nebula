@@ -16,6 +16,9 @@ preflights, bounded/malformed JSON, resumable upload races and chunk bounds, and
 Cinema/Studio byte ranges.
 It also includes native-session source contracts for Keychain accessibility,
 legacy local-storage removal, server scoping, and fail-closed cleanup.
+Shell coverage exercises stable-ID state transitions, end clamping, scoped
+preference validation and v1 migration, wheel/repeat gates, standard gamepad
+mapping, and roving-focus/modal source contracts.
 
 Account coverage also includes salted scrypt verification, setup exactly once,
 first-run guest eligibility, irreversible owner initialization, local-only
@@ -197,6 +200,19 @@ Check:
 - ArrowLeft/ArrowUp moves focus backward and stops on the first app.
 - Enter launches the focused app surface.
 - Escape closes the active app surface first, otherwise closes detail panels.
+- Tab reaches only the selected application tile; arrow navigation moves the
+  roving focus target and closing a detail/app restores the invoking control.
+
+## Controller Test
+
+- Connect/disconnect updates the controller status without starting duplicate
+  polling loops.
+- D-pad or left stick moves one app at a time, clamps at both ends, then repeats
+  after a short hold delay.
+- A confirms/opens once per press and B closes the account menu, active app, or
+  detail panel in that priority order.
+- When no physical gamepad is available, record controller checks as an
+  unverified manual limitation; automated mapping and repeat tests still run.
 
 ## Navigation Regression Test
 
@@ -216,6 +232,8 @@ Expected:
 - The Applications strip scrolls horizontally by touch/trackpad and supports
   click-drag panning.
 - Keyboard/controller focus scrolls off-screen app tiles into view.
+- The selected app is the grid's only `tabindex="0"` tile and has visible
+  `:focus-visible` treatment.
 
 Browser console snippet:
 

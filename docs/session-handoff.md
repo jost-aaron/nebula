@@ -16,6 +16,8 @@ The current app includes:
 - WebGPU animated background with Canvas fallback.
 - Console-like app shell with app-first navigation and full-screen app launch
   animation.
+- Modular typed shell state, account-scoped stable-ID focus persistence, roving
+  tile focus, and shared keyboard/wheel/pointer/gamepad commands.
 - Search app.
 - Applications grid.
 - Shared Settings/Diagnostics app.
@@ -245,4 +247,6 @@ At handoff time:
   compatibility path without equivalent playback-state integration.
 - No password reset, MFA/passkeys, account deletion/role changes, second owner,
   folder-level Files ACLs, or Keychain-backed native token storage yet.
-- `src/main.ts` is growing and should eventually be split into shell modules.
+- App-surface rendering and feature-specific bindings remain in `src/main.ts`;
+  shell state, persistence, input gates, and gamepad lifecycle live in
+  `src/shell/`.

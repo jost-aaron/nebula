@@ -16,6 +16,11 @@ import { bindPlaybackPolicyAdmin } from "./settings/playbackPolicyAdmin";
 import { bindTranscodeAccelerationAdmin } from "./settings/transcodeAccelerationAdmin";
 import { bindRenditionStorageAdmin } from "./settings/renditionStorageAdmin";
 import { bindStudioView, renderStudioView } from "./studio/renderStudioView";
+import { commandFromKey, type ShellCommand } from "./shell/commands";
+import { bindGamepadCommands } from "./shell/gamepad";
+import { WheelCommandGate } from "./shell/inputGates";
+import { loadFocusedAppId, saveFocusedAppId } from "./shell/persistence";
+import { createShellState, transitionShellState } from "./shell/state";
 import { startRenderer } from "./webgpuRenderer";
 import type { AccountSessionState, CurrentSessionState } from "./shared/accountTypes";
 import "./styles.css";
@@ -33,9 +38,9 @@ root.innerHTML = renderAccountLoading();
 const startDashboard = (accountSession: CurrentSessionState) => {
 const isGuest = accountSession.principal === "guest" || !accountSession.user;
 const availableApps = isGuest ? dashboardApps.filter((app) => ["cinema", "studio", "search"].includes(app.id)) : dashboardApps;
-let focusedIndex = 0;
-let launchedApp: DashboardApp | null = null;
-let activeApp: DashboardApp | null = null;
+const appIds = availableApps.map((app) => app.id);
+const principalId = accountSession.user?.id ?? "guest";
+let shellState = createShellState(appIds, loadFocusedAppId(window.localStorage, principalId, appIds));
 let rendererState: RendererRuntimeState = {
   adapterName: "Checking GPU",
   mode: "checking"
@@ -54,7 +59,7 @@ root.innerHTML = `
         </div>
         <div class="status-cluster">
           <span id="gpu-status" class="system-pill">Checking GPU</span>
-          <span class="system-pill">Controller Ready</span>
+          <span id="controller-status" class="system-pill">Controller Ready</span>
           ${isGuest ? renderGuestIdentity() : renderAccountIdentity(accountSession.user!)}
           <time id="clock" class="clock"></time>
         </div>
@@ -77,13 +82,13 @@ root.innerHTML = `
           <h2>Applications</h2>
           <span>${availableApps.length} available</span>
         </div>
-        <div id="app-grid" class="app-grid"></div>
+        <div id="app-grid" class="app-grid" role="toolbar" aria-label="Applications"></div>
       </section>
 
       <section id="detail-panel" class="detail-panel" hidden></section>
     </section>
   </main>
-  <section id="app-surface" class="app-surface" aria-live="polite" hidden></section>
+  <section id="app-surface" class="app-surface" role="dialog" aria-modal="true" aria-live="polite" tabindex="-1" hidden></section>
 `;
 
 const grid = document.querySelector<HTMLDivElement>("#app-grid");
@@ -95,22 +100,44 @@ const detailPanel = document.querySelector<HTMLElement>("#detail-panel");
 const appSurface = document.querySelector<HTMLElement>("#app-surface");
 const gpuStatus = document.querySelector<HTMLSpanElement>("#gpu-status");
 const clock = document.querySelector<HTMLTimeElement>("#clock");
+const controllerStatus = document.querySelector<HTMLSpanElement>("#controller-status");
+const shellRoot = document.querySelector<HTMLElement>(".shell");
 
-if (!grid || !featuredTitle || !featuredDescription || !launchButton || !detailsButton || !detailPanel || !appSurface || !gpuStatus || !clock) {
+if (!grid || !featuredTitle || !featuredDescription || !launchButton || !detailsButton || !detailPanel || !appSurface || !gpuStatus || !clock || !controllerStatus || !shellRoot) {
   throw new Error("Dashboard controls failed to initialize.");
 }
+
+const focusedIndex = () => Math.max(0, appIds.indexOf(shellState.focusedAppId));
+const focusedApp = () => availableApps[focusedIndex()];
+const detailApp = () => availableApps.find((app) => app.id === shellState.detailAppId) ?? null;
+let restoreFocusTo: HTMLElement | null = null;
+
+const rememberFocus = (fallback: HTMLElement) => {
+  restoreFocusTo = document.activeElement instanceof HTMLElement && root.contains(document.activeElement)
+    ? document.activeElement
+    : fallback;
+};
+
+const restoreShellFocus = () => {
+  const target = restoreFocusTo?.isConnected ? restoreFocusTo : grid.querySelector<HTMLButtonElement>(`.app-tile[data-app-id="${shellState.focusedAppId}"]`);
+  restoreFocusTo = null;
+  window.setTimeout(() => target?.focus(), 0);
+};
 
 const renderGrid = () => {
   grid.innerHTML = availableApps
     .map((app, index) => {
-      const isFocused = index === focusedIndex;
+      const isFocused = app.id === shellState.focusedAppId;
       return `
         <button
           class="app-tile ${isFocused ? "focused" : ""}"
           type="button"
           data-index="${index}"
+          data-app-id="${app.id}"
           style="--accent: ${app.accent}"
-          aria-pressed="${isFocused}"
+          aria-label="${app.name}, ${app.kind}, ${app.status}"
+          aria-current="${isFocused ? "true" : "false"}"
+          tabindex="${isFocused ? "0" : "-1"}"
         >
           <span class="tile-art">${renderAppIcon(app, "tile-icon")}</span>
           <span class="tile-meta">
@@ -125,21 +152,22 @@ const renderGrid = () => {
 
 const renderGridFocus = () => {
   grid.querySelectorAll<HTMLButtonElement>(".app-tile").forEach((button) => {
-    const isFocused = Number(button.dataset.index) === focusedIndex;
+    const isFocused = button.dataset.appId === shellState.focusedAppId;
     button.classList.toggle("focused", isFocused);
-    button.setAttribute("aria-pressed", String(isFocused));
+    button.setAttribute("aria-current", isFocused ? "true" : "false");
+    button.tabIndex = isFocused ? 0 : -1;
   });
 };
 
 const scrollFocusedTileIntoView = () => {
   grid
-    .querySelector<HTMLButtonElement>(`.app-tile[data-index="${focusedIndex}"]`)
+    .querySelector<HTMLButtonElement>(`.app-tile[data-app-id="${shellState.focusedAppId}"]`)
     ?.scrollIntoView({ behavior: "auto", block: "nearest", inline: "nearest" });
 };
 
 const renderFocus = ({ scroll = true }: { scroll?: boolean } = {}) => {
-  const app = availableApps[focusedIndex];
-  document.documentElement.dataset.focusIndex = String(focusedIndex);
+  const app = focusedApp();
+  document.documentElement.dataset.focusIndex = String(focusedIndex());
   featuredTitle.textContent = app.name;
   featuredDescription.textContent = app.description;
   launchButton.textContent = app.status === "planned" ? "Preview" : "Open";
@@ -150,19 +178,23 @@ const renderFocus = ({ scroll = true }: { scroll?: boolean } = {}) => {
   }
 };
 
-const selectAppIndex = (index: number, options?: { scroll?: boolean }) => {
-  const nextIndex = Math.max(0, Math.min(index, availableApps.length - 1));
-
-  if (nextIndex === focusedIndex) {
+const selectAppId = (appId: string, options?: { scroll?: boolean; focus?: boolean }) => {
+  const nextState = transitionShellState(shellState, { type: "select", appId }, appIds);
+  if (nextState === shellState || nextState.focusedAppId === shellState.focusedAppId) {
     return false;
   }
 
-  focusedIndex = nextIndex;
+  shellState = nextState;
+  saveFocusedAppId(window.localStorage, principalId, shellState.focusedAppId);
   renderFocus(options);
+  if (options?.focus) {
+    grid.querySelector<HTMLButtonElement>(`.app-tile[data-app-id="${shellState.focusedAppId}"]`)?.focus();
+  }
   return true;
 };
 
 const renderPanel = () => {
+  const launchedApp = detailApp();
   if (!launchedApp) {
     detailPanel.hidden = true;
     detailPanel.innerHTML = "";
@@ -170,12 +202,15 @@ const renderPanel = () => {
   }
 
   detailPanel.hidden = false;
+  detailPanel.setAttribute("role", "dialog");
+  detailPanel.setAttribute("aria-modal", "false");
+  detailPanel.setAttribute("aria-labelledby", "shell-detail-title");
   detailPanel.innerHTML = `
     <div class="panel-header">
       <span class="panel-mark" style="--accent: ${launchedApp.accent}">${renderAppIcon(launchedApp, "panel-icon")}</span>
       <div>
         <p class="eyebrow">${launchedApp.kind}</p>
-        <h2>${launchedApp.name}</h2>
+        <h2 id="shell-detail-title">${launchedApp.name}</h2>
       </div>
       <button id="close-panel" class="icon-command" type="button" aria-label="Close app" title="Close">×</button>
     </div>
@@ -188,32 +223,37 @@ const renderPanel = () => {
   `;
 
   document.querySelector<HTMLButtonElement>("#close-panel")?.addEventListener("click", () => {
-    launchedApp = null;
-    renderPanel();
+    closeShellPanel();
   });
+  window.setTimeout(() => detailPanel.querySelector<HTMLButtonElement>("#close-panel")?.focus(), 0);
 };
 
 const closeShellPanel = () => {
-  launchedApp = null;
+  if (!shellState.detailAppId) return;
+  shellState = transitionShellState(shellState, { type: "close-detail" }, appIds);
   detailPanel.classList.remove("system-panel", "search-panel", "library-panel");
   renderPanel();
+  restoreShellFocus();
 };
 
 const closeActiveApp = () => {
-  if (!activeApp) {
+  if (!shellState.activeAppId) {
     return;
   }
 
+  shellState = transitionShellState(shellState, { type: "close-active" }, appIds);
   disposeActiveApp?.();
   disposeActiveApp = null;
   appSurface.classList.remove("open");
   appSurface.classList.add("closing");
 
   window.setTimeout(() => {
-    activeApp = null;
+    if (shellState.activeAppId) return;
+    shellRoot.inert = false;
     appSurface.hidden = true;
     appSurface.className = "app-surface";
     appSurface.innerHTML = "";
+    restoreShellFocus();
   }, 240);
 };
 
@@ -302,8 +342,8 @@ const createSettingsContent = async () =>
     await collectDiagnostics({
       activeNavigation: "Applications",
       apps: availableApps,
-      focusedIndex,
-      launchedApp,
+      focusedIndex: focusedIndex(),
+      launchedApp: detailApp(),
       performance: performanceMonitor.snapshot(),
       renderer: rendererState
     }),
@@ -319,8 +359,13 @@ const launchApp = async (app: DashboardApp) => {
 
   disposeActiveApp?.();
   disposeActiveApp = null;
-  activeApp = app;
-  launchedApp = null;
+  shellState = transitionShellState(
+    transitionShellState(shellState, { type: "select", appId: app.id }, appIds),
+    { type: "activate" },
+    appIds
+  );
+  saveFocusedAppId(window.localStorage, principalId, shellState.focusedAppId);
+  renderFocus();
   detailPanel.classList.remove("system-panel", "search-panel", "library-panel");
   renderPanel();
 
@@ -351,6 +396,7 @@ const launchApp = async (app: DashboardApp) => {
     `;
 
   appSurface.hidden = false;
+  shellRoot.inert = true;
   appSurface.className = `app-surface launching ${isSearchApp ? "search-app-surface" : ""} ${isSettingsApp ? "settings-app-surface" : ""} ${isFilesApp ? "files-app-surface" : ""} ${isCinemaApp ? "cinema-app-surface" : ""} ${isStudioApp ? "studio-app-surface" : ""}`;
   appSurface.style.setProperty("--accent", app.accent);
   appSurface.innerHTML = isCinemaApp || isStudioApp
@@ -375,14 +421,14 @@ const launchApp = async (app: DashboardApp) => {
       </article>
     `;
 
-  document.querySelector<HTMLButtonElement>("#close-active-app")?.addEventListener("click", closeActiveApp);
+  document.querySelector<HTMLButtonElement>("#close-active-app")?.addEventListener("click", () => dispatchShellCommand({ type: "back", source: "pointer" }));
 
   if (isSearchApp) {
     bindSearchControls(appSurface);
   }
 
   if (isSettingsApp) {
-    appSurface.querySelector<HTMLButtonElement>("#close-panel")?.addEventListener("click", closeActiveApp);
+    appSurface.querySelector<HTMLButtonElement>("#close-panel")?.addEventListener("click", () => dispatchShellCommand({ type: "back", source: "pointer" }));
     bindSettingsTabs(appSurface);
     bindClientSettings(appSurface);
     bindAccountSettings(appSurface);
@@ -419,6 +465,9 @@ const launchApp = async (app: DashboardApp) => {
 
   requestAnimationFrame(() => {
     appSurface.classList.add("open");
+    if (!appSurface.contains(document.activeElement)) {
+      appSurface.focus();
+    }
   });
 };
 
@@ -503,13 +552,15 @@ const bindSearchControls = (container: ParentNode) => {
 };
 
 const openFocusedApp = () => {
+  rememberFocus(detailsButton);
   detailPanel.classList.remove("system-panel", "search-panel", "library-panel");
-  launchedApp = availableApps[focusedIndex];
+  shellState = transitionShellState(shellState, { type: "show-details" }, appIds);
   renderPanel();
 };
 
 const launchFocusedApp = () => {
-  const app = availableApps[focusedIndex];
+  rememberFocus(launchButton);
+  const app = focusedApp();
   void launchApp(app);
 };
 
@@ -519,23 +570,55 @@ let isDraggingGrid = false;
 let gridDragStartX = 0;
 let gridDragStartScrollLeft = 0;
 let didDragGrid = false;
-let wheelSelectionAccumulator = 0;
-let wheelSelectionDirection = 0;
-let lastWheelSelectionAt = 0;
 let wheelSelectionReset = 0;
-let wheelSelectionLocked = false;
-let wheelSelectionLockedUntil = 0;
 let pointerSelectionSuppressedUntil = 0;
 
-const wheelSelectionThreshold = 140;
 const wheelSelectionCooldownMs = 720;
 const pointerSelectionSuppressMs = 1500;
+const wheelCommandGate = new WheelCommandGate(140, wheelSelectionCooldownMs);
 
 const resetWheelSelectionGate = () => {
-  wheelSelectionAccumulator = 0;
-  wheelSelectionDirection = 0;
-  wheelSelectionLocked = false;
+  wheelCommandGate.reset();
   window.clearTimeout(wheelSelectionReset);
+};
+
+const dispatchShellCommand = (command: ShellCommand) => {
+  if (command.type === "back") {
+    if (closeAccountMenu?.()) return;
+    if (shellState.activeAppId) {
+      closeActiveApp();
+      return;
+    }
+    closeShellPanel();
+    return;
+  }
+
+  if (shellState.activeAppId || shellState.detailAppId) return;
+
+  if (command.type === "move") {
+    const nextState = transitionShellState(shellState, { type: "move", delta: command.delta }, appIds);
+    if (nextState.focusedAppId === shellState.focusedAppId) return;
+    shellState = nextState;
+    saveFocusedAppId(window.localStorage, principalId, shellState.focusedAppId);
+    pointerSelectionSuppressedUntil = window.performance.now() + pointerSelectionSuppressMs;
+    renderFocus({ scroll: true });
+    if (command.source !== "wheel") {
+      grid.querySelector<HTMLButtonElement>(`.app-tile[data-app-id="${shellState.focusedAppId}"]`)?.focus();
+    }
+    return;
+  }
+
+  if (command.type === "select") {
+    selectAppId(command.appId, { scroll: false });
+    return;
+  }
+
+  if (command.type === "details") {
+    openFocusedApp();
+    return;
+  }
+
+  launchFocusedApp();
 };
 
 grid.addEventListener("pointerdown", (event) => {
@@ -596,7 +679,7 @@ const selectGridTileFromPointer = (event: PointerEvent) => {
     return;
   }
 
-  selectAppIndex(Number(button.dataset.index), { scroll: false });
+  if (button.dataset.appId) dispatchShellCommand({ type: "select", appId: button.dataset.appId, source: "pointer" });
 };
 
 grid.addEventListener("pointerover", selectGridTileFromPointer);
@@ -616,16 +699,14 @@ grid.addEventListener("click", (event) => {
     return;
   }
 
-  selectAppIndex(Number(button.dataset.index), { scroll: false });
+  if (button.dataset.appId) dispatchShellCommand({ type: "select", appId: button.dataset.appId, source: "pointer" });
 });
 
 grid.addEventListener(
   "wheel",
   (event) => {
     const dominantDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-    const direction = Math.sign(dominantDelta);
-
-    if (direction === 0) {
+    if (dominantDelta === 0) {
       return;
     }
 
@@ -633,39 +714,15 @@ grid.addEventListener(
     window.clearTimeout(wheelSelectionReset);
     wheelSelectionReset = window.setTimeout(resetWheelSelectionGate, wheelSelectionCooldownMs);
 
-    const now = window.performance.now();
-
-    if (wheelSelectionLocked || now < wheelSelectionLockedUntil) {
-      return;
-    }
-
-    if (direction !== wheelSelectionDirection) {
-      wheelSelectionAccumulator = 0;
-      wheelSelectionDirection = direction;
-    }
-
-    wheelSelectionAccumulator += Math.abs(dominantDelta);
-
-    if (
-      wheelSelectionAccumulator < wheelSelectionThreshold ||
-      now - lastWheelSelectionAt < wheelSelectionCooldownMs
-    ) {
-      return;
-    }
-
-    lastWheelSelectionAt = now;
-    wheelSelectionAccumulator = 0;
-    wheelSelectionLocked = true;
-    wheelSelectionLockedUntil = now + wheelSelectionCooldownMs;
-    pointerSelectionSuppressedUntil = now + pointerSelectionSuppressMs;
-    selectAppIndex(focusedIndex + direction, { scroll: true });
+    const direction = wheelCommandGate.push(dominantDelta, window.performance.now());
+    if (direction) dispatchShellCommand({ type: "move", delta: direction, source: "wheel" });
   },
   { passive: false }
 );
 
-grid.addEventListener("dblclick", launchFocusedApp);
-launchButton.addEventListener("click", launchFocusedApp);
-detailsButton.addEventListener("click", openFocusedApp);
+grid.addEventListener("dblclick", () => dispatchShellCommand({ type: "open", source: "pointer" }));
+launchButton.addEventListener("click", () => dispatchShellCommand({ type: "open", source: "pointer" }));
+detailsButton.addEventListener("click", () => dispatchShellCommand({ type: "details", source: "pointer" }));
 closeAccountMenu = bindAccountIdentity(root, {
   onOpenSettings: () => {
     const settingsApp = availableApps.find((candidate) => candidate.id === "settings");
@@ -678,41 +735,23 @@ closeAccountMenu = bindAccountIdentity(root, {
 });
 
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
-    if (closeAccountMenu?.()) {
-      return;
-    }
-
-    if (activeApp) {
-      closeActiveApp();
-      return;
-    }
-
-    closeShellPanel();
-    return;
-  }
-
-  if (activeApp || (event.target as HTMLElement | null)?.closest("input, textarea, select, button")) {
-    return;
-  }
-
-  if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-    event.preventDefault();
-    pointerSelectionSuppressedUntil = window.performance.now() + pointerSelectionSuppressMs;
-    selectAppIndex(focusedIndex + 1, { scroll: true });
-  }
-
-  if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-    event.preventDefault();
-    pointerSelectionSuppressedUntil = window.performance.now() + pointerSelectionSuppressMs;
-    selectAppIndex(focusedIndex - 1, { scroll: true });
-  }
-
-  if (event.key === "Enter") {
-    launchFocusedApp();
-  }
-
+  const command = commandFromKey(event.key);
+  if (!command) return;
+  const target = event.target as HTMLElement | null;
+  const isTile = Boolean(target?.closest(".app-tile"));
+  if (command.type !== "back" && target?.closest("input, textarea, select, button") && !isTile) return;
+  event.preventDefault();
+  dispatchShellCommand(command);
 });
+
+window.addEventListener("gamepadconnected", () => { controllerStatus.textContent = "Controller Connected"; });
+window.addEventListener("gamepaddisconnected", (event) => {
+  const hasRemainingGamepad = navigator.getGamepads().some((candidate, index) =>
+    candidate !== null && index !== event.gamepad.index
+  );
+  controllerStatus.textContent = hasRemainingGamepad ? "Controller Connected" : "Controller Ready";
+});
+bindGamepadCommands(window as unknown as import("./shell/gamepad").GamepadHost, dispatchShellCommand);
 
 const updateClock = () => {
   clock.dateTime = new Date().toISOString();
