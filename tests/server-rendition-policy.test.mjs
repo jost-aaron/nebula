@@ -3,22 +3,23 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { applyDomainMigrations } from "../server/database.mjs";
 import { applyCatalogMigration } from "../server/catalog/index.mjs";
-import { createRenditionCleanupScheduler, createRenditionPolicyRepository, createRenditionPolicyService, renditionPolicyMigration, validateRenditionPolicy } from "../server/renditionPolicy/index.mjs";
+import { createRenditionCleanupScheduler, createRenditionPolicyRepository, createRenditionPolicyService, renditionPolicyMigration, renditionPolicyMigrations, renditionProfileExpansionMigration, validateRenditionPolicy } from "../server/renditionPolicy/index.mjs";
 import { renditionsMigration } from "../server/renditions/index.mjs";
 
 const fixture = () => {
   const database = new DatabaseSync(":memory:");
-  applyDomainMigrations(database, [renditionPolicyMigration]);
+  applyDomainMigrations(database, renditionPolicyMigrations);
   const repository = createRenditionPolicyRepository(database);
   return { database, repository };
 };
 
-test("renditions-v2 migration is centrally composed, idempotent, and bounded", () => {
+test("rendition policy migrations are centrally composed, idempotent, and bounded", () => {
   const { database, repository } = fixture();
-  applyDomainMigrations(database, [renditionPolicyMigration]);
+  applyDomainMigrations(database, renditionPolicyMigrations);
   assert.equal(database.prepare("PRAGMA user_version").get().user_version, 0);
   assert.equal(database.prepare("SELECT COUNT(*) count FROM nebula_domain_migrations WHERE migration_id='renditions-v2'").get().count, 1);
-  assert.deepEqual(repository.get().allowedProfileIds, ["480p", "720p", "1080p"]);
+  assert.equal(database.prepare("SELECT COUNT(*) count FROM nebula_domain_migrations WHERE migration_id='renditions-v3'").get().count, 1);
+  assert.deepEqual(repository.get().allowedProfileIds, ["240p", "360p", "480p", "720p", "1080p"]);
   assert.throws(() => database.prepare("UPDATE rendition_storage_policy SET low_water_percent=95, high_water_percent=90 WHERE id=1").run());
   database.close();
 });
@@ -35,9 +36,19 @@ test("renditions-v2 upgrades an existing rendition database without changing out
     (id, source_id, source_revision, profile_id, profile_version, state, retention, origin, created_at, updated_at)
     VALUES ('rendition-1', 'source-1', 1, '480p', 1, 'pending', 'cache', 'interactive', '2026-01-01', '2026-01-01')`).run();
 
-  applyDomainMigrations(database, [renditionPolicyMigration]);
+  applyDomainMigrations(database, renditionPolicyMigrations);
   assert.deepEqual({ ...database.prepare("SELECT id, retention, state FROM media_renditions").get() }, { id: "rendition-1", retention: "cache", state: "pending" });
   assert.equal(createRenditionPolicyRepository(database).get().cleanupIntervalMinutes, 60);
+  database.close();
+});
+
+test("renditions-v3 enables low-resolution profiles without restoring profiles an owner excluded", () => {
+  const database = new DatabaseSync(":memory:");
+  applyDomainMigrations(database, [renditionPolicyMigration]);
+  database.prepare("UPDATE rendition_storage_policy SET allowed_profile_ids_json = ? WHERE id = 1")
+    .run(JSON.stringify(["720p"]));
+  applyDomainMigrations(database, [renditionProfileExpansionMigration]);
+  assert.deepEqual(createRenditionPolicyRepository(database).get().allowedProfileIds, ["240p", "360p", "720p"]);
   database.close();
 });
 

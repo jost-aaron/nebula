@@ -33,7 +33,7 @@ import type { MediaList } from "../shared/mediaListTypes";
 import { getSubtitlePreference, listSubtitleTracks, saveSubtitlePreference, selectSubtitleTrack, subtitleAssetUrl } from "../api/subtitleApi";
 import type { SubtitlePreference, SubtitleTracksResponse } from "../shared/subtitleTypes";
 import { buildItemRenditions, deleteRendition, listItemRenditions, listRenditionProfiles, setRenditionRetention } from "../api/renditionsApi";
-import type { MediaRendition, PlaybackQualityPreference, RenditionProfile, RenditionProfileId } from "../shared/renditionTypes";
+import { RENDITION_PROFILE_IDS, type MediaRendition, type PlaybackQualityPreference, type RenditionProfile, type RenditionProfileId } from "../shared/renditionTypes";
 import type { PlaybackPlanResponse } from "../shared/playbackPlanTypes";
 import { createHlsPlayback, supportsHlsPlayback, type HlsPlaybackHandle } from "./hlsPlayback";
 
@@ -86,7 +86,13 @@ const formatTime = (seconds: number) => {
   return `${minutes}:${String(remainder).padStart(2, "0")}`;
 };
 
+const formatBitrate = (bitrate: number) => bitrate < 1_000_000
+  ? `${Math.round(bitrate / 1_000)} Kbps`
+  : `${Number((bitrate / 1_000_000).toFixed(1))} Mbps`;
+
 const fallbackRenditionProfiles: RenditionProfile[] = [
+  { audioBitrate: 64_000, audioChannels: 2, audioCodec: "aac", container: "mpegts", hdrPolicy: "sdr-only", id: "240p", label: "240p Data Saver", maxFrameRate: 60, maxHeight: 240, maxWidth: 426, pixelFormat: "yuv420p", protocol: "hls", segmentDurationSeconds: 4, totalBitrate: 650_000, version: 1, videoBitrate: 500_000, videoCodec: "h264" },
+  { audioBitrate: 96_000, audioChannels: 2, audioCodec: "aac", container: "mpegts", hdrPolicy: "sdr-only", id: "360p", label: "360p Low", maxFrameRate: 60, maxHeight: 360, maxWidth: 640, pixelFormat: "yuv420p", protocol: "hls", segmentDurationSeconds: 4, totalBitrate: 1_100_000, version: 1, videoBitrate: 900_000, videoCodec: "h264" },
   { audioBitrate: 128_000, audioChannels: 2, audioCodec: "aac", container: "mpegts", hdrPolicy: "sdr-only", id: "480p", label: "480p", maxFrameRate: 60, maxHeight: 480, maxWidth: 854, pixelFormat: "yuv420p", protocol: "hls", segmentDurationSeconds: 4, totalBitrate: 2_000_000, version: 1, videoBitrate: 1_800_000, videoCodec: "h264" },
   { audioBitrate: 128_000, audioChannels: 2, audioCodec: "aac", container: "mpegts", hdrPolicy: "sdr-only", id: "720p", label: "720p HD", maxFrameRate: 60, maxHeight: 720, maxWidth: 1280, pixelFormat: "yuv420p", protocol: "hls", segmentDurationSeconds: 4, totalBitrate: 4_000_000, version: 1, videoBitrate: 3_600_000, videoCodec: "h264" },
   { audioBitrate: 192_000, audioChannels: 2, audioCodec: "aac", container: "mpegts", hdrPolicy: "sdr-only", id: "1080p", label: "1080p Full HD", maxFrameRate: 60, maxHeight: 1080, maxWidth: 1920, pixelFormat: "yuv420p", protocol: "hls", segmentDurationSeconds: 4, totalBitrate: 8_000_000, version: 1, videoBitrate: 7_400_000, videoCodec: "h264" }
@@ -95,7 +101,7 @@ const fallbackRenditionProfiles: RenditionProfile[] = [
 const qualityValue = (preference: PlaybackQualityPreference) => preference.mode === "profile" ? preference.profileId : preference.mode;
 const parseQualityValue = (value: string): PlaybackQualityPreference => value === "original"
   ? { mode: "original" }
-  : (["480p", "720p", "1080p"] as RenditionProfileId[]).includes(value as RenditionProfileId)
+  : (RENDITION_PROFILE_IDS as readonly string[]).includes(value)
     ? { mode: "profile", profileId: value as RenditionProfileId }
     : { mode: "auto" };
 const qualityResultLabel = (preference: PlaybackQualityPreference, plan?: PlaybackPlanResponse) => {
@@ -487,7 +493,7 @@ const renderVideoPlayerView = (entry: CinemaEntry, subtitles: SubtitleTracksResp
         <select data-cinema-player-quality aria-label="Playback quality">
           <option value="auto"${quality.mode === "auto" ? " selected" : ""}>Auto</option>
           <option value="original"${quality.mode === "original" ? " selected" : ""}>Original</option>
-          ${profiles.map((profile) => `<option value="${profile.id}"${quality.mode === "profile" && quality.profileId === profile.id ? " selected" : ""}>${escapeHtml(profile.label)} · ${Math.round(profile.totalBitrate / 1_000_000)} Mbps</option>`).join("")}
+          ${profiles.map((profile) => `<option value="${profile.id}"${quality.mode === "profile" && quality.profileId === profile.id ? " selected" : ""}>${escapeHtml(profile.label)} · ${formatBitrate(profile.totalBitrate)}</option>`).join("")}
         </select>
         <span data-cinema-quality-result>${escapeHtml(qualityResultLabel(quality))}</span>
       </label>
@@ -523,7 +529,7 @@ const renderServersView = () => {
       <div class="cinema-server-grid">
         <span>Mode <strong>${escapeHtml(server.mode)}</strong></span>
         <span>Authentication <strong>${escapeHtml(server.authState)}</strong></span>
-        <span>Playback <strong>Auto / 480p / 720p / 1080p</strong></span>
+        <span>Playback <strong>Auto / 240p / 360p / 480p / 720p / 1080p</strong></span>
         <span>Throughput <strong>Local network</strong></span>
       </div>
     </main>
@@ -671,7 +677,7 @@ const renderOptimizeSheet = (entry: CinemaEntry, profiles: RenditionProfile[], r
           const rendition = renditions.find((entry) => entry.profileId === profile.id);
           return `<article>
             <label><input type="checkbox" name="profileId" value="${profile.id}"${rendition?.state === "ready" ? " disabled" : ""}> <strong>${escapeHtml(profile.label)}</strong></label>
-            <span>${escapeHtml(renditionStateLabel(rendition))} · ${Math.round(profile.totalBitrate / 1_000_000)} Mbps</span>
+            <span>${escapeHtml(renditionStateLabel(rendition))} · ${formatBitrate(profile.totalBitrate)}</span>
             ${rendition ? `<div>
               <button type="button" data-cinema-rendition-retention="${rendition.id}" data-retention="${rendition.retention === "pinned" ? "cache" : "pinned"}">${rendition.retention === "pinned" ? "Unpin" : "Pin"}</button>
               <button type="button" data-cinema-rendition-remove="${rendition.id}">Remove</button>

@@ -99,6 +99,13 @@ test("malformed capabilities fail closed and do not query catalog data", async (
 });
 
 test("quality preferences select exact profiles without upscaling and original never silently downscales", () => {
+  const dataSaver = planPlayback(request({ quality: { mode: "profile", profileId: "240p" } }), media());
+  assert.equal(dataSaver.decision, "transcode");
+  assert.deepEqual(dataSaver.output, {
+    audioCodec: "aac", bitrate: 650_000, container: "mpegts", height: 238,
+    profileId: "240p", protocol: "hls", videoCodec: "h264", width: 426
+  });
+
   const explicit = planPlayback(request({ quality: { mode: "profile", profileId: "480p" } }), media());
   assert.equal(explicit.decision, "transcode");
   assert.deepEqual(explicit.output, {

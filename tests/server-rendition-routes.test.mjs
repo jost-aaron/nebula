@@ -17,6 +17,8 @@ test("rendition profile route exposes only fixed server-owned profiles", async (
   assert.equal(await route({ method: "GET" }, response, new URL("http://nebula/api/renditions/profiles")), true);
   assert.equal(response.status(), 200);
   assert.deepEqual(response.json().profiles.map(({ id, maxHeight, totalBitrate }) => ({ id, maxHeight, totalBitrate })), [
+    { id: "240p", maxHeight: 240, totalBitrate: 650_000 },
+    { id: "360p", maxHeight: 360, totalBitrate: 1_100_000 },
     { id: "480p", maxHeight: 480, totalBitrate: 2_000_000 },
     { id: "720p", maxHeight: 720, totalBitrate: 4_000_000 },
     { id: "1080p", maxHeight: 1080, totalBitrate: 8_000_000 }

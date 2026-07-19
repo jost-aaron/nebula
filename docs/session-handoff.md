@@ -41,7 +41,7 @@ The current app includes:
   for trusted remux and HLS/transcode delivery, with aggregate Settings status.
 - Wave 4 bounded structured audit history with owner/service-admin APIs and an
   owner-only responsive Settings Activity surface.
-- Server-authored 480p, 720p, and 1080p HLS quality selection with progressive
+- Server-authored 240p, 360p, 480p, 720p, and 1080p HLS quality selection with progressive
   playback, verified persistent reuse, scheduled optimization, owner storage
   policy, safe LRU cleanup, readiness, and bounded metrics.
 
@@ -207,13 +207,15 @@ Read these in order:
 At handoff time:
 
 - `docker compose run --rm dashboard npm run check` passed.
-- `docker compose run --rm dashboard npm test` passed with 217 tests.
+- `docker compose run --rm dashboard npm test` passed with 220 tests.
 - Fresh-server owner setup and owner Settings / Storage browser smoke checks
   passed at desktop and 390×844 during the rendition implementation.
 - Rendition policy owner/service authorization, member denial, cookie CSRF,
   Capacitor CORS preflight, and v1-to-v2 preservation have automated coverage.
 - Real-media QA verified progressive 480p playback while FFmpeg was active and
   scheduled pinned 720p playback after restart without a second encode.
+- Containerized FFmpeg QA verifies bounded 240p and 360p HLS output in the
+  permanent transcode suite.
 - Chromium HLS capability false positives are routed through hls.js; Safari/iOS
   continues to use native HLS.
 - `./scripts/ios-sync-dev-server.sh` passed.

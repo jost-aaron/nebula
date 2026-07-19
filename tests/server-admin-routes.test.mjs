@@ -18,7 +18,7 @@ import { createJobsRepository, createJobsService, createJobsWorker, jobsMigratio
 import { createPlaybackPolicyRepository, createPlaybackPolicyService, playbackPolicyMigration } from "../server/playbackPolicy/index.mjs";
 import { renditionsMigration } from "../server/renditions/index.mjs";
 import { createRenditionStore } from "../server/renditions/index.mjs";
-import { createRenditionPolicyRepository, createRenditionPolicyService, renditionPolicyMigration } from "../server/renditionPolicy/index.mjs";
+import { createRenditionPolicyRepository, createRenditionPolicyService, renditionPolicyMigrations } from "../server/renditionPolicy/index.mjs";
 import {
   createCatalogCheck,
   createDatabaseCheck,
@@ -68,7 +68,7 @@ const startAdminServer = async ({ serviceToken = "admin-service-secret" } = {}) 
   const storage = await createStorage({ contentRoot, dataRoot });
   const database = await openNebulaDatabase(storage.accountDatabasePath);
   const accountStore = await createAccountStore({ database });
-  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, playbackPolicyMigration, renditionsMigration, renditionPolicyMigration]);
+  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, playbackPolicyMigration, renditionsMigration, ...renditionPolicyMigrations]);
   const jobsRepository = createJobsRepository({ db: database });
   const jobsService = createJobsService({ repository: jobsRepository });
   const renditionStore = createRenditionStore({ database, dataRoot: storage.dataRoot });
@@ -261,7 +261,7 @@ test("rendition policy and cleanup require owner or service administration", asy
 
   assert.equal((await jsonRequest(`${api.baseUrl}/api/admin/rendition-policy`, { bearer: member.sessionToken })).status, 403);
   const current = await jsonRequest(`${api.baseUrl}/api/admin/rendition-policy`, { cookie: owner.cookie }).then((response) => response.json());
-  assert.deepEqual(current.policy.allowedProfileIds, ["480p", "720p", "1080p"]);
+  assert.deepEqual(current.policy.allowedProfileIds, ["240p", "360p", "480p", "720p", "1080p"]);
   delete current.policy.updatedAt;
 
   assert.equal((await jsonRequest(`${api.baseUrl}/api/admin/rendition-policy`, { body: current.policy, cookie: owner.cookie, method: "PUT" })).status, 403);

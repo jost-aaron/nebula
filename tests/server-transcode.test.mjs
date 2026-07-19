@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { buildTranscodeArguments, createTranscodeService, runFfmpegTranscode } from "../server/transcode/index.mjs";
+import { getRenditionProfile } from "../server/renditions/index.mjs";
 
 const ids = { itemId: "10000000-0000-4000-8000-000000000001", sourceId: "20000000-0000-4000-8000-000000000001" };
 const plan = (overrides = {}) => ({
@@ -44,6 +45,37 @@ test("Docker FFmpeg transcodes an actual incompatible-codec fixture to isolated 
   const outputProbe = spawnSync("ffprobe", ["-v", "error", "-show_entries", "stream=codec_name", "-of", "csv=p=0", segment], { encoding: "utf8", shell: false });
   assert.match(outputProbe.stdout, /h264/); assert.match(outputProbe.stdout, /aac/);
   await session.cleanup(); await assert.rejects(access(master)); await service.shutdown();
+});
+
+test("Docker FFmpeg produces bounded 240p and 360p HLS renditions", async (t) => {
+  const roots = await workspace(t);
+  const input = path.join(roots.contentRoot, "widescreen.mp4");
+  const generated = spawnSync("ffmpeg", ["-nostdin", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=960x540:rate=12", "-f", "lavfi", "-i", "sine=frequency=440", "-t", "1", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", input], { shell: false });
+  assert.equal(generated.status, 0, generated.stderr?.toString());
+
+  for (const [profileId, limits, expected] of [
+    ["240p", { height: 238, width: 426 }, { height: 238, width: 424 }],
+    ["360p", { height: 360, width: 640 }, { height: 360, width: 640 }]
+  ]) {
+    const profile = getRenditionProfile(profileId);
+    assert.ok(profile);
+    const output = path.join(roots.outputRoot, profileId);
+    await mkdir(output);
+    await runFfmpegTranscode(input, output, {
+      maxHeight: limits.height,
+      maxWidth: limits.width,
+      outputCheckMs: 10,
+      renditionProfile: profile,
+      segmentDuration: 1
+    });
+    const playlist = await readFile(path.join(output, "media.m3u8"), "utf8");
+    const segment = path.join(output, playlist.match(/segment-\d{5}\.ts/)?.[0] ?? "");
+    const probe = spawnSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name,width,height", "-of", "json", segment], { encoding: "utf8", shell: false });
+    assert.equal(probe.status, 0, probe.stderr);
+    const stream = JSON.parse(probe.stdout).streams[0];
+    assert.deepEqual({ codec: stream.codec_name, height: stream.height, width: stream.width }, { codec: "h264", ...expected });
+    assert.match(await readFile(path.join(output, "master.m3u8"), "utf8"), new RegExp(`BANDWIDTH=${profile.totalBitrate}`));
+  }
 });
 
 test("plans and catalog sources fail closed before FFmpeg", async (t) => {

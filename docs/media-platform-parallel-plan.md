@@ -30,7 +30,7 @@ direct play, remux, software HLS, optional hardware acceleration, playback
 policy, audit history, permissions, playlists/collections, subtitles, backup,
 readiness, and metrics.
 
-The transcoding expansion is also complete: fixed 480p/720p/1080p profiles,
+The transcoding expansion is also complete: fixed 240p/360p/480p/720p/1080p profiles,
 progressive HLS, Cinema quality switching, source-revision-safe persistent
 reuse, scheduled optimization, owner storage policy, quota/minimum-free
 cleanup, fixed-label metrics, and responsive Settings controls are merged.

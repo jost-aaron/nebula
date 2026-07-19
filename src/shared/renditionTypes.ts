@@ -1,6 +1,6 @@
 import type { CatalogId, IsoDateTime } from "./catalogTypes";
 
-export const RENDITION_PROFILE_IDS = ["480p", "720p", "1080p"] as const;
+export const RENDITION_PROFILE_IDS = ["240p", "360p", "480p", "720p", "1080p"] as const;
 
 export type RenditionProfileId = (typeof RENDITION_PROFILE_IDS)[number];
 export type PlaybackQualityPreference =

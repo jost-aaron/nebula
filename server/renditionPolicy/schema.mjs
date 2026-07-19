@@ -1,5 +1,5 @@
 export const RENDITION_POLICY_DEFAULTS = Object.freeze({
-  allowedProfileIds: ["480p", "720p", "1080p"], cacheInteractive: true,
+  allowedProfileIds: ["240p", "360p", "480p", "720p", "1080p"], cacheInteractive: true,
   cleanupBatchSize: 50, cleanupIntervalMinutes: 60, failedRecordDays: 14,
   highWaterPercent: 90, lowWaterPercent: 75, maxCacheAgeDays: 30,
   minimumFreeBytes: 1024 ** 3, pinScheduledByDefault: false, quotaBytes: null,
@@ -37,3 +37,20 @@ export const renditionPolicyMigration = Object.freeze({
         Number(d.cacheInteractive), Number(d.pinScheduledByDefault), JSON.stringify(d.allowedProfileIds), new Date().toISOString());
   }
 });
+
+export const renditionProfileExpansionMigration = Object.freeze({
+  domain: "renditions", id: "renditions-v3", version: 3,
+  apply(database) {
+    const row = database.prepare("SELECT allowed_profile_ids_json FROM rendition_storage_policy WHERE id = 1").get();
+    if (!row) return;
+    const existing = JSON.parse(row.allowed_profile_ids_json);
+    const allowedProfileIds = [...new Set(["240p", "360p", ...(Array.isArray(existing) ? existing : [])])];
+    database.prepare("UPDATE rendition_storage_policy SET allowed_profile_ids_json = ? WHERE id = 1")
+      .run(JSON.stringify(allowedProfileIds));
+  }
+});
+
+export const renditionPolicyMigrations = Object.freeze([
+  renditionPolicyMigration,
+  renditionProfileExpansionMigration
+]);

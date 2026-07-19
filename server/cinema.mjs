@@ -13,7 +13,7 @@ const candidateWords = (value = "") =>
     .replace(/[\W_]+/g, " ")
     .split(" ")
     .map((word) => word.trim())
-    .filter((word) => word.length > 1 && !/^(1080p|720p|2160p|480p|x264|x265|h264|h265|web|dl|bluray|webrip|hdrip)$/i.test(word));
+    .filter((word) => word.length > 1 && !/^(1080p|720p|2160p|480p|360p|240p|x264|x265|h264|h265|web|dl|bluray|webrip|hdrip)$/i.test(word));
 
 const searchPhrase = (words) => words.slice(0, 8).join(" ").trim();
 

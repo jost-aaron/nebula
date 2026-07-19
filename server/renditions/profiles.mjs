@@ -16,6 +16,8 @@ const profile = (value) => Object.freeze({
 });
 
 export const RENDITION_PROFILES = Object.freeze([
+  profile({ audioBitrate: 64_000, id: "240p", label: "240p Data Saver", maxHeight: 240, maxWidth: 426, totalBitrate: 650_000, videoBitrate: 500_000 }),
+  profile({ audioBitrate: 96_000, id: "360p", label: "360p Low", maxHeight: 360, maxWidth: 640, totalBitrate: 1_100_000, videoBitrate: 900_000 }),
   profile({ id: "480p", label: "480p", maxHeight: 480, maxWidth: 854, totalBitrate: 2_000_000, videoBitrate: 1_800_000 }),
   profile({ id: "720p", label: "720p HD", maxHeight: 720, maxWidth: 1280, totalBitrate: 4_000_000, videoBitrate: 3_600_000 }),
   profile({ audioBitrate: 192_000, id: "1080p", label: "1080p Full HD", maxHeight: 1080, maxWidth: 1920, totalBitrate: 8_000_000, videoBitrate: 7_400_000 })

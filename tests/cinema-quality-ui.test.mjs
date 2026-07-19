@@ -7,10 +7,11 @@ const styles = await readFile(new URL("../src/styles.css", import.meta.url), "ut
 
 test("Cinema exposes Auto, Original, and fixed profile controls with actual delivery status", () => {
   assert.match(source, /data-cinema-player-quality/);
-  for (const value of ["auto", "original", "480p", "720p", "1080p"]) assert.match(source, new RegExp(value));
+  for (const value of ["auto", "original", "240p", "360p", "480p", "720p", "1080p"]) assert.match(source, new RegExp(value));
   assert.match(source, /quality:\s*preference/);
   assert.match(source, /qualityResultLabel\(preference, created\.plan\)/);
   assert.match(source, /data-cinema-quality-result/);
+  assert.match(source, /formatBitrate\(profile\.totalBitrate\)/);
 });
 
 test("Cinema uses native-or-MSE HLS and tears it down with delivery lifecycle", () => {

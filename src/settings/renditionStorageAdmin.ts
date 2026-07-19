@@ -1,4 +1,5 @@
 import { getRenditionStorageStatus, runRenditionCleanup, saveRenditionPolicy, type RenditionStoragePolicy, type RenditionStorageStatus } from "../api/renditionPolicyApi";
+import { RENDITION_PROFILE_IDS } from "../shared/renditionTypes";
 import "./renditionStorageAdmin.css";
 
 const bytes = (value: number | null) => value === null ? "Unavailable" : new Intl.NumberFormat(undefined, { style: "unit", unit: "gigabyte", maximumFractionDigits: 1 }).format(value / 1e9);
@@ -10,7 +11,7 @@ const render = (status: RenditionStorageStatus) => {
   const pinned = status.usage.groups.filter((g) => g.retention === "pinned").reduce((n,g) => n + g.bytes, 0);
   return `<div class="rendition-storage-summary"><span><small>Ready output</small><strong>${bytes(status.usage.totalReadyBytes)}</strong></span><span><small>Cache</small><strong>${bytes(cache)}</strong></span><span><small>Pinned</small><strong>${bytes(pinned)}</strong></span><span><small>Disk free</small><strong>${bytes(status.disk.freeBytes)}</strong></span></div>
   <form data-rendition-policy><div class="rendition-storage-fields">${field("Quota bytes", "quotaBytes", p.quotaBytes, 1048576, 1125899906842624)}${field("Minimum free bytes", "minimumFreeBytes", p.minimumFreeBytes, 0, 1125899906842624)}${field("High water %", "highWaterPercent", p.highWaterPercent, 50, 99)}${field("Low water %", "lowWaterPercent", p.lowWaterPercent, 25, 98)}${field("Maximum cache age (days)", "maxCacheAgeDays", p.maxCacheAgeDays, 1, 3650)}${field("Failed record retention (days)", "failedRecordDays", p.failedRecordDays, 1, 3650)}${field("Stale record retention (days)", "staleRecordDays", p.staleRecordDays, 1, 3650)}${field("Cleanup interval (minutes)", "cleanupIntervalMinutes", p.cleanupIntervalMinutes, 5, 10080)}${field("Cleanup batch size", "cleanupBatchSize", p.cleanupBatchSize, 1, 1000)}</div>
-  <fieldset><legend>Scheduled profiles</legend>${["480p","720p","1080p"].map(id => `<label><input type="checkbox" name="profile" value="${id}" ${p.allowedProfileIds.includes(id) ? "checked" : ""}>${id}</label>`).join("")}</fieldset>
+  <fieldset><legend>Scheduled profiles</legend>${RENDITION_PROFILE_IDS.map(id => `<label><input type="checkbox" name="profile" value="${id}" ${p.allowedProfileIds.includes(id) ? "checked" : ""}>${id}</label>`).join("")}</fieldset>
   <label class="rendition-storage-toggle"><input type="checkbox" name="cacheInteractive" ${p.cacheInteractive ? "checked" : ""}>Cache interactive transcodes</label><label class="rendition-storage-toggle"><input type="checkbox" name="pinScheduledByDefault" ${p.pinScheduledByDefault ? "checked" : ""}>Pin scheduled builds by default</label>
   <div class="rendition-storage-actions"><button type="submit">Save policy</button><button type="button" data-rendition-cleanup>Run cleanup</button></div></form>`;
 };

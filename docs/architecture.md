@@ -261,7 +261,7 @@ flowchart TD
 
 `server/renditions/`
 
-- Defines trusted 480p, 720p, and 1080p H.264/AAC HLS profiles.
+- Defines trusted 240p, 360p, 480p, 720p, and 1080p H.264/AAC HLS profiles.
 - Persists rendition identity by catalog source revision and profile version so
   changed originals cannot reuse stale generated output.
 - Keeps storage identifiers server-internal and leaves FFmpeg execution,

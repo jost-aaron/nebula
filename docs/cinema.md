@@ -165,7 +165,7 @@ catalog outages, and configured bearer clients retain the ticketed path-based
 media fallback. Thumbnail and identification sampling also remain on that
 fallback. Music remains intentionally handled by Studio.
 
-For incompatible sources, `auto` planning selects a fixed 480p, 720p, or 1080p
+For incompatible sources, `auto` planning selects a fixed 240p, 360p, 480p, 720p, or 1080p
 profile within the client and account playback-policy limits. Fresh HLS playback
 can begin after its first atomic segment; resumed transcodes wait for a complete
 playlist so seeking uses the original timeline correctly. The client includes

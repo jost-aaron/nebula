@@ -11,6 +11,8 @@ The first profile version defines H.264/AAC MPEG-TS HLS targets:
 
 | Profile | Maximum frame | Total bitrate ceiling | Video bitrate | Audio |
 | --- | --- | ---: | ---: | --- |
+| `240p` | 426x240 | 650 Kbps | 500 Kbps | AAC stereo, 64 Kbps |
+| `360p` | 640x360 | 1.1 Mbps | 900 Kbps | AAC stereo, 96 Kbps |
 | `480p` | 854x480 | 2 Mbps | 1.8 Mbps | AAC stereo, 128 Kbps |
 | `720p` | 1280x720 | 4 Mbps | 3.6 Mbps | AAC stereo, 128 Kbps |
 | `1080p` | 1920x1080 | 8 Mbps | 7.4 Mbps | AAC stereo, 192 Kbps |
@@ -105,7 +107,7 @@ optimization work. Scheduled/pinned generation, quota/LRU management, and
 administrator controls remain the next waves.
 
 Cinema discovers profile labels and limits from `GET /api/renditions/profiles`.
-Its player exposes Auto, Original, 480p, 720p, and 1080p choices and reports the
+Its player exposes Auto, Original, 240p, 360p, 480p, 720p, and 1080p choices and reports the
 actual planned result. Native HLS remains preferred on Safari/iOS; browsers with
 Media Source Extensions use the pinned hls.js adapter with credentialed
 same-origin requests, one bounded media recovery attempt, sanitized failures,
@@ -113,7 +115,7 @@ and explicit teardown whenever delivery changes or Cinema closes.
 ## Scheduled Optimization
 
 Owners can open a Cinema title and choose **Optimize** to queue one durable job
-per eligible 480p, 720p, or 1080p profile. The server derives the source
+per eligible 240p, 360p, 480p, 720p, or 1080p profile. The server derives the source
 revision, profile version, retry policy, and dedupe key; browser requests cannot
 provide paths, codecs, FFmpeg arguments, retries, or dedupe keys.
 
@@ -136,6 +138,9 @@ shared database without using `PRAGMA user_version`. Policy covers optional
 quota, high/low water marks, minimum free space, cache age, failed/stale record
 retention, cleanup cadence and batch size, interactive caching preference,
 scheduled pinning, and allowed scheduled profiles.
+
+The additive `renditions-v3` migration enables 240p and 360p on existing
+servers while preserving any earlier profiles an owner deliberately excluded.
 
 Cleanup is a durable, deduplicated `cleanup:renditions` job. Browser callers
 cannot submit paths, roots, candidate IDs, limits, or deletion arguments. The

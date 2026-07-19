@@ -12,7 +12,7 @@ import {
 } from "../server/renditions/index.mjs";
 
 test("built-in rendition profiles are versioned, bounded, and ordered by quality", () => {
-  assert.deepEqual(RENDITION_PROFILES.map(({ id }) => id), ["480p", "720p", "1080p"]);
+  assert.deepEqual(RENDITION_PROFILES.map(({ id }) => id), ["240p", "360p", "480p", "720p", "1080p"]);
   assert.ok(RENDITION_PROFILES.every((entry) => Object.isFrozen(entry)));
   assert.ok(RENDITION_PROFILES.every((entry) => entry.version === 1));
   assert.ok(RENDITION_PROFILES.every((entry) => entry.protocol === "hls" && entry.container === "mpegts"));
@@ -28,9 +28,10 @@ test("quality preferences fail closed and source dimensions suppress upscaling p
   assert.deepEqual(normalizeQualityPreference({ mode: "profile", profileId: "480p" }), { mode: "profile", profileId: "480p" });
   assert.equal(normalizeQualityPreference({ mode: "profile", profileId: "4k" }), null);
   assert.equal(normalizeQualityPreference({ mode: "unsafe", ffmpeg: ["-f", "rawvideo"] }), null);
-  assert.deepEqual(listRenditionProfiles({ sourceHeight: 1080, sourceWidth: 1920 }).map(({ id }) => id), ["480p", "720p", "1080p"]);
-  assert.deepEqual(listRenditionProfiles({ sourceHeight: 720, sourceWidth: 1280 }).map(({ id }) => id), ["480p", "720p"]);
-  assert.deepEqual(listRenditionProfiles({ sourceHeight: 360, sourceWidth: 640 }).map(({ id }) => id), []);
+  assert.deepEqual(listRenditionProfiles({ sourceHeight: 1080, sourceWidth: 1920 }).map(({ id }) => id), ["240p", "360p", "480p", "720p", "1080p"]);
+  assert.deepEqual(listRenditionProfiles({ sourceHeight: 720, sourceWidth: 1280 }).map(({ id }) => id), ["240p", "360p", "480p", "720p"]);
+  assert.deepEqual(listRenditionProfiles({ sourceHeight: 360, sourceWidth: 640 }).map(({ id }) => id), ["240p", "360p"]);
+  assert.deepEqual(listRenditionProfiles({ sourceHeight: 240, sourceWidth: 426 }).map(({ id }) => id), ["240p"]);
 });
 
 test("rendition migration composes with catalog identity and enforces revision uniqueness", () => {

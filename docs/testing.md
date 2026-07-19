@@ -360,6 +360,11 @@ same-key interactive build deduplication, authorization before lookup, and
 absolute/traversal storage-key rejection. Scheduled-job lifecycle, retention,
 quota, and LRU cleanup now have focused integration coverage.
 
+The profile matrix includes 240p (426x240, 650 Kbps ceiling) and 360p
+(640x360, 1.1 Mbps ceiling). Contract and planner tests verify both are
+server-owned, source-eligible without upscaling, selectable by Cinema, and
+available to scheduled optimization and owner storage policy.
+
 ### Real-Media Transcoding Smoke Test
 
 Complement automated fixtures with one real library title:
