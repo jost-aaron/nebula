@@ -120,6 +120,7 @@ test("shell markup exposes one roving tile focus target and modal semantics", as
   assert.match(main, /tabindex="\$\{isFocused \? "0" : "-1"\}"/);
   assert.match(main, /aria-current=/);
   assert.match(main, /role="dialog" aria-modal="true"/);
+  assert.match(main, /appSurface\.setAttribute\("aria-label", app\.name\)/);
   assert.match(main, /shellRoot\.inert = true/);
   assert.match(main, /bindGamepadCommands/);
   assert.match(css, /\.app-tile:focus-visible/);
