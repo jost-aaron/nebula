@@ -10,7 +10,10 @@ import { applyApiCorsHeaders, handleApiPreflight } from "./cors.mjs";
 import { createStorage } from "./storage.mjs";
 import { createAccountStore } from "./accountStore.mjs";
 import { createGuestService } from "./guest/service.mjs";
-import { catalogMigration, bootstrapSharedContentRoot, createCatalogRepository, importLegacyCinemaMetadata, scanLocalRoot } from "./catalog/index.mjs";
+import {
+  catalogMigration, bootstrapSharedContentRoot, createCatalogRepository, createFingerprintRepository,
+  createFingerprintService, importLegacyCinemaMetadata, scanLocalRoot
+} from "./catalog/index.mjs";
 import { openNebulaDatabase, applyDomainMigrations } from "./database.mjs";
 import { createPlaybackRepository } from "./playback/repository.mjs";
 import { createPlaybackService } from "./playback/service.mjs";
@@ -31,8 +34,9 @@ import { createRenditionService, createRenditionStore, renditionsMigration } fro
 import { createRenditionCleanupScheduler, createRenditionPolicyRepository, createRenditionPolicyService, renditionPolicyMigrations } from "./renditionPolicy/index.mjs";
 import { createTailscaleEnrollmentService } from "./tailscaleEnrollment.mjs";
 import {
-  clusterMigration, createClusterIngressRoutes, createClusterPairingClient,
-  createClusterRepository, createClusterTrustService
+  clusterMigration, clusterFederationMigration, createClusterIngressRoutes, createClusterManifestClient,
+  createClusterManifestService, createClusterPairingClient, createClusterRepository, createClusterSyncService,
+  createClusterTrustService, createFederatedCatalogRepository
 } from "./cluster/index.mjs";
 import {
   createCatalogCheck,
@@ -59,7 +63,7 @@ const accountStore = await createAccountStore({ database });
 const guestService = createGuestService({ accountStore });
 const tailscaleEnrollment = createTailscaleEnrollmentService();
 accountStore.setOwnerCreatedHook(() => guestService.revokeAll());
-applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration]);
+applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration, clusterFederationMigration]);
 const auditService = createAuditService({
   db: database,
   maxEvents: Number(process.env.NEBULA_AUDIT_MAX_EVENTS ?? 10_000),
@@ -73,8 +77,21 @@ const clusterService = clusterEnabled ? createClusterTrustService({
   repository: createClusterRepository(database),
   role: process.env.NEBULA_CLUSTER_ROLE ?? "hybrid"
 }) : null;
-const clusterIngress = clusterService ? createClusterIngressRoutes(clusterService) : null;
 const catalogRepository = createCatalogRepository(database);
+const clusterIngress = clusterService ? createClusterIngressRoutes({
+  manifest: createClusterManifestService({ database, nodeId: clusterService.identity().descriptor.nodeId }),
+  service: clusterService
+}) : null;
+const federatedCatalog = clusterService ? createFederatedCatalogRepository(database) : null;
+const clusterSync = clusterService ? createClusterSyncService({
+  client: createClusterManifestClient(), federation: federatedCatalog, trust: clusterService
+}) : null;
+const fingerprintRepository = createFingerprintRepository(database);
+const fingerprintService = createFingerprintService({
+  contentRoot: storage.contentRoot,
+  repository: fingerprintRepository,
+  resolveSource: (sourceId) => catalogRepository.getSource(sourceId)
+});
 const libraryPermissions = createLibraryPermissionsService({ database });
 const mediaLists = createMediaListsService({ database, permissions: libraryPermissions });
 const probeReader = createProbeCatalogReader(database);
@@ -161,10 +178,12 @@ const jobsWorker = createJobsWorker({
       const scan = await scanCatalog();
       for (const item of catalogRepository.listItems({ availability: "available" })) {
         context.enqueue({ type: "probe", payload: { sourceId: item.source.id }, dedupeKey: `${item.source.id}:${item.source.contentRevision}` });
+        context.enqueue({ type: "fingerprint", payload: { sourceId: item.source.id }, dedupeKey: `${item.source.id}:${item.source.contentRevision}` });
       }
       return scan;
     },
     probeSource: ({ sourceId }) => probeService.probeSource(sourceId),
+    fingerprintSource: ({ sourceId }, context) => fingerprintService.fingerprintSource(sourceId, context),
     buildRendition: (payload, context) => renditionService.build(payload, context),
     refreshMetadata: async () => ({ skipped: "metadata orchestration pending" }),
     cacheArtwork: async () => ({ skipped: "artwork cache pending" }),
@@ -223,7 +242,10 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   audit: auditService,
   backup: backupService,
   catalog: { libraryPermissions, probeReader, repository: catalogRepository, scan: scanCatalog },
-  ...(clusterService ? { cluster: { audit: auditService, pairingClient: createClusterPairingClient(), service: clusterService } } : {}),
+  ...(clusterService ? { cluster: {
+    audit: auditService, federation: federatedCatalog, pairingClient: createClusterPairingClient(),
+    service: clusterService, sync: clusterSync
+  } } : {}),
   jobs: jobsService,
   guestService,
   libraryPermissions,

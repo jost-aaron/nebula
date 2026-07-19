@@ -98,6 +98,8 @@ The app has these main layers:
     records, scan reconciliation, and compatibility projections.
 13. `server/playback/` owns per-user playback state, sessions, idempotent events,
     and Continue Watching queries.
+14. `server/cluster/` owns disabled-by-default shard trust, signed path-free
+    manifests, exact source identity, and the coordinator catalog projection.
 
 The UI is currently framework-free TypeScript. DOM is rendered with template
 strings and event listeners. If you introduce a framework later, document why and
@@ -162,6 +164,9 @@ Mouse behavior:
   browser-assisted enrollment under Settings / Remote Access. Preserve the
   fixed-file control/status bridge; never mount Tailscale or Docker sockets into
   the dashboard or enable Funnel.
+- Media sharding Phases 0-2 are backend-complete behind
+  `NEBULA_CLUSTER_ENABLED`; Cinema and Studio do not use the federated
+  projection yet. Unified browsing is the next sharding phase.
 - `Arcade` and `Party` are still planned placeholders.
 
 ## Content And Media

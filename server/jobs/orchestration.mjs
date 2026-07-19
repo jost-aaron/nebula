@@ -3,6 +3,7 @@ import { JOB_TYPES } from "./service.mjs";
 const REQUIRED_OPERATIONS = Object.freeze({
   artwork: "cacheArtwork",
   cleanup: "cleanup",
+  fingerprint: "fingerprintSource",
   metadata: "refreshMetadata",
   probe: "probeSource",
   rendition: "buildRendition",

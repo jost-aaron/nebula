@@ -22,6 +22,7 @@ const node = () => ({
 });
 
 const source = () => ({
+  availability: "available",
   bitrate: 4_000_000,
   durationSeconds: 3600,
   externalIds: [{ mediaType: "movie", provider: "tmdb", providerItemId: "123" }],
@@ -31,6 +32,7 @@ const source = () => ({
   localItemId: "item_fixture_01",
   localSourceId: "source_fixture_01",
   mediaKind: "video",
+  removedAt: null,
   renditions: [{ profileId: "720p", revision: 1, state: "ready" }],
   sizeBytes: 10_000,
   sourceRevision: 2,

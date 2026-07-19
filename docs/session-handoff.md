@@ -231,7 +231,7 @@ Read these in order:
 At handoff time:
 
 - `docker compose run --rm dashboard npm run check` passed.
-- `docker compose run --rm dashboard npm test` passed with 238 tests.
+- `docker compose run --rm dashboard npm test` passed with 290 tests.
 - `./scripts/test-e2e.sh` passed all 10 fresh-volume Playwright scenarios,
   including guest/owner bootstrap, shell input and focus persistence, app smoke
   paths, Studio playback history/resume, and 390×844 reachability.
@@ -272,3 +272,8 @@ At handoff time:
 - App-surface rendering and feature-specific bindings remain in `src/main.ts`;
   shell state, persistence, input gates, and gamepad lifecycle live in
   `src/shell/`.
+- Media sharding Phase 2 now persists exact source fingerprints, exchanges
+  signed path-free manifests, and builds a conservative coordinator projection.
+  Cinema/Studio still read their local compatibility APIs; unified federated
+  browsing, source badges, playback scheduling, grants, and failover are the
+  next phases in `docs/media-sharding-implementation-plan.md`.

@@ -12,6 +12,7 @@ const MEDIA_KINDS = new Set(["video", "audio"]);
 const FINGERPRINT_ALGORITHMS = new Set(["sha256", "blake3"]);
 const FINGERPRINT_STATES = new Set(["pending", "ready", "failed"]);
 const RENDITION_STATES = new Set(["pending", "ready", "failed"]);
+const MANIFEST_AVAILABILITY = new Set(["available", "tombstone"]);
 const PROFILE_IDS = new Set(["auto", "original", "240p", "360p", "480p", "720p", "1080p"]);
 
 export class ClusterProtocolError extends Error {
@@ -150,11 +151,14 @@ const validateRendition = (input, index) => {
 const validateManifestSource = (input, index) => {
   const label = `sources[${index}]`;
   const value = plainObject(input, label);
-  exactKeys(value, new Set(["bitrate", "durationSeconds", "externalIds", "fingerprint", "height", "itemKind", "localItemId", "localSourceId", "mediaKind", "renditions", "sizeBytes", "sourceRevision", "title", "width", "year"]), label);
+  exactKeys(value, new Set(["availability", "bitrate", "durationSeconds", "externalIds", "fingerprint", "height", "itemKind", "localItemId", "localSourceId", "mediaKind", "removedAt", "renditions", "sizeBytes", "sourceRevision", "title", "width", "year"]), label);
   id(value.localItemId, `${label}.localItemId`);
   id(value.localSourceId, `${label}.localSourceId`);
   if (!ITEM_KINDS.has(value.itemKind)) fail("invalid_media", `${label}.itemKind is unsupported.`);
   if (!MEDIA_KINDS.has(value.mediaKind)) fail("invalid_media", `${label}.mediaKind is unsupported.`);
+  if (!MANIFEST_AVAILABILITY.has(value.availability)) fail("invalid_media", `${label}.availability is unsupported.`);
+  if (value.availability === "tombstone") timestamp(value.removedAt, `${label}.removedAt`);
+  else if (value.removedAt !== null) fail("invalid_media", `${label}.removedAt must be null for available sources.`);
   requiredString(value.title, `${label}.title`, 512);
   integer(value.sizeBytes, `${label}.sizeBytes`);
   integer(value.sourceRevision, `${label}.sourceRevision`, { min: 1 });

@@ -51,3 +51,30 @@ test("cluster admin routes create codes, pair, list, and revoke through injected
   await routes(request("DELETE"), removed, new URL("http://nebula/api/admin/cluster/nodes/node_shard_001"));
   assert.equal(removed.status, 204);
 });
+
+test("manifest ingress and coordinator controls remain signed, bounded, and owner-routed", async () => {
+  const service = {
+    signRequest: ({ body }) => ({ nodeId: body.nodeId, signature: "signed" }),
+    verifyRequest: () => ({ nodeId: "node_home_0001" })
+  };
+  const manifest = { page: () => ({ complete: true, cursor: null, manifestRevision: 1, nodeId: "node_shard_001", protocolVersion: 1, sources: [] }) };
+  const ingress = createClusterIngressRoutes({ manifest, service });
+  const result = response();
+  await ingress(request("POST", { envelope: {}, payload: { cursor: null, limit: 10 } }), result, new URL("http://nebula/api/shard/v1/manifest"));
+  assert.equal(result.status, 200);
+  assert.equal(JSON.parse(result.body).payload.nodeId, "node_shard_001");
+
+  const federation = {
+    listConflicts: () => [{ id: "conflict_001" }], listItems: () => [{ id: "fitem_001" }],
+    setOverride: (body) => ({ ...body, targetItemId: "fitem_001" })
+  };
+  const sync = { syncNode: async (nodeId) => ({ complete: true, manifestRevision: 4, nodeId }) };
+  const admin = createClusterAdminRoutes({ federation, pairingClient: {}, service: {}, sync });
+  const items = response(); await admin(request("GET"), items, new URL("http://nebula/api/admin/cluster/items"));
+  assert.equal(JSON.parse(items.body).items[0].id, "fitem_001");
+  const synced = response(); await admin(request("POST"), synced, new URL("http://nebula/api/admin/cluster/nodes/node_shard_001/sync"));
+  assert.equal(JSON.parse(synced.body).manifestRevision, 4);
+  const override = response();
+  await admin(request("POST", { action: "merge", leftOrigin: "node_a:item_a", rightOrigin: "node_b:item_b" }), override, new URL("http://nebula/api/admin/cluster/dedupe-overrides"));
+  assert.equal(JSON.parse(override.body).targetItemId, "fitem_001");
+});

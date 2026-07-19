@@ -425,6 +425,20 @@ or caller-selected filesystem locations.
 
 ## Delivery Plan
 
+### Implementation status (2026-07-19)
+
+- Phase 0 is complete: protocol contracts, threat model, and rollout boundaries
+  are committed.
+- Phase 1 is complete: persistent Ed25519 node identity, one-time pairing,
+  fixed-proxy Tailscale transport, replay defense, and revocation are available
+  behind `NEBULA_CLUSTER_ENABLED`.
+- Phase 2 backend is complete: revision-bound SHA-256 jobs, signed path-free
+  manifests, bounded revision-pinned cursor pages, explicit missing-source
+  tombstones, full reconciliation, conservative projection/deduplication,
+  conflict diagnostics, and durable merge/split overrides are implemented.
+- Phase 3 unified client browsing is next. Cinema and Studio still use their
+  local compatibility APIs until that phase is browser-verified.
+
 ### Phase 0: contracts and threat model
 
 - Define cluster roles, protocol versioning, node identity, signatures, and

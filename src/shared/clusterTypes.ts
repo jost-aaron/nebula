@@ -1,4 +1,4 @@
-import type { CatalogId, MediaItemKind, MediaSourceKind } from "./catalogTypes";
+import type { CatalogId, IsoDateTime, MediaItemKind, MediaSourceKind } from "./catalogTypes";
 import type { PlaybackClientCapabilities, PlaybackDecision } from "./playbackPlanTypes";
 import type { RenditionProfileId } from "./renditionTypes";
 
@@ -58,6 +58,7 @@ export interface ClusterManifestRendition {
 }
 
 export interface ClusterManifestSource {
+  availability: "available" | "tombstone";
   bitrate: number | null;
   durationSeconds: number | null;
   externalIds: ClusterExternalIdentity[];
@@ -67,6 +68,7 @@ export interface ClusterManifestSource {
   localItemId: CatalogId;
   localSourceId: CatalogId;
   mediaKind: MediaSourceKind;
+  removedAt: IsoDateTime | null;
   renditions: ClusterManifestRendition[];
   sizeBytes: number;
   sourceRevision: number;

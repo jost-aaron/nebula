@@ -256,12 +256,13 @@ keep it separate from Nebula database backups and media. A Tailscale outage
 removes remote access only; dashboard health/readiness and local loopback access
 do not depend on the sidecar.
 
-### Experimental media-cluster trust layer
+### Experimental media-cluster catalog layer
 
-Nebula's first media-sharding phase adds disabled-by-default node identity,
-pairing, signed requests, replay protection, and revocation. It does **not** yet
-federate libraries or distribute playback. Leave `NEBULA_CLUSTER_ENABLED=false`
-for ordinary deployments.
+Nebula's experimental media-sharding backend adds disabled-by-default node
+identity, pairing, signed requests, replay protection, path-free manifests,
+source fingerprints, and a coordinator-owned deduplicated catalog projection.
+It does **not** yet replace Cinema or Studio browsing and does not distribute
+playback. Leave `NEBULA_CLUSTER_ENABLED=false` for ordinary deployments.
 
 Each future coordinator or shard requires its own persistent Nebula data and
 Tailscale node state. After every node has a private Serve URL, configure each
@@ -290,11 +291,23 @@ and revocation state are stored in `/app/data/nebula.sqlite` and included in
 Nebula database backups. Raw pairing codes are returned once, expire after ten
 minutes, and are never persisted. Protect backups accordingly.
 
-Until the Cluster Settings UI ships, exercise pairing only through an approved
-test harness or API client. The owner-only coordinator routes are under
-`/api/admin/cluster`; shard pairing and health ingress are restricted to the
-fixed `/api/shard/v1` protocol. Tailscale admission does not replace signatures
-or Nebula owner authorization.
+Until the Cluster Settings UI ships, exercise pairing and manifest sync only
+through an approved test harness or API client. The owner-only coordinator
+routes are under `/api/admin/cluster`; `POST
+/api/admin/cluster/nodes/:nodeId/sync` performs an explicit full reconcile and
+`GET /api/admin/cluster/items` exposes the path-free projection. Shard pairing,
+health, and manifest ingress are restricted to the fixed `/api/shard/v1`
+protocol. Tailscale admission does not replace signatures or Nebula owner
+authorization.
+
+Every available local source is hashed as a revision-bound full-file SHA-256
+background job after scanning. Hashes, private content paths, and filenames are
+never returned by owner catalog routes. Manifest synchronization is bounded to
+500 entries per page, signed in both directions, revision pinned, and restarted
+after cursor loss. Exact digests prove replicas; provider IDs may group
+alternate encodes. Similar titles without strong identity remain separate and
+create an owner-review conflict. Merge/split overrides are durable database
+state and therefore travel with encrypted Nebula backups.
 
 Representative least-privilege tailnet Grants are operator-managed and
 additive to existing policy:

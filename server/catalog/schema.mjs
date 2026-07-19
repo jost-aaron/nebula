@@ -1,4 +1,4 @@
-export const CATALOG_SCHEMA_VERSION = 2;
+export const CATALOG_SCHEMA_VERSION = 3;
 
 const externalIdsTableSql = `
   CREATE TABLE media_external_ids (
@@ -129,6 +129,50 @@ export const catalogMigration = Object.freeze({
         DROP TABLE media_external_ids_v1;
       `);
     }
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS media_source_fingerprints (
+        source_id TEXT PRIMARY KEY REFERENCES media_sources(id) ON DELETE CASCADE,
+        algorithm TEXT NOT NULL DEFAULT 'sha256' CHECK (algorithm IN ('sha256')),
+        algorithm_version INTEGER NOT NULL DEFAULT 1 CHECK (algorithm_version = 1),
+        digest TEXT CHECK (digest IS NULL OR (length(digest) = 64 AND digest GLOB '[0-9a-f]*')),
+        byte_length INTEGER NOT NULL CHECK (byte_length >= 0),
+        source_revision INTEGER NOT NULL CHECK (source_revision > 0),
+        state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'ready', 'failed')),
+        fingerprinted_at TEXT,
+        error_code TEXT,
+        updated_at TEXT NOT NULL,
+        CHECK ((state = 'ready' AND digest IS NOT NULL AND fingerprinted_at IS NOT NULL AND error_code IS NULL)
+          OR (state != 'ready' AND digest IS NULL))
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS media_source_fingerprints_digest
+        ON media_source_fingerprints(algorithm, digest, byte_length)
+        WHERE state = 'ready';
+      CREATE TRIGGER IF NOT EXISTS media_source_fingerprint_insert
+      AFTER INSERT ON media_sources
+      BEGIN
+        INSERT INTO media_source_fingerprints
+          (source_id, byte_length, source_revision, state, updated_at)
+          VALUES (NEW.id, NEW.size_bytes, NEW.content_revision, 'pending', NEW.updated_at)
+          ON CONFLICT(source_id) DO NOTHING;
+      END;
+      CREATE TRIGGER IF NOT EXISTS media_source_fingerprint_revision
+      AFTER UPDATE OF content_revision, size_bytes ON media_sources
+      WHEN OLD.content_revision != NEW.content_revision OR OLD.size_bytes != NEW.size_bytes
+      BEGIN
+        INSERT INTO media_source_fingerprints
+          (source_id, byte_length, source_revision, state, updated_at)
+          VALUES (NEW.id, NEW.size_bytes, NEW.content_revision, 'pending', NEW.updated_at)
+          ON CONFLICT(source_id) DO UPDATE SET
+            algorithm = 'sha256', algorithm_version = 1, digest = NULL,
+            byte_length = NEW.size_bytes, source_revision = NEW.content_revision,
+            state = 'pending', fingerprinted_at = NULL, error_code = NULL,
+            updated_at = NEW.updated_at;
+      END;
+      INSERT INTO media_source_fingerprints
+        (source_id, byte_length, source_revision, state, updated_at)
+        SELECT id, size_bytes, content_revision, 'pending', updated_at FROM media_sources WHERE 1
+        ON CONFLICT(source_id) DO NOTHING;
+    `);
   }
 });
 

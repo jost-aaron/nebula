@@ -36,7 +36,7 @@ test("catalog migration creates a fresh schema without owning PRAGMA user_versio
   database.exec("PRAGMA user_version = 73");
   catalogMigration.apply(database);
   const tables = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'media_%' ORDER BY name").all().map(({ name }) => name);
-  assert.deepEqual(tables, ["media_artwork", "media_external_ids", "media_items", "media_libraries", "media_library_roots", "media_scan_runs", "media_sources"]);
+  assert.deepEqual(tables, ["media_artwork", "media_external_ids", "media_items", "media_libraries", "media_library_roots", "media_scan_runs", "media_source_fingerprints", "media_sources"]);
   assert.equal(database.prepare("PRAGMA user_version").get().user_version, 73);
   database.close();
 });

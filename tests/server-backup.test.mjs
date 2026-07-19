@@ -14,7 +14,7 @@ import { probeMigration } from "../server/probe/catalogAdapter.mjs";
 import { playbackPolicyMigration } from "../server/playbackPolicy/index.mjs";
 import { auditMigration } from "../server/audit/schema.mjs";
 import { renditionsMigration } from "../server/renditions/index.mjs";
-import { clusterMigration } from "../server/cluster/index.mjs";
+import { clusterFederationMigration, clusterMigration } from "../server/cluster/index.mjs";
 
 const fixture = async (t) => {
   const root = await import("node:fs/promises").then(({ mkdtemp }) => mkdtemp(path.join(os.tmpdir(), "nebula-backup-")));
@@ -23,7 +23,7 @@ const fixture = async (t) => {
   const databasePath = path.join(dataRoot, "nebula.sqlite");
   const database = await openNebulaDatabase(databasePath);
   migrateAccountSchema(database);
-  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, playbackPolicyMigration, auditMigration, renditionsMigration, clusterMigration]);
+  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, playbackPolicyMigration, auditMigration, renditionsMigration, clusterMigration, clusterFederationMigration]);
   t.after(() => database.close());
   return { backupRoot: path.join(root, "backups"), dataRoot, database, databasePath, root };
 };

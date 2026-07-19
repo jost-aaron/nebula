@@ -177,6 +177,7 @@ test("media orchestration contracts inject domain operations and can fan out ide
       context.enqueue({ type: "probe", payload: { sourceId: "source-a" }, dedupeKey: "source-a", maxAttempts: 3 });
     },
     probeSource: async (payload) => calls.push(["probe", payload.sourceId]),
+    fingerprintSource: async () => {},
     refreshMetadata: async () => {},
     cacheArtwork: async () => {},
     buildRendition: async () => {},

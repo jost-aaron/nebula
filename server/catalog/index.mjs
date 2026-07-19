@@ -3,3 +3,4 @@ export { createCatalogRepository } from "./repository.mjs";
 export { bootstrapSharedContentRoot, discoverLocalMedia, scanLocalRoot } from "./scanner.mjs";
 export { importLegacyCinemaMetadata } from "./legacyImport.mjs";
 export { projectCompatibilityEntry, projectRepositoryItems } from "./projections.mjs";
+export { createFingerprintRepository, createFingerprintService } from "./fingerprints.mjs";
