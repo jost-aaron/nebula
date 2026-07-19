@@ -79,10 +79,11 @@ The host tree should not contain `node_modules` or `dist`.
 
 ## Mental Model
 
-The app has nine main layers:
+The app has these main layers:
 
 1. `src/webgpuRenderer.ts` owns the full-screen GPU/canvas background.
-2. `src/main.ts` owns shell state and DOM rendering.
+2. `src/main.ts` owns shell DOM rendering and app-surface bindings, while
+   `src/shell/` owns typed state, persistence, and shared input commands.
 3. `src/apps.ts` owns the list of app entries shown in the dashboard.
 4. `src/diagnostics/` owns runtime diagnostic data collection.
 5. `src/cinema/` owns the local video library and lazy playback UI.
@@ -104,15 +105,15 @@ keep the migration focused.
 
 ## State Model
 
-`src/main.ts` keeps three pieces of shell state:
+`src/shell/state.ts` defines three pieces of shell state, held by `src/main.ts`:
 
-- `focusedIndex` - selected app tile.
-- `launchedApp` - app detail panel currently open, or `null`.
-- `activeApp` - full-screen app surface currently open, or `null`.
+- `focusedAppId` - stable ID of the selected app tile.
+- `detailAppId` - app detail panel currently open, or `null`.
+- `activeAppId` - full-screen app surface currently open, or `null`.
 
 Keyboard behavior:
 
-- Arrow keys move `focusedIndex` without wrapping past the first or last app.
+- Arrow keys move the focused app without wrapping past the first or last app.
 - Enter launches the focused app surface.
 - Escape closes the active app surface first, otherwise closes detail panels.
 
@@ -152,8 +153,11 @@ Mouse behavior:
 - The media backend indexes the shared content root into stable catalog UUIDs,
   persists authenticated playback progress, and supports account-bound direct,
   remux, progressive HLS, reusable and scheduled renditions, plus owner-managed
-  rendition storage policy. Studio playback-state integration remains future
-  work.
+  rendition storage policy. Studio reports authenticated playback lifecycle,
+  history, completion, and resume state using stable catalog IDs; guest playback
+  remains non-persistent.
+- `scripts/nebula-server.sh` provides the no-clobber single-host deployment and
+  lifecycle CLI over `compose.deploy.yaml`.
 - `Arcade` and `Party` are still planned placeholders.
 
 ## Content And Media
