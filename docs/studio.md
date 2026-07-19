@@ -31,12 +31,18 @@ It renders:
 - Library grouping by artist first, then album within an artist.
 - A responsive, eclipse-branded now-playing surface with local fallback album
   art, previous/next track commands, and a compact up-next queue.
+- A custom Nebula Studio transport with branded play/pause, seek, volume, mute,
+  previous, and next controls instead of browser-native audio chrome.
+- A persistent mini player that keeps the active track playing while the user
+  browses Library, Artists, Albums, search results, and playback history. It
+  exposes quick transport controls and a shortcut back to the full track view.
 - A real-time 4096-point FFT visualizer that maps the current audio window from
   the lowest resolvable audible frequency through 20 kHz using logarithmic
   spacing and up to 192 responsive bars, with a
   low-energy ambient animation when playback is paused, buffering, unsupported,
   or sourced from a server the browser cannot safely analyze.
-- Native `<audio data-studio-player controls>` playback.
+- A single persistent native `<audio data-studio-player>` playback engine hidden
+  behind Studio's custom full and mini-player controls.
 - Authenticated, per-user playback lifecycle reporting with periodic progress,
   pause, stop, and completion events.
 - Continue Listening and Listening History rails ordered by recent playback.

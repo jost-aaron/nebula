@@ -22,6 +22,68 @@ configuration generation, idempotent no-clobber initialization, backup token
 file permissions, and exact `compose.deploy.yaml` command construction; they do
 not start a production stack.
 
+Tailscale coverage verifies that both stacks include a dormant companion;
+`tailscaled` starts only after the fixed owner-controlled marker appears and
+stops without deleting state; bootstrap files use conservative modes; `.env`,
+argv, logs, and rendered Compose do not contain the auth key; the official image
+is digest-pinned and userspace-only; the fixed proxy target is loopback; and
+`AllowFunnel` is false. Server tests cover dynamic Secure cookie
+creation, login, password rotation, and clearing under
+`NEBULA_EXTERNAL_HTTPS=true`, prove forwarded headers alone do not enable the
+flag, verify deployment HMR-off behavior, accept only the exact
+sidecar-published hostname, and reject attacker-controlled or wildcard hosts.
+Network-path tests cover direct, peer-relay, DERP, idle, and unknown
+classification; reject malformed, oversized, and symlinked snapshots; and
+confirm that endpoint addresses, node keys, and Tailscale user identities do
+not appear in owner API responses.
+
+Static/Compose checks that need no tailnet credentials:
+
+```sh
+docker compose --env-file .env.example -f compose.deploy.yaml config --quiet
+docker compose --env-file .env.example -f compose.deploy.yaml config --services
+docker compose run --rm dashboard node --test \
+  tests/nebula-server-cli.test.mjs \
+  tests/server-tailscale-enrollment.test.mjs \
+  tests/server-vite-config.test.mjs \
+  tests/tailscale-admin-ui.test.mjs \
+  tests/tailscale-deployment.test.mjs
+```
+
+The service output must contain `dashboard` and `tailscale`; the latter should
+run only its idle supervisor until enabled. Never save rendered Compose output
+when a real secret source is in use.
+
+### Real-tailnet verification
+
+Automated tests cannot establish a private HTTPS endpoint without an approved
+tailnet and operator-generated credential. After following the bootstrap runbook
+in `deployment.md`, use an isolated tailnet/copied Nebula data and verify:
+
+1. `tailscale serve status` reports private HTTPS `/` proxying only to
+   `http://127.0.0.1:5173`, and the reviewed config still has
+   `AllowFunnel: false`.
+2. Recreating the sidecar before and after emptying/revoking the bootstrap key
+   preserves the same node identity and `*.ts.net` URL.
+3. An allowed device reaches HTTPS; a Grant-denied tailnet device and a device
+   outside the tailnet cannot connect.
+4. Owner setup, sign-in, reload, password rotation, CSRF mutation, and sign-out
+   work, and browser session cookies include `HttpOnly`, `SameSite=Lax`, and
+   `Secure`.
+5. Files browse/download, small upload, resumable 64 MB upload interruption and
+   resume, Cinema `206` seek/direct play, remux, progressive HLS, quality
+   switching, Studio playback/resume, and iOS Keychain restore all work.
+6. Dashboard-only and sidecar-only restarts recover independently. Measure both
+   direct and DERP-relayed throughput before considering any future opt-in
+   kernel mode; the current implementation intentionally has no TUN device or
+   network capabilities.
+7. With an empty mode-0600 auth-key file and empty state, Settings / Remote
+   Access starts Off. Enable it and confirm only a strict
+   `login.tailscale.com/a/...` link appears for the owner, opens in a separate
+   page, and changes to Connected after authorization. Disable it and confirm
+   localhost stays healthy, `tailscaled` exits, and state remains. Confirm a
+   member receives `403` and the dashboard has no daemon or Docker socket.
+
 Harmless operator CLI smoke checks:
 
 ```sh
@@ -193,8 +255,9 @@ Check:
 - Studio search filters tracks by title, artist, album, folder, and genre.
 - Studio track selection shows a music-specific detail/player UI with album
   art/fallback art, title metadata, server/status information, and next-up queue.
-- Studio playback uses native `<audio data-studio-player controls>` and no
-  large black video frame.
+- Studio playback uses one persistent `<audio data-studio-player>` engine behind
+  custom Studio transport controls and no large black video frame. Returning to
+  the library keeps playback active and exposes the responsive mini player.
 - Authenticated Studio playback reports start, progress, pause, stop, and
   completion events against stable catalog IDs.
 - Studio shows per-user Continue Listening and Listening History rails, and a
@@ -203,7 +266,9 @@ Check:
   history.
 - Studio shows a friendly player status if browser playback fails or a format
   is unsupported.
-- Cinema video titles still use the normal video player and fullscreen command.
+- Cinema video titles use one native video engine behind the custom Cinema
+  transport. Seek, play/pause, mute/volume, subtitles, quality selection, and
+  fullscreen remain reachable at desktop and phone widths.
 - Cinema Watchlist, More, Edit Details, Back to Library, Details, and Dashboard
   close paths still work for video titles.
 - Files opens the local content browser and is scoped to the ignored `content/`

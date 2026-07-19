@@ -3,6 +3,26 @@
 Nebula Dashboard is currently a small framework-free TypeScript app served by
 Vite. It is intentionally simple while the shell concepts are still forming.
 
+Both Compose stacks include a pinned official Tailscale userspace companion. Its
+supervisor is dormant until an owner creates one fixed enable marker through
+Settings. The unprivileged dashboard owns the shared network namespace and
+loopback port; the companion joins that namespace so
+fixed private Serve HTTPS can proxy to `127.0.0.1:5173`. The containers do not
+share daemon sockets, state, privileges, host networking, or application
+authorization. Disabling stops `tailscaled` without deleting node state or
+interrupting localhost.
+For browser-assisted enrollment, the companion publishes only a validated login
+URL, connected marker, and exact `*.ts.net` hostname through a dedicated volume.
+The dashboard can write or remove only the fixed enable marker; it receives no
+daemon or Docker socket and cannot alter Serve or Funnel configuration. Nebula
+validates the sidecar-published hostname exactly before passing requests to
+Vite; arbitrary hosts and wildcard Tailscale suffixes remain rejected.
+The companion also publishes a bounded atomic `tailscale status --json`
+snapshot. The owner-only backend reduces it to device name, OS, online/activity
+state, direct/peer-relay/DERP/idle classification, relay region, byte counters,
+and snapshot time. Raw endpoint addresses, node keys, user identities, profile
+data, and tailnet metadata never leave the backend API.
+
 `server/transcode/` includes a provider-neutral acceleration model beside the
 HLS runner. Detection is bounded, cached, optional, and fail-open to software;
 selection remains downstream of playback planning and policy admission.

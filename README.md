@@ -50,6 +50,13 @@ URL. It never replaces an existing `.env`. Read
 exact update, backup, and staged recovery workflows. The current runtime is not
 HA or hardened for public internet exposure.
 
+Both Compose stacks include a pinned, userspace Tailscale companion that remains
+dormant until an owner enables it in Settings / Remote Access. Localhost remains
+available, Serve is tailnet-only HTTPS, and Funnel is explicitly disabled. The
+sign-in page opens at Tailscale rather than in an iframe; Nebula receives no
+Tailscale daemon or Docker socket. See the security and enrollment runbook in
+[docs/deployment.md](docs/deployment.md#optional-private-tailscale-serve-https).
+
 ## Check
 
 ```sh

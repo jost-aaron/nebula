@@ -7,6 +7,8 @@ const styles = await readFile(new URL("../src/styles.css", import.meta.url), "ut
 
 test("Cinema exposes Auto, Original, and fixed profile controls with actual delivery status", () => {
   assert.match(source, /data-cinema-player-quality/);
+  assert.match(source, /data-cinema-action="player-quality"/);
+  assert.match(source, /data-cinema-quality-menu hidden/);
   for (const value of ["auto", "original", "240p", "360p", "480p", "720p", "1080p"]) assert.match(source, new RegExp(value));
   assert.match(source, /quality:\s*preference/);
   assert.match(source, /qualityResultLabel\(preference, created\.plan\)/);
@@ -21,9 +23,8 @@ test("Cinema uses native-or-MSE HLS and tears it down with delivery lifecycle", 
   assert.match(source, /startPositionSeconds:\s*targetPosition/);
 });
 
-test("quality controls remain reachable in the phone player layout", () => {
-  const finalPhoneOverride = styles.lastIndexOf("@media (max-width: 700px)");
-  const oldHiddenRule = styles.lastIndexOf(".cinema-player-header .cinema-player-quality {\n    display: none");
-  assert.ok(finalPhoneOverride > oldHiddenRule);
-  assert.match(styles.slice(finalPhoneOverride), /\.cinema-player-header \.cinema-player-quality[\s\S]*display:\s*grid/);
+test("quality controls remain reachable in the phone player transport", () => {
+  assert.match(styles, /\.cinema-quality-menu[\s\S]*width:\s*min\(310px/);
+  assert.match(styles, /\.cinema-control-menu\[hidden\][\s\S]*display:\s*none/);
+  assert.match(styles, /@media \(max-width: 700px\) \{[\s\S]*?\.cinema-transport-actions[\s\S]*?grid-template-columns:/);
 });

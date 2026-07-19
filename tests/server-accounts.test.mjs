@@ -13,7 +13,7 @@ import { createStorage } from "../server/storage.mjs";
 const ownerPassword = "correct horse battery";
 const memberPassword = "member password secure";
 
-const startApi = async ({ now, serviceToken = "" } = {}) => {
+const startApi = async ({ externalHttps = false, now, serviceToken = "" } = {}) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "nebula-accounts-test-"));
   const contentRoot = path.join(root, "content");
   const dataRoot = path.join(root, "data");
@@ -22,11 +22,13 @@ const startApi = async ({ now, serviceToken = "" } = {}) => {
   const previous = {
     NEBULA_API_TOKEN: process.env.NEBULA_API_TOKEN,
     NEBULA_AUTH_ALLOW_LOCALHOST: process.env.NEBULA_AUTH_ALLOW_LOCALHOST,
+    NEBULA_EXTERNAL_HTTPS: process.env.NEBULA_EXTERNAL_HTTPS,
     NEBULA_REQUIRE_AUTH: process.env.NEBULA_REQUIRE_AUTH
   };
   process.env.NEBULA_API_TOKEN = serviceToken;
   process.env.NEBULA_REQUIRE_AUTH = serviceToken ? "true" : "false";
   process.env.NEBULA_AUTH_ALLOW_LOCALHOST = "false";
+  process.env.NEBULA_EXTERNAL_HTTPS = externalHttps ? "true" : "false";
   const authGuard = createAuthGuard(accountStore);
   Object.entries(previous).forEach(([key, value]) => value === undefined ? delete process.env[key] : process.env[key] = value);
   const handler = createApiHandler(storage, accountStore, authGuard);
@@ -51,12 +53,13 @@ const startApi = async ({ now, serviceToken = "" } = {}) => {
   };
 };
 
-const jsonRequest = (url, { bearer, body, cookie, csrf, method = "GET", origin } = {}) => {
+const jsonRequest = (url, { bearer, body, cookie, csrf, forwardedProto, method = "GET", origin } = {}) => {
   const headers = { ...(body === undefined ? {} : { "content-type": "application/json" }) };
   if (bearer) headers.authorization = `Bearer ${bearer}`;
   if (cookie) headers.cookie = cookie;
   if (csrf) headers["x-nebula-csrf"] = csrf;
   if (origin) headers.origin = origin;
+  if (forwardedProto) headers["x-forwarded-proto"] = forwardedProto;
   return fetch(url, { body: body === undefined ? undefined : JSON.stringify(body), headers, method });
 };
 
@@ -155,6 +158,36 @@ test("cookie sessions require CSRF while native bearer sessions do not", async (
   const native = await nativeLogin.json();
   const bearerAccepted = await jsonRequest(`${api.baseUrl}/api/auth/profile`, { bearer: native.sessionToken, body: { displayName: "Native Owner" }, method: "PATCH" });
   assert.equal(bearerAccepted.status, 200);
+});
+
+test("external HTTPS secures setup, login, rotation, and clearing cookies without trusting forwarded headers", async (t) => {
+  const api = await startApi({ externalHttps: true });
+  t.after(() => api.close());
+  const owner = await setupOwner(api);
+  assert.match(owner.response.headers.get("set-cookie"), /; Secure(?:;|$)/);
+
+  const logout = await jsonRequest(`${api.baseUrl}/api/auth/logout`, { body: {}, cookie: owner.cookie, csrf: owner.data.csrfToken, method: "POST" });
+  assert.equal(logout.status, 200);
+  assert.match(logout.headers.get("set-cookie"), /Max-Age=0; Secure$/);
+
+  const login = await jsonRequest(`${api.baseUrl}/api/auth/login`, { body: { password: ownerPassword, username: "owner" }, method: "POST" });
+  const loginData = await login.json();
+  const loginCookie = login.headers.get("set-cookie");
+  assert.match(loginCookie, /; Secure(?:;|$)/);
+  const rotated = await jsonRequest(`${api.baseUrl}/api/auth/change-password`, {
+    body: { currentPassword: ownerPassword, newPassword: "new secure owner password" },
+    cookie: loginCookie.split(";", 1)[0], csrf: loginData.csrfToken, method: "POST"
+  });
+  assert.equal(rotated.status, 200);
+  assert.match(rotated.headers.get("set-cookie"), /; Secure(?:;|$)/);
+
+  const plainApi = await startApi();
+  t.after(() => plainApi.close());
+  const forwarded = await jsonRequest(`${plainApi.baseUrl}/api/auth/setup`, {
+    body: { displayName: "Owner", password: ownerPassword, username: "owner" }, forwardedProto: "https", method: "POST"
+  });
+  assert.equal(forwarded.status, 201);
+  assert.doesNotMatch(forwarded.headers.get("set-cookie"), /; Secure(?:;|$)/);
 });
 
 test("owner and member capabilities protect shared Files mutations", async (t) => {

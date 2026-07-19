@@ -46,18 +46,28 @@ test("Studio persists browser playback and offers accessible resume and restart 
 
   await page.locator("[data-studio-path]", { hasText: "E2E Track" }).last().click();
   const player = page.locator("audio[data-studio-player]");
-  await expect(player).toBeVisible();
+  await expect(player).toBeAttached();
   await expect.poll(() => player.evaluate((audio: HTMLAudioElement) => audio.paused)).toBe(true);
   const startResponse = page.waitForResponse((response) => playbackEvent(response.request(), "start"));
-  await player.evaluate((audio: HTMLAudioElement) => audio.play());
+  await content.getByRole("button", { name: "Play track" }).click();
   await expect.poll(() => playbackRequests.map((request) => request.event)).toContain("start");
   expect((await startResponse).ok()).toBe(true);
   await expect.poll(() => player.evaluate((audio: HTMLAudioElement) => audio.currentTime), { timeout: 10_000 }).toBeGreaterThan(2);
 
-  const pauseResponse = page.waitForResponse((response) => playbackEvent(response.request(), "pause") && response.ok());
-  await player.evaluate((audio: HTMLAudioElement) => audio.pause());
-  await pauseResponse;
   await page.getByRole("button", { name: "Back to Library" }).click();
+  const miniPlayer = page.getByRole("region", { name: "Now playing" });
+  await expect(miniPlayer).toBeVisible();
+  await expect(miniPlayer).toContainText("E2E Track");
+  const browsingTime = await player.evaluate((audio: HTMLAudioElement) => audio.currentTime);
+  await expect.poll(() => player.evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThan(browsingTime);
+
+  await miniPlayer.getByRole("button", { name: "Open E2E Track" }).click();
+  await expect(content).toContainText("Now Playing");
+  await page.getByRole("button", { name: "Back to Library" }).click();
+
+  const pauseResponse = page.waitForResponse((response) => playbackEvent(response.request(), "pause") && response.ok());
+  await miniPlayer.getByRole("button", { name: "Pause track" }).click();
+  await pauseResponse;
 
   const continueListening = page.getByRole("region", { name: "Continue listening" });
   const recentlyPlayed = page.getByRole("region", { name: "Recently played" });

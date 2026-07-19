@@ -490,26 +490,41 @@ const renderVideoPlayerView = (entry: CinemaEntry, subtitles: SubtitleTracksResp
         <p class="eyebrow">Now Playing</p>
         <h2>${escapeHtml(entry.title)}</h2>
       </div>
-      <label class="cinema-player-quality">Quality
-        <select data-cinema-player-quality aria-label="Playback quality">
-          <option value="auto"${quality.mode === "auto" ? " selected" : ""}>Auto</option>
-          <option value="original"${quality.mode === "original" ? " selected" : ""}>Original</option>
-          ${profiles.map((profile) => `<option value="${profile.id}"${quality.mode === "profile" && quality.profileId === profile.id ? " selected" : ""}>${escapeHtml(profile.label)} · ${formatBitrate(profile.totalBitrate)}</option>`).join("")}
-        </select>
-        <span data-cinema-quality-result>${escapeHtml(qualityResultLabel(quality))}</span>
-      </label>
-      <button type="button" data-cinema-action="player-fullscreen">Fullscreen</button>
     </header>
     <section class="cinema-video-stage">
-      <video class="cinema-player" data-cinema-player controls autoplay playsinline preload="metadata" crossorigin="anonymous"></video>
+      <video class="cinema-player" data-cinema-player autoplay playsinline preload="metadata" crossorigin="anonymous"></video>
       <div class="cinema-player-overlay">
         <button class="cinema-play-orb" type="button" data-cinema-action="play" aria-label="Play">${renderCinemaIcon("Play")}</button>
       </div>
-      <label class="cinema-player-subtitles">Subtitles <select data-cinema-player-subtitle><option value="">Off</option>${subtitles?.tracks.map((track) => `<option value="${escapeHtml(track.id)}"${track.id === subtitles.selectedSubtitleId ? " selected" : ""}>${escapeHtml(track.label || track.language || "Unknown")}</option>`).join("") ?? ""}</select></label>
       <div class="cinema-player-statusbar">
         <span><i class="cinema-status-dot ${currentServerInfo().online ? "online" : "offline"}"></i>${currentServerInfo().online ? "Server Online" : "Server Offline"}</span>
         <span data-cinema-player-status>Connecting to ${escapeHtml(currentServerInfo().name)}…</span>
       </div>
+      <section class="cinema-transport" aria-label="Video playback controls" data-cinema-controls>
+        <div class="cinema-transport-timeline">
+          <time data-cinema-current-time>0:00</time>
+          <input type="range" min="0" max="1000" value="0" step="1" data-cinema-seek aria-label="Seek through video" />
+          <time data-cinema-duration>0:00</time>
+        </div>
+        <div class="cinema-transport-actions">
+          <button class="cinema-transport-play" type="button" data-cinema-action="player-toggle" data-cinema-play-toggle aria-label="Play video">${renderCinemaIcon("Play")}</button>
+          <button type="button" data-cinema-action="player-mute" data-cinema-mute-toggle aria-label="Mute">${renderCinemaIcon("Volume2")}</button>
+          <input class="cinema-transport-volume" type="range" min="0" max="1" value="1" step="0.05" data-cinema-volume aria-label="Volume" />
+          <button class="cinema-control-menu-button" type="button" data-cinema-action="player-subtitles" aria-label="Subtitles" aria-expanded="false">${renderCinemaIcon("Captions")}<span data-cinema-subtitle-label>${escapeHtml(subtitles?.tracks.find((track) => track.id === subtitles.selectedSubtitleId)?.label || "Off")}</span></button>
+          <button class="cinema-control-menu-button" type="button" data-cinema-action="player-quality" aria-label="Quality" aria-expanded="false">${renderCinemaIcon("Gauge")}<span data-cinema-quality-label>${escapeHtml(qualityResultLabel(quality))}</span></button>
+          <button type="button" data-cinema-action="player-fullscreen" aria-label="Fullscreen video">${renderCinemaIcon("Maximize")}</button>
+        </div>
+        <div class="cinema-control-menu" data-cinema-subtitle-menu hidden>
+          <label class="cinema-player-subtitles"><span>Subtitles</span><select data-cinema-player-subtitle aria-label="Subtitle track"><option value="">Off</option>${subtitles?.tracks.map((track) => `<option value="${escapeHtml(track.id)}"${track.id === subtitles.selectedSubtitleId ? " selected" : ""}>${escapeHtml(track.label || track.language || "Unknown")}</option>`).join("") ?? ""}</select></label>
+        </div>
+        <div class="cinema-control-menu cinema-quality-menu" data-cinema-quality-menu hidden>
+          <label class="cinema-player-quality"><span>Quality</span><select data-cinema-player-quality aria-label="Playback quality">
+            <option value="auto"${quality.mode === "auto" ? " selected" : ""}>Auto</option>
+            <option value="original"${quality.mode === "original" ? " selected" : ""}>Original</option>
+            ${profiles.map((profile) => `<option value="${profile.id}"${quality.mode === "profile" && quality.profileId === profile.id ? " selected" : ""}>${escapeHtml(profile.label)} · ${formatBitrate(profile.totalBitrate)}</option>`).join("")}
+          </select><small data-cinema-quality-result>${escapeHtml(qualityResultLabel(quality))}</small></label>
+        </div>
+      </section>
     </section>
   </main>
 `;
@@ -1081,6 +1096,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     const status = content.querySelector<HTMLElement>("[data-cinema-player-status]");
 
     if (player && stage) {
+      const transport = stage.querySelector<HTMLElement>("[data-cinema-controls]");
       let sessionId: string | null = null;
       let deliveryId: string | null = null;
       let pendingDeliveryId: string | null = null;
@@ -1090,6 +1106,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       let ended = false;
       let lifecycleStarted = false;
       let lastProgressAt = 0;
+      let controlsHideTimer: number | null = null;
       let eventQueue = Promise.resolve();
       const report = (event: PlaybackEventKind) => {
         if (!playingEntry.id || !playingEntry.sourceId) return;
@@ -1121,8 +1138,63 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
           }
         }).catch(() => setStatus("Playing locally; progress sync is unavailable."));
       };
+      const controlsAreEngaged = () => {
+        const menuOpen = Array.from(stage.querySelectorAll<HTMLElement>(".cinema-control-menu"))
+          .some((menu) => !menu.hidden);
+        const focusedControl = transport?.contains(document.activeElement)
+          && document.activeElement instanceof HTMLElement
+          && document.activeElement.matches(":focus-visible");
+        return menuOpen || Boolean(focusedControl);
+      };
+      const clearControlsHideTimer = () => {
+        if (controlsHideTimer !== null) {
+          window.clearTimeout(controlsHideTimer);
+          controlsHideTimer = null;
+        }
+      };
+      const revealControls = (scheduleHide = true) => {
+        clearControlsHideTimer();
+        stage.classList.remove("controls-hidden");
+        if (!scheduleHide || player.paused || player.ended) return;
+        controlsHideTimer = window.setTimeout(() => {
+          controlsHideTimer = null;
+          if (!player.paused && !player.ended && !controlsAreEngaged()) stage.classList.add("controls-hidden");
+        }, 2_500);
+      };
+      const syncPlayerControls = () => {
+        const duration = Number.isFinite(player.duration) && player.duration > 0 ? player.duration : 0;
+        const progress = duration ? Math.min(1000, Math.round((player.currentTime / duration) * 1000)) : 0;
+        let bufferedEnd = 0;
+        for (let index = 0; index < player.buffered.length; index += 1) bufferedEnd = Math.max(bufferedEnd, player.buffered.end(index));
+        const bufferedProgress = duration ? Math.max(progress, Math.min(1000, Math.round((bufferedEnd / duration) * 1000))) : progress;
+        const isPlaying = !player.paused && !player.ended;
+        content.querySelectorAll<HTMLElement>("[data-cinema-current-time]").forEach((time) => { time.textContent = formatTime(player.currentTime); });
+        content.querySelectorAll<HTMLElement>("[data-cinema-duration]").forEach((time) => { time.textContent = formatTime(duration); });
+        content.querySelectorAll<HTMLInputElement>("[data-cinema-seek]").forEach((seek) => {
+          if (document.activeElement !== seek) seek.value = String(progress);
+          seek.style.setProperty("--cinema-progress", `${progress / 10}%`);
+          seek.style.setProperty("--cinema-buffered", `${bufferedProgress / 10}%`);
+        });
+        content.querySelectorAll<HTMLButtonElement>("[data-cinema-play-toggle]").forEach((button) => {
+          button.innerHTML = renderCinemaIcon(isPlaying ? "Pause" : "Play");
+          button.setAttribute("aria-label", isPlaying ? "Pause video" : "Play video");
+          button.setAttribute("aria-pressed", String(isPlaying));
+        });
+        content.querySelectorAll<HTMLInputElement>("[data-cinema-volume]").forEach((volume) => {
+          if (document.activeElement !== volume) volume.value = String(player.volume);
+          volume.style.setProperty("--cinema-volume", `${player.volume * 100}%`);
+        });
+        content.querySelectorAll<HTMLButtonElement>("[data-cinema-mute-toggle]").forEach((button) => {
+          const muted = player.muted || player.volume === 0;
+          button.innerHTML = renderCinemaIcon(muted ? "VolumeX" : "Volume2");
+          button.setAttribute("aria-label", muted ? "Unmute" : "Mute");
+          button.setAttribute("aria-pressed", String(muted));
+        });
+      };
       const renderPlaybackState = () => {
         stage.classList.toggle("is-playing", !player.paused && !player.ended);
+        revealControls(!player.paused && !player.ended);
+        syncPlayerControls();
       };
       const setStatus = (message: string) => {
         if (status) {
@@ -1146,7 +1218,15 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       const playerSubtitle = content.querySelector<HTMLSelectElement>("[data-cinema-player-subtitle]");
       attachSubtitle(playerSubtitle?.value || null);
       playerSubtitle?.addEventListener("change", async () => {
-        try { await selectSubtitleTrack(playingEntry.id!, playingEntry.sourceId!, playerSubtitle.value || null); attachSubtitle(playerSubtitle.value || null); }
+        try {
+          await selectSubtitleTrack(playingEntry.id!, playingEntry.sourceId!, playerSubtitle.value || null);
+          attachSubtitle(playerSubtitle.value || null);
+          const subtitleLabel = content.querySelector<HTMLElement>("[data-cinema-subtitle-label]");
+          if (subtitleLabel) subtitleLabel.textContent = playerSubtitle.selectedOptions[0]?.textContent || "Off";
+          const subtitleMenu = content.querySelector<HTMLElement>("[data-cinema-subtitle-menu]");
+          if (subtitleMenu) subtitleMenu.hidden = true;
+          content.querySelector<HTMLButtonElement>("[data-cinema-action='player-subtitles']")?.setAttribute("aria-expanded", "false");
+        }
         catch { setStatus("Subtitles are unavailable; video playback continues."); }
       });
 
@@ -1179,8 +1259,19 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
           lastProgressAt = Date.now();
           report("progress");
         }
+        syncPlayerControls();
       });
+      player.addEventListener("durationchange", syncPlayerControls);
+      player.addEventListener("loadedmetadata", syncPlayerControls);
+      player.addEventListener("progress", syncPlayerControls);
+      player.addEventListener("volumechange", syncPlayerControls);
+      stage.addEventListener("pointermove", () => revealControls());
+      stage.addEventListener("pointerdown", () => revealControls());
+      stage.addEventListener("keydown", () => revealControls());
+      stage.addEventListener("focusin", () => revealControls(false));
+      stage.addEventListener("focusout", () => queueMicrotask(() => revealControls()));
       const stopPlayback = () => {
+        clearControlsHideTimer();
         deliveryGeneration += 1;
         requestGeneration += 1;
         if (!ended && lifecycleStarted) {
@@ -1264,8 +1355,10 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
           qualityPreference = preference;
           const qualitySelect = content.querySelector<HTMLSelectElement>("[data-cinema-player-quality]");
           const qualityResult = content.querySelector<HTMLElement>("[data-cinema-quality-result]");
+          const qualityLabel = content.querySelector<HTMLElement>("[data-cinema-quality-label]");
           if (qualitySelect) { qualitySelect.value = qualityValue(preference); qualitySelect.disabled = false; }
           if (qualityResult) qualityResult.textContent = qualityResultLabel(preference, created.plan);
+          if (qualityLabel) qualityLabel.textContent = qualityResultLabel(preference);
           const readyMessage = created.plan.decision === "direct-play" ? "Direct play ready." : created.plan.decision === "remux" ? "Compatible MP4 ready." : "HLS stream ready.";
           setStatus(readyMessage);
           return true;
@@ -1284,13 +1377,16 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         const next = parseQualityValue(qualitySelect.value);
         const position = Number.isFinite(player.currentTime) ? player.currentTime : 0;
         qualitySelect.disabled = true;
+        const qualityMenu = content.querySelector<HTMLElement>("[data-cinema-quality-menu]");
+        if (qualityMenu) qualityMenu.hidden = true;
+        content.querySelector<HTMLButtonElement>("[data-cinema-action='player-quality']")?.setAttribute("aria-expanded", "false");
         void prepareDelivery(next, position, true);
       });
       void prepareDelivery();
     }
 
-    if (fullscreen && player instanceof HTMLVideoElement) {
-      void player.requestFullscreen?.();
+    if (fullscreen && stage) {
+      void stage.requestFullscreen?.();
     }
   };
 
@@ -1694,6 +1790,11 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     }
 
     if (!actionButton) {
+      if (!target.closest(".cinema-control-menu")) {
+        content.querySelectorAll<HTMLElement>(".cinema-control-menu").forEach((menu) => { menu.hidden = true; });
+        content.querySelectorAll<HTMLButtonElement>("[data-cinema-action='player-subtitles'], [data-cinema-action='player-quality']")
+          .forEach((button) => button.setAttribute("aria-expanded", "false"));
+      }
       return;
     }
 
@@ -1745,6 +1846,42 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       openTitle(active);
     }
 
+    if (action === "player-toggle") {
+      const player = content.querySelector<HTMLMediaElement>("[data-cinema-player]");
+
+      if (player) {
+        if (player.paused || player.ended) {
+          if (player.ended) player.currentTime = 0;
+          void player.play().catch(() => {
+            const status = content.querySelector<HTMLElement>("[data-cinema-player-status]");
+            if (status) status.textContent = "Playback could not start. Try Play again.";
+          });
+        } else {
+          player.pause();
+        }
+      }
+      return;
+    }
+
+    if (action === "player-mute") {
+      const player = content.querySelector<HTMLMediaElement>("[data-cinema-player]");
+      if (player) player.muted = !player.muted;
+      return;
+    }
+
+    if (action === "player-subtitles" || action === "player-quality") {
+      const menuSelector = action === "player-subtitles" ? "[data-cinema-subtitle-menu]" : "[data-cinema-quality-menu]";
+      const menu = content.querySelector<HTMLElement>(menuSelector);
+      const willOpen = Boolean(menu?.hidden);
+      content.querySelectorAll<HTMLElement>(".cinema-control-menu").forEach((candidate) => { candidate.hidden = true; });
+      content.querySelectorAll<HTMLButtonElement>("[data-cinema-action='player-subtitles'], [data-cinema-action='player-quality']")
+        .forEach((button) => button.setAttribute("aria-expanded", "false"));
+      if (menu) menu.hidden = !willOpen;
+      actionButton.setAttribute("aria-expanded", String(willOpen));
+      if (willOpen) queueMicrotask(() => menu?.querySelector<HTMLSelectElement>("select")?.focus());
+      return;
+    }
+
     if (action === "play" && view === "player") {
       const player = content.querySelector<HTMLMediaElement>("[data-cinema-player]");
 
@@ -1773,9 +1910,10 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
 
     if (action === "player-fullscreen") {
       const player = content.querySelector<HTMLMediaElement>("[data-cinema-player]");
+      const stage = player?.closest<HTMLElement>(".cinema-video-stage");
 
-      if (player instanceof HTMLVideoElement) {
-        void player.requestFullscreen?.();
+      if (stage) {
+        void stage.requestFullscreen?.();
       }
     }
 
@@ -1914,7 +2052,27 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   });
 
   app.addEventListener("input", (event) => {
-    const input = (event.target as HTMLElement).closest<HTMLInputElement>("[data-cinema-search]");
+    const target = event.target as HTMLElement;
+    const player = content.querySelector<HTMLMediaElement>("[data-cinema-player]");
+    const seek = target.closest<HTMLInputElement>("[data-cinema-seek]");
+
+    if (player && seek) {
+      const duration = Number.isFinite(player.duration) ? player.duration : 0;
+      if (duration > 0) player.currentTime = (Number(seek.value) / 1000) * duration;
+      seek.style.setProperty("--cinema-progress", `${Number(seek.value) / 10}%`);
+      return;
+    }
+
+    const volume = target.closest<HTMLInputElement>("[data-cinema-volume]");
+
+    if (player && volume) {
+      player.volume = Number(volume.value);
+      player.muted = false;
+      volume.style.setProperty("--cinema-volume", `${Number(volume.value) * 100}%`);
+      return;
+    }
+
+    const input = target.closest<HTMLInputElement>("[data-cinema-search]");
 
     if (input) {
       query = input.value.trim();

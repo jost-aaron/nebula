@@ -3,6 +3,7 @@ import path from "node:path";
 import { access } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
+import { createExactViteHostGuard, createViteServerOptions } from "./viteConfig.mjs";
 import { createApiHandler } from "./api.mjs";
 import { createAuthGuard } from "./auth.mjs";
 import { applyApiCorsHeaders, handleApiPreflight } from "./cors.mjs";
@@ -28,6 +29,7 @@ import { createMediaListsService, mediaListsMigration } from "./mediaLists/index
 import { createSubtitleService, subtitleMigration } from "./subtitles/index.mjs";
 import { createRenditionService, createRenditionStore, renditionsMigration } from "./renditions/index.mjs";
 import { createRenditionCleanupScheduler, createRenditionPolicyRepository, createRenditionPolicyService, renditionPolicyMigrations } from "./renditionPolicy/index.mjs";
+import { createTailscaleEnrollmentService } from "./tailscaleEnrollment.mjs";
 import {
   createCatalogCheck,
   createDatabaseCheck,
@@ -46,12 +48,12 @@ const backupRoot = process.env.NEBULA_BACKUP_ROOT ? path.resolve(process.env.NEB
 const restoreStagingRoot = process.env.NEBULA_RESTORE_STAGING_ROOT ? path.resolve(process.env.NEBULA_RESTORE_STAGING_ROOT) : path.join(dataRoot, "restore-staging");
 const port = Number(process.env.PORT ?? 5173);
 const host = process.env.HOST ?? "0.0.0.0";
-const viteAllowedHosts = (process.env.NEBULA_VITE_ALLOWED_HOSTS ?? "").split(",").map((value) => value.trim()).filter(Boolean);
 
 const storage = await createStorage({ contentRoot, dataRoot });
 const database = await openNebulaDatabase(storage.accountDatabasePath);
 const accountStore = await createAccountStore({ database });
 const guestService = createGuestService({ accountStore });
+const tailscaleEnrollment = createTailscaleEnrollmentService();
 accountStore.setOwnerCreatedHook(() => guestService.revokeAll());
 applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration, renditionsMigration, ...renditionPolicyMigrations]);
 const auditService = createAuditService({
@@ -159,7 +161,11 @@ const jobsWorker = createJobsWorker({
   }),
   repository: jobsRepository
 });
-const authGuard = createAuthGuard(accountStore, { audit: auditService, guestService });
+const authGuard = createAuthGuard(accountStore, {
+  audit: auditService,
+  externalHttps: () => process.env.NEBULA_EXTERNAL_HTTPS === "true" || tailscaleEnrollment.isExternalHttpsActive(),
+  guestService
+});
 const backupService = createBackupService({
   backupRoot,
   dataRoot: storage.dataRoot,
@@ -215,7 +221,8 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   renditions: renditionService,
   renditionPolicy,
   transcodeAcceleration: { refresh: accelerationManager.refresh, setMode: accelerationManager.setMode, status: transcodeService.status },
-  subtitles: subtitleService
+  subtitles: subtitleService,
+  tailscaleEnrollment
 });
 jobsWorker.start();
 jobsService.enqueue({ type: "scan", payload: { rootId: catalogRoot.id }, dedupeKey: `startup:${catalogRoot.id}` });
@@ -223,21 +230,25 @@ const renditionCleanupScheduler = createRenditionCleanupScheduler({ enqueue: ren
 renditionPolicy.enqueueCleanup("startup");
 renditionCleanupScheduler.start();
 
+const viteServerOptions = createViteServerOptions();
 const vite = await createViteServer({
   cacheDir: path.join(storage.dataRoot, "vite-cache"),
   server: {
-    ...(viteAllowedHosts.length > 0 ? { allowedHosts: viteAllowedHosts } : {}),
     middlewareMode: true,
     host,
-    hmr: {
-      host: "127.0.0.1"
-    }
+    ...viteServerOptions,
+    // Nebula performs exact validation before Vite so the sidecar-published
+    // hostname can become available without weakening to a wildcard suffix.
+    allowedHosts: true
   },
   appType: "spa"
 });
+const viteHostGuard = createExactViteHostGuard({ dynamicHost: tailscaleEnrollment.currentFqdn });
 
 const httpServer = createHttpServer(async (request, response) => {
   const url = new URL(request.url ?? "/", "http://nebula.local");
+
+  if (!viteHostGuard(request, response)) return;
 
   if (await handleObservability(request, response, url)) {
     return;

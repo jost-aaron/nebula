@@ -216,6 +216,30 @@ http://10.44.0.1:5173
 Production deployments should prefer HTTPS when the server is reachable through
 a stable private DNS name or tunnel.
 
+Nebula's dormant deployment companion can expose private HTTPS through Tailscale
+Serve without a public port or router forwarding. An owner enables it under
+Settings / Remote Access. Install the official Tailscale
+app on the iPhone, join the authorized tailnet, and set Client / Server URL to:
+
+```text
+https://nebula.<tailnet-name>.ts.net
+```
+
+The server must use the current Compose deployment and conservative account
+settings documented in `deployment.md`. The existing `capacitor://localhost`
+API origin remains valid. Native account tokens stay in the Keychain and Nebula
+accounts remain required; Tailscale identity headers do not create or
+authenticate Nebula users. Changing from a LAN URL to the Tailscale URL
+intentionally removes the old URL-scoped Keychain session and requires sign-in.
+This feature does not embed Tailscale or an Apple Network Extension in the
+Capacitor application.
+
+Server owners may complete the server node's initial enrollment from the web
+dashboard under Settings / Remote Access. This does not enroll an iPhone or
+replace the Tailscale iOS app: each client device must separately join the
+authorized tailnet before its browser or Nebula client can reach the private
+Serve URL.
+
 Cross-origin `/api/*` requests from the iOS web view are supported through
 minimal API-only CORS handling. The default explicit origin allowlist is
 `capacitor://localhost`, `http://localhost:5173`, and

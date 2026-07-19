@@ -6,8 +6,8 @@ const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 const clientLabel = (request, body) => String(body.clientLabel ?? request.headers["user-agent"] ?? "Nebula client").slice(0, 160);
 const isNative = (body) => body.clientType === "native";
 
-const authResponse = (request, response, status, result, native) => {
-  if (!native) response.setHeader("set-cookie", sessionCookie(request, result.session.token, SESSION_MAX_AGE_SECONDS));
+const authResponse = (request, response, status, result, native, cookieOptions) => {
+  if (!native) response.setHeader("set-cookie", sessionCookie(request, result.session.token, SESSION_MAX_AGE_SECONDS, cookieOptions));
   json(response, status, {
     csrfToken: native ? null : result.session.csrfToken,
     expiresAt: result.session.expiresAt,
@@ -18,6 +18,8 @@ const authResponse = (request, response, status, result, native) => {
 };
 
 export const createAccountRoutes = (accountStore, authGuard, libraryPermissions = null, audit = null, guestService = null) => async (request, response, url) => {
+  const cookieOptions = { externalHttps: authGuard?.externalHttps };
+  const clearCookie = () => clearSessionCookie(request, cookieOptions);
   if (request.method === "GET" && url.pathname === "/api/auth/status") {
     const context = request.nebulaAuth;
     json(response, 200, {
@@ -37,7 +39,7 @@ export const createAccountRoutes = (accountStore, authGuard, libraryPermissions 
       return true;
     }
     const session = guestService.createSession();
-    response.setHeader("set-cookie", sessionCookie(request, session.token, Math.max(1, Math.floor((Date.parse(session.expiresAt) - Date.now()) / 1000))));
+    response.setHeader("set-cookie", sessionCookie(request, session.token, Math.max(1, Math.floor((Date.parse(session.expiresAt) - Date.now()) / 1000)), cookieOptions));
     json(response, 201, { csrfToken: session.csrfToken, expiresAt: session.expiresAt, transport: "cookie", principal: "guest", user: null });
     return true;
   }
@@ -49,7 +51,7 @@ export const createAccountRoutes = (accountStore, authGuard, libraryPermissions 
         clientLabel: clientLabel(request, body), displayName: body.displayName, password: body.password, username: body.username
       });
       audit?.recordBestEffort({ actor: { kind: "account", principalId: result.user.id, role: result.user.role }, eventType: "account.owner_setup", outcome: "success", target: { type: "account", id: result.user.id }, metadata: { clientType: isNative(body) ? "native" : "browser" } });
-      authResponse(request, response, 201, result, isNative(body));
+      authResponse(request, response, 201, result, isNative(body), cookieOptions);
     } catch (error) {
       audit?.recordBestEffort({ actor: { kind: "anonymous" }, eventType: "account.owner_setup", outcome: "failure", metadata: { clientType: isNative(body) ? "native" : "browser" } });
       throw error;
@@ -62,7 +64,7 @@ export const createAccountRoutes = (accountStore, authGuard, libraryPermissions 
     try {
       const result = await accountStore.login({ clientLabel: clientLabel(request, body), password: body.password, remoteAddress: authGuard.remoteAddress(request), username: body.username });
       audit?.recordBestEffort({ actor: { kind: "account", principalId: result.user.id, role: result.user.role }, eventType: "account.login", outcome: "success", target: { type: "account", id: result.user.id }, metadata: { clientType: isNative(body) ? "native" : "browser", transport: isNative(body) ? "bearer" : "cookie" } });
-      authResponse(request, response, 200, result, isNative(body));
+      authResponse(request, response, 200, result, isNative(body), cookieOptions);
     } catch (error) {
       audit?.recordBestEffort({ actor: { kind: "anonymous" }, eventType: "account.login", outcome: "failure", metadata: { clientType: isNative(body) ? "native" : "browser" } });
       throw error;
@@ -73,7 +75,7 @@ export const createAccountRoutes = (accountStore, authGuard, libraryPermissions 
   const context = request.nebulaAuth;
   if (context?.kind === "guest" && request.method === "POST" && url.pathname === "/api/auth/logout") {
     guestService?.revokeSession(context.sessionId);
-    response.setHeader("set-cookie", clearSessionCookie(request));
+    response.setHeader("set-cookie", clearCookie());
     json(response, 200, { ok: true });
     return true;
   }
@@ -139,7 +141,7 @@ export const createAccountRoutes = (accountStore, authGuard, libraryPermissions 
   if (request.method === "POST" && url.pathname === "/api/auth/logout") {
     accountStore.revokeSession(context.user.id, context.sessionId);
     audit?.recordBestEffort({ actor: actorFromContext(context), eventType: "account.logout", outcome: "success", target: { type: "session", id: context.sessionId }, metadata: { transport: context.transport } });
-    response.setHeader("set-cookie", clearSessionCookie(request));
+    response.setHeader("set-cookie", clearCookie());
     json(response, 200, { ok: true });
     return true;
   }
@@ -163,7 +165,7 @@ export const createAccountRoutes = (accountStore, authGuard, libraryPermissions 
       const result = await accountStore.changePassword({ clientLabel: clientLabel(request, body), currentPassword: body.currentPassword, currentSessionId: context.sessionId, newPassword: body.newPassword, userId: context.user.id });
       audit?.recordBestEffort({ actor: actorFromContext(context), eventType: "account.password_changed", outcome: "success", target: { type: "account", id: context.user.id } });
       const native = context.transport === "bearer";
-      if (!native) response.setHeader("set-cookie", sessionCookie(request, result.session.token, SESSION_MAX_AGE_SECONDS));
+      if (!native) response.setHeader("set-cookie", sessionCookie(request, result.session.token, SESSION_MAX_AGE_SECONDS, cookieOptions));
       json(response, 200, { csrfToken: native ? null : result.session.csrfToken, expiresAt: result.session.expiresAt, sessionToken: native ? result.session.token : undefined, transport: context.transport, user: accountStore.getUser(context.user.id) });
     } catch (error) {
       audit?.recordBestEffort({ actor: actorFromContext(context), eventType: "account.password_changed", outcome: "failure", target: { type: "account", id: context.user.id } });
@@ -225,7 +227,7 @@ export const createAccountRoutes = (accountStore, authGuard, libraryPermissions 
   if (request.method === "DELETE" && sessionMatch) {
     accountStore.revokeSession(context.user.id, sessionMatch[1]);
     audit?.recordBestEffort({ actor: actorFromContext(context), eventType: "account.session_revoked", outcome: "success", target: { type: "session", id: sessionMatch[1] } });
-    if (sessionMatch[1] === context.sessionId) response.setHeader("set-cookie", clearSessionCookie(request));
+    if (sessionMatch[1] === context.sessionId) response.setHeader("set-cookie", clearCookie());
     json(response, 200, { currentRevoked: sessionMatch[1] === context.sessionId, ok: true });
     return true;
   }

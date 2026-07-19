@@ -55,7 +55,7 @@ const capabilityForRoute = (request, url) => {
   const path = url.pathname;
   if (path === "/api/auth/server-settings/tmdb") return "server.admin";
   if (path === "/api/auth/accounts" || path.startsWith("/api/auth/accounts/")) return "server.admin";
-  if (path === "/api/admin/observability/readiness" || path === "/api/admin/audit" || path === "/api/admin/backups" || path.startsWith("/api/admin/backups/") || path.startsWith("/api/admin/playback-policy") || path.startsWith("/api/admin/transcode-acceleration") || path.startsWith("/api/admin/rendition-policy") || path.startsWith("/api/admin/renditions")) return "server.admin";
+  if (path === "/api/admin/observability/readiness" || path === "/api/admin/audit" || path === "/api/admin/backups" || path.startsWith("/api/admin/backups/") || path.startsWith("/api/admin/playback-policy") || path.startsWith("/api/admin/tailscale") || path.startsWith("/api/admin/transcode-acceleration") || path.startsWith("/api/admin/rendition-policy") || path.startsWith("/api/admin/renditions")) return "server.admin";
   if (path.startsWith("/api/collections")) return ["GET", "HEAD"].includes(method) ? "media.read" : "server.admin";
   if (path.startsWith("/api/playlists")) return "media.read";
   if (path.startsWith("/api/auth/")) return "account.use";
@@ -75,18 +75,18 @@ const capabilityForRoute = (request, url) => {
 
 const isStateChanging = (request) => !["GET", "HEAD", "OPTIONS"].includes(request.method ?? "GET");
 
-export const sessionCookie = (request, token, maxAgeSeconds) => {
-  const secure = Boolean(request.socket.encrypted);
+export const sessionCookie = (request, token, maxAgeSeconds, { externalHttps = process.env.NEBULA_EXTERNAL_HTTPS === "true" } = {}) => {
+  const secure = Boolean(request.socket.encrypted) || (typeof externalHttps === "function" ? externalHttps() : externalHttps);
   return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure ? "; Secure" : ""}`;
 };
 
-export const clearSessionCookie = (request) => sessionCookie(request, "", 0);
+export const clearSessionCookie = (request, options) => sessionCookie(request, "", 0, options);
 
 export const createAuthGuard = (accountStore = {
   authenticateMediaTicket: () => null,
   authenticateSession: () => null,
   countUsers: () => 1
-}, { audit = null, guestService = null } = {}) => {
+}, { audit = null, externalHttps = process.env.NEBULA_EXTERNAL_HTTPS === "true", guestService = null } = {}) => {
   const serviceAuthRequired = process.env.NEBULA_REQUIRE_AUTH === "true";
   const serviceToken = process.env.NEBULA_API_TOKEN ?? "";
   const allowLocalhost = process.env.NEBULA_AUTH_ALLOW_LOCALHOST !== "false";
@@ -140,6 +140,7 @@ export const createAuthGuard = (accountStore = {
   };
 
   return {
+    externalHttps,
     hasCapability(context, capability) {
       return Boolean(context?.capabilities?.has(capability));
     },

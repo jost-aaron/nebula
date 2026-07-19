@@ -22,7 +22,7 @@ test("eligible first run offers a temporary guest without personal history or ow
   await expect(page.locator("[data-studio-content]")).toContainText("E2E Track");
   await page.locator("[data-studio-path]", { hasText: "E2E Track" }).last().click();
   const player = page.locator("audio[data-studio-player]");
-  await expect(player).toBeVisible();
+  await expect(player).toBeAttached();
   await player.evaluate((audio: HTMLAudioElement) => audio.play());
   await expect.poll(() => player.evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThan(0.2);
   await player.evaluate((audio: HTMLAudioElement) => audio.pause());

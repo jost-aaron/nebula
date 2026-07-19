@@ -18,6 +18,9 @@ services:
       - type: bind
         source: ${NEBULA_BACKUP_PATH:?set NEBULA_BACKUP_PATH}
         target: /app/backups
+      - type: volume
+        source: tailscale-enrollment
+        target: /run/nebula-tailscale
     environment:
       HOST: 0.0.0.0
       PORT: "5173"
@@ -31,6 +34,11 @@ services:
       NEBULA_GUEST_SESSION_TTL_MS: "${NEBULA_GUEST_SESSION_TTL_MS:-28800000}"
       NEBULA_CORS_ALLOWED_ORIGINS: "${NEBULA_CORS_ALLOWED_ORIGINS:-}"
       NEBULA_VITE_ALLOWED_HOSTS: "${NEBULA_VITE_ALLOWED_HOSTS:-}"
+      NEBULA_VITE_HMR: "${NEBULA_VITE_HMR:-false}"
+      NEBULA_EXTERNAL_HTTPS: "${NEBULA_EXTERNAL_HTTPS:-false}"
+      NEBULA_TAILSCALE_UI_ENABLED: "true"
+      NEBULA_TAILSCALE_FQDN: "${NEBULA_TAILSCALE_FQDN:-}"
+      NEBULA_TAILSCALE_CONTROL_PATH: /run/nebula-tailscale
       NEBULA_AUDIT_RETENTION_DAYS: "${NEBULA_AUDIT_RETENTION_DAYS:-90}"
       NEBULA_AUDIT_MAX_EVENTS: "${NEBULA_AUDIT_MAX_EVENTS:-10000}"
       NEBULA_TRANSCODE_ACCELERATION: "${NEBULA_TRANSCODE_ACCELERATION:-software-only}"
@@ -43,3 +51,44 @@ services:
       retries: 3
       start_period: 30s
     stop_grace_period: 45s
+
+  tailscale:
+    image: tailscale/tailscale@sha256:25cde9ad76020b0e29229136d0c38b5962e9a0e1774ffac9b0df68e4a37d6cf0
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/config/containerboot-enrollment.sh"]
+    network_mode: "service:dashboard"
+    depends_on:
+      dashboard:
+        condition: service_healthy
+    environment:
+      TS_AUTH_ONCE: "true"
+      TS_AUTHKEY: "file:/run/secrets/tailscale_authkey"
+      TS_HOSTNAME: "${NEBULA_TAILSCALE_HOSTNAME:-nebula}"
+      TS_KUBE_SECRET: ""
+      TS_SERVE_CONFIG: /config/serve.json
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"
+      TS_ENABLE_HEALTH_CHECK: "true"
+      TS_LOCAL_ADDR_PORT: "127.0.0.1:9002"
+      NEBULA_DASHBOARD_GID: "${NEBULA_GID:-1000}"
+      NEBULA_TAILSCALE_CONTROL_DIR: /var/run/nebula-tailscale
+    secrets:
+      - tailscale_authkey
+    volumes:
+      - type: bind
+        source: ${NEBULA_TAILSCALE_STATE_PATH:-/srv/nebula/tailscale/state}
+        target: /var/lib/tailscale
+      - type: bind
+        source: ./deploy/tailscale
+        target: /config
+        read_only: true
+      - type: volume
+        source: tailscale-enrollment
+        target: /var/run/nebula-tailscale
+
+secrets:
+  tailscale_authkey:
+    file: ${NEBULA_TAILSCALE_AUTHKEY_FILE:-/dev/null}
+
+volumes:
+  tailscale-enrollment:

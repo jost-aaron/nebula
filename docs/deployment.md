@@ -110,10 +110,13 @@ original host, but do not use forwarded headers as an authentication boundary.
 Set `NEBULA_VITE_ALLOWED_HOSTS` to the exact external DNS names if Vite rejects
 them. Terminate TLS at the proxy, set normal request/body timeouts generously
 for media and uploads, and avoid logging Authorization headers, cookies, query
-strings, or media-ticket URLs. Nebula sets a Secure session cookie only when
-its direct request is HTTPS, so TLS termination at a proxy does not currently
-make that cookie Secure. This is a known limitation: keep the proxy-to-Nebula
-hop and client network trusted, and do not expose the current runtime publicly.
+strings, or media-ticket URLs. When TLS terminates at a reviewed same-host
+proxy, set `NEBULA_EXTERNAL_HTTPS=true` so browser session cookies are marked
+Secure when created, rotated, and cleared. This explicit setting does not trust
+`X-Forwarded-Proto`; forwarded headers are not an authentication boundary. Set
+`NEBULA_VITE_HMR=false` outside development and list only exact external
+hostnames in `NEBULA_VITE_ALLOWED_HOSTS`. Wildcards, URL values, port-qualified
+values, and parent-domain suffixes are rejected.
 
 For direct LAN evaluation, set `NEBULA_BIND_ADDRESS=0.0.0.0`, allow only the
 chosen TCP port in the host firewall, and connect to
@@ -128,6 +131,157 @@ development localhost origins. Add exact comma-separated client origins with
 not supported. Browser cookie mutations require `X-Nebula-CSRF`. Native bearer
 sessions do not require CSRF. HTML media uses narrow, expiring, revocable media
 tickets instead of bearer headers.
+
+## Optional private Tailscale Serve HTTPS
+
+`compose.deploy.yaml` includes the official Tailscale 1.98.4 image pinned by a
+reviewed registry digest. The companion container starts with only an idle
+supervisor; `tailscaled` does not run until an owner enables Remote Access. It
+runs in userspace mode and joins the dashboard's network namespace. The
+dashboard publishes its port on host loopback; the companion proxies the fixed
+`http://127.0.0.1:5173` target through private Tailscale Serve HTTPS. It receives
+no host networking, TUN device, capabilities, or dashboard data/content mounts.
+The dashboard receives no Tailscale or Docker socket, state directory, or
+privileges. Disabling it stops `tailscaled` but preserves node state, and
+localhost remains available throughout. Nebula reads the sanitized FQDN from
+the enrollment volume and permits only that exact dynamic host; it does not
+allow a wildcard `.ts.net` suffix.
+
+Settings → Remote Access includes an owner-only Network Path view. It reports
+the server's current sanitized peer table as Direct, Peer relay, DERP relay, or
+Idle and refreshes every five seconds. This is a point-in-time server view:
+Tailscale can change paths as network conditions change, and Serve does not
+provide Nebula with a trustworthy device identifier for labeling one peer as
+the current browser. The status bridge is bounded and read-only; the dashboard
+still receives no Tailscale daemon socket or control API.
+
+This is **Tailscale Serve, not Funnel**. `deploy/tailscale/serve.json` explicitly
+sets `AllowFunnel` false. The sidecar is available only to devices authorized by
+the tailnet policy, while Nebula accounts, CSRF, roles, library permissions,
+sessions, and media tickets remain mandatory.
+
+### Bootstrap with the operator CLI
+
+Before enrollment, enable HTTPS certificates for the test/production tailnet and
+choose a generic machine name such as `nebula`. The assigned FQDN is published
+in Certificate Transparency logs even though the service is private, so never
+place a person's name or another secret in it.
+
+Initialize without starting containers:
+
+```sh
+sudo ./scripts/nebula-server.sh --tailscale --tailscale-hostname nebula init
+```
+
+This creates `/srv/nebula/tailscale/state` as mode `0700`, creates an empty
+`/srv/nebula/tailscale/authkey` as mode `0600`, and enables the owner-only
+control surface. Ordinary `init` does the same so Tailscale can be enabled later
+without redeploying. Review `.env`, validate, and start:
+
+```sh
+sudo ./scripts/nebula-server.sh --tailscale validate
+sudo ./scripts/nebula-server.sh --tailscale up
+```
+
+Open the local owner URL printed by the CLI, complete owner setup or sign in,
+then select **Settings / Remote Access / Enable Tailscale** followed by
+**Open Tailscale Sign-In**. Authentication
+opens as a top-level Tailscale page, never an iframe. The sidecar publishes only
+the strict one-time `https://login.tailscale.com/a/...` URL through a narrow
+fixed-file control/status volume. Nebula receives neither the Tailscale daemon socket nor Docker
+control and never receives the identity-provider password or browser session.
+The panel automatically changes to Connected when the sidecar health endpoint
+reports a tailnet IP.
+
+An operator-generated, narrowly scoped, preferably tagged and one-off bootstrap
+auth key remains supported for unattended enrollment. Paste it through standard
+input so it does not appear in shell history or argv before starting:
+
+```sh
+sudo sh -c 'umask 077; cat > /srv/nebula/tailscale/authkey'
+# paste once, then press Ctrl-D
+```
+
+After either enrollment path, inspect Serve:
+
+```sh
+docker compose --env-file .env -f compose.deploy.yaml \
+  exec tailscale tailscale serve status
+```
+
+The direct Compose equivalent, after the same directory, secret-file, and `.env`
+preparation, is:
+
+```sh
+docker compose --env-file .env -f compose.deploy.yaml \
+  up -d --build
+```
+
+The Tailscale mode refuses startup unless all of these are true:
+
+- `NEBULA_BIND_ADDRESS=127.0.0.1`;
+- `NEBULA_AUTH_ALLOW_LOCALHOST=false`;
+- `NEBULA_FIRST_RUN_GUEST_ENABLED=false`;
+- `NEBULA_VITE_HMR=false`; Secure cookies activate from the companion's fixed
+  connected marker rather than forwarded headers;
+- any configured `NEBULA_VITE_ALLOWED_HOSTS` is an exact `*.ts.net` hostname;
+  otherwise the sanitized connected hostname is added dynamically and exactly;
+- state and auth-key paths exist with modes `0700` and `0600` and state is not
+  under the content root;
+- either a bootstrap key is present, persistent enrolled state exists, or both
+  `NEBULA_TAILSCALE_INTERACTIVE_LOGIN=true` and
+  `NEBULA_TAILSCALE_UI_ENABLED=true` explicitly permit browser enrollment.
+
+The Remote Access API is owner-only. It can create or remove only the fixed
+`enabled` marker, report Disabled, Starting, Sign-in required, or Connected, and
+return only the private server URL and a validated Tailscale login URL. It cannot
+run arbitrary daemon commands, generate keys, edit tailnet policy, change Serve
+targets, enable Funnel, or delete node state.
+
+After enrollment, recreate the sidecar and confirm the same machine identity
+and Serve URL return from persistent state. Then empty the bootstrap file,
+revoke/delete the key in the Tailscale admin console, recreate again, and verify
+identity persistence:
+
+```sh
+sudo sh -c ': > /srv/nebula/tailscale/authkey && chmod 0600 /srv/nebula/tailscale/authkey'
+docker compose --env-file .env -f compose.deploy.yaml \
+  up -d --force-recreate tailscale
+docker compose --env-file .env -f compose.deploy.yaml \
+  exec tailscale tailscale serve status
+```
+
+Protect and back up Tailscale node state as a private machine credential, but
+keep it separate from Nebula database backups and media. A Tailscale outage
+removes remote access only; dashboard health/readiness and local loopback access
+do not depend on the sidecar.
+
+Representative least-privilege tailnet Grants are operator-managed and
+additive to existing policy:
+
+```json
+{
+  "groups": {
+    "group:nebula-users": ["alice@example.com", "bob@example.com"]
+  },
+  "tagOwners": {
+    "tag:nebula": ["autogroup:admin"]
+  },
+  "grants": [
+    {
+      "src": ["group:nebula-users"],
+      "dst": ["tag:nebula"],
+      "ip": ["tcp:443"]
+    }
+  ]
+}
+```
+
+Validate policy in the Tailscale admin console/current policy validator. Nebula
+never creates keys, edits Grants, enables tailnet HTTPS, disables key expiry, or
+administers Tailscale. Upgrade the pinned sidecar only as a reviewed source
+change, then repeat enrollment persistence, Serve privacy, range, HLS, upload,
+and restart checks before rollout.
 
 ## iPhone and native sessions
 
@@ -306,6 +460,11 @@ Values are strings. Blank means unset unless stated otherwise.
 | `NEBULA_GUEST_SESSION_TTL_MS` | `28800000` | No | Guest lifetime in milliseconds; numeric. Guests remain memory-only and capability-limited. |
 | `NEBULA_CORS_ALLOWED_ORIGINS` | blank extras | No | Exact comma-separated additions to built-in API origins. Never use broad/untrusted origins. |
 | `NEBULA_VITE_ALLOWED_HOSTS` | blank | No | Exact comma-separated hostnames Vite accepts in addition to defaults; needed behind some proxies. |
+| `NEBULA_VITE_HMR` | enabled unless exactly `false`; deployment `false` | No | Disables Vite HMR for deployed remote clients. Development remains enabled. |
+| `NEBULA_EXTERNAL_HTTPS` | `false` | No | Explicitly marks browser session create/rotate/clear cookies Secure when TLS terminates before Nebula. Forwarded headers do not affect it. |
+| `NEBULA_TAILSCALE_HOSTNAME` | `nebula` | No | Generic machine name used by the dormant companion. Avoid sensitive names because HTTPS FQDNs enter Certificate Transparency logs. |
+| `NEBULA_TAILSCALE_STATE_PATH` | `/srv/nebula/tailscale/state` | **Yes** | Mode-0700 persistent node identity outside content. Protect as a credential. |
+| `NEBULA_TAILSCALE_AUTHKEY_FILE` | `/srv/nebula/tailscale/authkey` | **Yes** | Mode-0600 Docker secret source used for bootstrap. The key value never belongs in `.env`; empty after verified enrollment and revoke upstream. |
 | `NEBULA_AUDIT_RETENTION_DAYS` | `90` | No | Audit age; invalid values fall back to 90, then clamp to 1-3650 days. |
 | `NEBULA_AUDIT_MAX_EVENTS` | `10000` | No | Audit count; invalid values fall back to 10000, then clamp to 100-100000. |
 | `TMDB_API_TOKEN` | blank | **Yes** | Fallback TMDB Read Access Token. Owner-saved database setting takes precedence and is also secret. Cinema works without it. |

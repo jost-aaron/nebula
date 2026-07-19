@@ -33,7 +33,16 @@ It renders:
 - A searchable local video grid.
 - A persistent per-account watchlist for saved video titles.
 - A dedicated title details submenu after selecting a title.
-- Lazy video playback with the normal browser video player.
+- Lazy video playback through a native `<video>` engine with Nebula Cinema's
+  custom play/pause, seek, volume, mute, subtitle, quality, and fullscreen
+  controls. Fullscreen includes the custom transport rather than falling back
+  to browser-native chrome.
+- The transport sits flush with the video edge, shows played and buffered
+  progress separately, and keeps subtitle and quality selectors in compact
+  on-demand popovers. While video is playing, it fades after 2.5 seconds of
+  inactivity and returns on pointer, touch, or keyboard interaction. It remains
+  visible while paused, while a popover is open, or while a control has keyboard
+  focus.
 - A metadata editor for imported video items.
 - Browser-generated preview thumbnails.
 - A prototype visual identification workflow for selected videos.

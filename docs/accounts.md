@@ -136,12 +136,23 @@ flowchart LR
 - Session tokens and media tickets are 32 cryptographically random bytes. Only
   SHA-256 hashes are stored server-side.
 - Browser sessions use an HttpOnly, SameSite=Lax cookie. The cookie is Secure
-  when the direct request is HTTPS. Cookie-authenticated mutations require the
-  session CSRF token in `X-Nebula-CSRF`.
+  when the direct request is HTTPS or the operator explicitly sets
+  `NEBULA_EXTERNAL_HTTPS=true` for reviewed TLS termination such as Tailscale
+  Serve. Creation, password rotation, logout, and clearing use the same policy.
+  `X-Forwarded-Proto` is never trusted to enable Secure cookies.
+  Cookie-authenticated mutations require the session CSRF token in
+  `X-Nebula-CSRF`.
 - Password changes revoke every other session and rotate the current session.
 - Logout and session deletion revoke immediately. Expired and disabled-account
   sessions fail closed.
 - Secrets, credentials, hashes, and tokens are never intentionally logged.
+- The owner-only Remote Access panel can enable or disable the dormant Tailscale
+  companion and may display a short-lived server enrollment URL. The URL is
+  allowlisted to `https://login.tailscale.com/a/...`, is removed after connected
+  health, opens outside Nebula, and is never accepted as a Nebula identity.
+  Members cannot read this status endpoint. Nebula accounts and CSRF remain
+  required after the tailnet admits a connection. The UI writes only a fixed
+  enable marker; it receives no daemon socket or general container control.
 
 ## Browser, Capacitor, And Media
 
@@ -256,7 +267,7 @@ provide encrypted database-at-rest support.
   item-level ACLs.
 - No encrypted database-at-rest support.
 - Direct HTTP development cannot set a Secure cookie; production should use
-  HTTPS.
+  HTTPS and set `NEBULA_EXTERNAL_HTTPS=true` when TLS terminates before Nebula.
 - Studio queue/history and Search history are not server-persistent.
 - Session device labels are user-agent-derived and are not cryptographically
   attested.

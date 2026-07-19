@@ -49,6 +49,12 @@ The current app includes:
   policy, safe LRU cleanup, readiness, and bounded metrics.
 - A no-clobber single-host deployment CLI for install, validation, lifecycle,
   logs, updates, and backups over `compose.deploy.yaml`.
+- A pinned, userspace Tailscale Serve companion for private tailnet HTTPS. It is
+  dormant until an owner enables it in Settings, retains node state when off,
+  dynamically applies Secure cookies and its exact host, keeps HMR disabled in
+  deployment, explicitly forbids Funnel, and never exposes daemon control. The
+  owner-only Remote Access surface includes a sanitized live peer-path view for
+  direct, peer-relay, DERP, and idle connections.
 
 The latest user direction is to keep building toward a modern console/Plex-like
 media dashboard.

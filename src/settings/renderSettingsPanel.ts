@@ -9,6 +9,7 @@ import { renderPlaybackPolicyAdmin } from "./playbackPolicyAdmin";
 import { renderActivityAdmin } from "../activity-admin/renderActivityAdmin";
 import { renderTranscodeAccelerationAdmin } from "./transcodeAccelerationAdmin";
 import { renderRenditionStorageAdmin } from "./renditionStorageAdmin";
+import { renderTailscaleAdmin } from "./tailscaleAdmin";
 
 const formatNumber = (value: number, digits = 1) => (Number.isFinite(value) ? value.toFixed(digits) : "0.0");
 
@@ -85,6 +86,7 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
       ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="transcode-acceleration">Transcoding</button>` : ""}
       ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="rendition-storage">Storage</button>` : ""}
       ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="activity">Activity</button>` : ""}
+      ${showJobsAdmin ? `<button type="button" data-diagnostic-tab="remote-access">Remote Access</button>` : ""}
       <button type="button" data-diagnostic-tab="renderer">Renderer</button>
       <button type="button" data-diagnostic-tab="display">Display</button>
       <button type="button" data-diagnostic-tab="performance">Performance</button>
@@ -100,6 +102,7 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
       ${showJobsAdmin ? renderTranscodeAccelerationAdmin() : ""}
       ${showJobsAdmin ? renderRenditionStorageAdmin() : ""}
       ${showJobsAdmin ? renderActivityAdmin() : ""}
+      ${showJobsAdmin ? renderTailscaleAdmin() : ""}
       ${renderSection(
         "Renderer",
         [

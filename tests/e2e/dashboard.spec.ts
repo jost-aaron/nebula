@@ -204,4 +204,59 @@ test("Cinema subtitles, playback, and the in-app resume dialog work together", a
     await page.locator(".cinema-play-orb").click();
   }
   await expect.poll(() => resumedVideo.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(1);
+  await expect(resumedVideo).not.toHaveAttribute("controls", "");
+  const cinemaTransport = page.getByRole("region", { name: "Video playback controls" });
+  await expect(cinemaTransport).toBeVisible();
+  const phoneControls = [
+    cinemaTransport.getByRole("slider", { name: "Seek through video" }),
+    cinemaTransport.getByRole("button", { name: "Fullscreen video" })
+  ];
+  for (const control of phoneControls) {
+    await expect(control).toBeVisible();
+    const bounds = await control.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+  }
+  const bufferedProgress = await cinemaTransport.getByRole("slider", { name: "Seek through video" }).evaluate((element) => ({
+    buffered: Number.parseFloat((element as HTMLElement).style.getPropertyValue("--cinema-buffered")),
+    played: Number.parseFloat((element as HTMLElement).style.getPropertyValue("--cinema-progress"))
+  }));
+  expect(bufferedProgress.buffered).toBeGreaterThanOrEqual(bufferedProgress.played);
+  const subtitleButton = cinemaTransport.getByRole("button", { name: "Subtitles" });
+  await subtitleButton.click();
+  const transportSubtitleSelect = cinemaTransport.getByRole("combobox", { name: "Subtitle track" });
+  await expect(transportSubtitleSelect).toBeVisible();
+  await expect(subtitleButton).toHaveAttribute("aria-expanded", "true");
+  await subtitleButton.click();
+  await expect(transportSubtitleSelect).toBeHidden();
+  const qualityButton = cinemaTransport.getByRole("button", { name: "Quality" });
+  await qualityButton.click();
+  await expect(cinemaTransport.getByRole("combobox", { name: "Playback quality" })).toBeVisible();
+  await expect(qualityButton).toHaveAttribute("aria-expanded", "true");
+  await qualityButton.click();
+  await expect(cinemaTransport.getByRole("combobox", { name: "Playback quality" })).toBeHidden();
+  const playerToggle = cinemaTransport.getByRole("button", { name: "Pause video" });
+  await expect(playerToggle).toBeVisible();
+  await playerToggle.click();
+  await expect.poll(() => resumedVideo.evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
+  await cinemaTransport.getByRole("button", { name: "Play video" }).click();
+  const restartedAt = await resumedVideo.evaluate((element: HTMLVideoElement) => element.currentTime);
+  await expect.poll(() => resumedVideo.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(restartedAt);
+  await resumedVideo.evaluate(async (element: HTMLVideoElement) => {
+    element.loop = true;
+    element.currentTime = 0;
+    await element.play();
+  });
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.mouse.move(0, 0);
+  const videoStage = page.locator(".cinema-video-stage");
+  await expect(videoStage).toHaveClass(/controls-hidden/, { timeout: 4_000 });
+  const stageBounds = await videoStage.boundingBox();
+  expect(stageBounds).not.toBeNull();
+  await page.mouse.move(stageBounds!.x + stageBounds!.width / 2, stageBounds!.y + stageBounds!.height / 2);
+  await expect(videoStage).not.toHaveClass(/controls-hidden/);
+  await cinemaTransport.getByRole("button", { name: "Pause video" }).click();
+  await page.waitForTimeout(2_700);
+  await expect(videoStage).not.toHaveClass(/controls-hidden/);
 });

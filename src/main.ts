@@ -15,6 +15,7 @@ import { renderSettingsPanel } from "./settings/renderSettingsPanel";
 import { bindPlaybackPolicyAdmin } from "./settings/playbackPolicyAdmin";
 import { bindTranscodeAccelerationAdmin } from "./settings/transcodeAccelerationAdmin";
 import { bindRenditionStorageAdmin } from "./settings/renditionStorageAdmin";
+import { bindTailscaleAdmin } from "./settings/tailscaleAdmin";
 import { bindStudioView, renderStudioView } from "./studio/renderStudioView";
 import { commandFromKey, type ShellCommand } from "./shell/commands";
 import { bindGamepadCommands } from "./shell/gamepad";
@@ -25,6 +26,7 @@ import { startRenderer } from "./webgpuRenderer";
 import type { AccountSessionState, CurrentSessionState } from "./shared/accountTypes";
 import "./styles.css";
 import "./cinema/tmdb.css";
+import "./settings/tailscaleAdmin.css";
 
 const root = document.querySelector<HTMLDivElement>("#app");
 const canvas = document.querySelector<HTMLCanvasElement>("#gpu-scene");
@@ -269,6 +271,7 @@ const bindSettingsTabs = (container: ParentNode) => {
     "transcode-acceleration": ["transcode-acceleration"],
     "rendition-storage": ["rendition-storage"],
     activity: ["activity"],
+    "remote-access": ["remote-access"],
     apps: ["apps"],
     display: ["display"],
     performance: ["performance"],
@@ -439,7 +442,8 @@ const launchApp = async (app: DashboardApp) => {
       const disposeAcceleration = bindTranscodeAccelerationAdmin(appSurface);
       const disposeRenditionStorage = bindRenditionStorageAdmin(appSurface);
       const disposeActivity = bindActivityAdmin(appSurface);
-      disposeActiveApp = () => { disposeJobs(); disposePlaybackPolicy(); disposeAcceleration(); disposeRenditionStorage(); disposeActivity(); };
+      const disposeTailscale = bindTailscaleAdmin(appSurface);
+      disposeActiveApp = () => { disposeJobs(); disposePlaybackPolicy(); disposeAcceleration(); disposeRenditionStorage(); disposeActivity(); disposeTailscale(); };
     }
   }
 

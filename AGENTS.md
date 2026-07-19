@@ -158,6 +158,10 @@ Mouse behavior:
   remains non-persistent.
 - `scripts/nebula-server.sh` provides the no-clobber single-host deployment and
   lifecycle CLI over `compose.deploy.yaml`.
+- The dormant Tailscale companion supports owner-only enable/disable and
+  browser-assisted enrollment under Settings / Remote Access. Preserve the
+  fixed-file control/status bridge; never mount Tailscale or Docker sockets into
+  the dashboard or enable Funnel.
 - `Arcade` and `Party` are still planned placeholders.
 
 ## Content And Media

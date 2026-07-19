@@ -408,11 +408,46 @@ const renderSourceCards = (entry: MusicEntry, server: StudioServerInfo) => `
   </section>
 `;
 
+const renderTransportControls = () => `
+  <section class="studio-transport" aria-label="Playback controls" data-studio-controls>
+    <div class="studio-transport-timeline">
+      <time data-studio-current-time>0:00</time>
+      <input type="range" min="0" max="1000" value="0" step="1" data-studio-seek aria-label="Seek through track" />
+      <time data-studio-duration>0:00</time>
+    </div>
+    <div class="studio-transport-actions">
+      <button type="button" data-studio-action="previous" aria-label="Previous track">${renderStudioIcon("SkipBack")}</button>
+      <button class="studio-play-command" type="button" data-studio-action="toggle-play" data-studio-play-toggle aria-label="Play track">${renderStudioIcon("Play")}</button>
+      <button type="button" data-studio-action="next" aria-label="Next track">${renderStudioIcon("SkipForward")}</button>
+      <p class="studio-player-status" data-studio-player-status>Ready to play.</p>
+      <button type="button" data-studio-action="toggle-mute" data-studio-mute-toggle aria-label="Mute">${renderStudioIcon("Volume2")}</button>
+      <input class="studio-volume" type="range" min="0" max="1" value="1" step="0.05" data-studio-volume aria-label="Volume" />
+    </div>
+  </section>
+`;
+
+const renderMiniPlayer = (entry: MusicEntry) => `
+  <button class="studio-mini-track" type="button" data-studio-action="open-player" aria-label="Open ${escapeHtml(entry.title)}">
+    ${renderArtwork(entry, entry.title)}
+    <span><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.artist || entry.album || "Local music")}</small></span>
+  </button>
+  <div class="studio-mini-transport" aria-label="Mini player controls" data-studio-controls>
+    <button type="button" data-studio-action="previous" aria-label="Previous track">${renderStudioIcon("SkipBack")}</button>
+    <button class="studio-play-command" type="button" data-studio-action="toggle-play" data-studio-play-toggle aria-label="Play track">${renderStudioIcon("Play")}</button>
+    <button type="button" data-studio-action="next" aria-label="Next track">${renderStudioIcon("SkipForward")}</button>
+  </div>
+  <div class="studio-mini-progress">
+    <input type="range" min="0" max="1000" value="0" step="1" data-studio-seek aria-label="Seek through ${escapeHtml(entry.title)}" />
+    <span><time data-studio-current-time>0:00</time><i>/</i><time data-studio-duration>0:00</time></span>
+  </div>
+  <div class="studio-mini-volume">
+    <button type="button" data-studio-action="toggle-mute" data-studio-mute-toggle aria-label="Mute">${renderStudioIcon("Volume2")}</button>
+    <input type="range" min="0" max="1" value="1" step="0.05" data-studio-volume aria-label="Volume" />
+  </div>
+`;
+
 const renderNowPlaying = (entry: MusicEntry, entries: MusicEntry[]) => {
   const server = currentServerInfo();
-  const currentIndex = entries.findIndex((candidate) => candidate.path === entry.path);
-  const hasPrevious = currentIndex > 0;
-  const hasNext = currentIndex >= 0 && currentIndex < entries.length - 1;
 
   return `
     <button class="studio-back-command" type="button" data-studio-action="library">${renderStudioIcon("ArrowLeft")} Back to Library</button>
@@ -430,14 +465,7 @@ const renderNowPlaying = (entry: MusicEntry, entries: MusicEntry[]) => {
           <div class="studio-waveform" aria-hidden="true">
             <canvas data-studio-visualizer data-studio-visualizer-mode="ambient"></canvas>
           </div>
-          <audio class="studio-audio-player" data-studio-player controls preload="metadata" src="${escapeHtml(entry.streamUrl)}">
-            Your browser cannot play this audio file.
-          </audio>
-          <div class="studio-playback-row">
-            <button type="button" data-studio-action="previous" aria-label="Previous track" ${hasPrevious ? "" : "disabled"}>${renderStudioIcon("SkipBack")}</button>
-            <p class="studio-player-status" data-studio-player-status>Ready from ${escapeHtml(server.name)}.</p>
-            <button type="button" data-studio-action="next" aria-label="Next track" ${hasNext ? "" : "disabled"}>${renderStudioIcon("SkipForward")}</button>
-          </div>
+          ${renderTransportControls()}
           ${entry.id ? `<button class="studio-playlist-command" type="button" data-studio-action="save-playlist">${renderStudioIcon("ListPlus")} Save to playlist</button>` : ""}
         </div>
       </section>
@@ -486,6 +514,10 @@ export const renderStudioView = () => {
         </div>
       </main>
       <div class="studio-dialog-host" data-studio-dialog-host hidden></div>
+      <section class="studio-mini-player" data-studio-mini-player aria-label="Now playing" hidden>
+        <audio data-studio-player preload="metadata"></audio>
+        <div data-studio-mini-content></div>
+      </section>
       <footer class="studio-footer" data-studio-footer></footer>
     </section>
   `;
@@ -496,8 +528,11 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   const content = container.querySelector<HTMLElement>("[data-studio-content]");
   const footer = container.querySelector<HTMLElement>("[data-studio-footer]");
   const dialogHost = container.querySelector<HTMLElement>("[data-studio-dialog-host]");
+  const miniPlayer = container.querySelector<HTMLElement>("[data-studio-mini-player]");
+  const miniContent = container.querySelector<HTMLElement>("[data-studio-mini-content]");
+  const audioPlayer = container.querySelector<HTMLAudioElement>("[data-studio-player]")!;
 
-  if (!app || !content || !footer || !dialogHost) {
+  if (!app || !content || !footer || !dialogHost || !miniPlayer || !miniContent || !audioPlayer) {
     return;
   }
 
@@ -508,6 +543,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   let query = "";
   let isScanning = false;
   let loadError = "";
+  let playingEntry: MusicEntry | null = null;
   let playerCleanup: (() => void) | null = null;
   let playlists: MediaList[] = [];
   let collections: MediaList[] = [];
@@ -559,50 +595,94 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     finally { button.disabled = false; }
   };
 
+  let setPlayerEntry: (entry: MusicEntry, force?: boolean) => void = () => undefined;
+  let playPlayerAt: (positionSeconds?: number) => void = () => undefined;
+  let syncPlayerUi: () => void = () => undefined;
+
   const bindPlayer = () => {
-    const player = content.querySelector<HTMLAudioElement>("[data-studio-player]");
-    const status = content.querySelector<HTMLElement>("[data-studio-player-status]");
-    const visualizer = content.querySelector<HTMLCanvasElement>("[data-studio-visualizer]");
-
-    if (!player || !status) {
-      return () => undefined;
-    }
-
-    const audioPlayer = player;
-    const playerStatus = status;
-    const playingEntry = selected;
-    let sessionId: string | null = null;
-    let lifecycleStarted = false;
-    let ended = false;
-    let lastProgressAt = 0;
-    let eventQueue = Promise.resolve();
-
-    const setStatus = (message: string) => {
-      playerStatus.textContent = message;
+    type PlaybackSession = {
+      ended: boolean;
+      entry: MusicEntry;
+      lastProgressAt: number;
+      lifecycleStarted: boolean;
+      sessionId: string | null;
     };
 
-    const report = (event: PlaybackEventKind) => {
-      if (!personalPlayback || !playingEntry?.id || !playingEntry.sourceId) return;
-      if (event === "start") lifecycleStarted = true;
+    let playbackSession: PlaybackSession | null = null;
+    let eventQueue = Promise.resolve();
+    let statusMessage = "Ready to play.";
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const levels = new Float32Array(192);
+    let audioContext: AudioContext | null = null;
+    let source: MediaElementAudioSourceNode | null = null;
+    let analyser: AnalyserNode | null = null;
+    let spectrum: Uint8Array<ArrayBuffer> | null = null;
+    let animationFrame = 0;
+    let disposed = false;
+
+    const setStatus = (message: string) => {
+      statusMessage = message;
+      app.querySelectorAll<HTMLElement>("[data-studio-player-status]").forEach((status) => {
+        status.textContent = message;
+      });
+    };
+
+    syncPlayerUi = () => {
+      const duration = Number.isFinite(audioPlayer.duration) && audioPlayer.duration > 0 ? audioPlayer.duration : 0;
+      const progress = duration ? Math.min(1000, Math.round((audioPlayer.currentTime / duration) * 1000)) : 0;
+      const isPlaying = !audioPlayer.paused && !audioPlayer.ended;
+      const currentIndex = entries.findIndex((entry) => entry.path === playingEntry?.path);
+
+      app.classList.toggle("has-player", Boolean(playingEntry));
+      miniPlayer.hidden = !playingEntry || Boolean(selected);
+      app.querySelectorAll<HTMLElement>("[data-studio-current-time]").forEach((time) => { time.textContent = formatTime(audioPlayer.currentTime); });
+      app.querySelectorAll<HTMLElement>("[data-studio-duration]").forEach((time) => { time.textContent = formatTime(duration); });
+      app.querySelectorAll<HTMLInputElement>("[data-studio-seek]").forEach((seek) => {
+        if (document.activeElement !== seek) seek.value = String(progress);
+        seek.style.setProperty("--studio-progress", `${progress / 10}%`);
+      });
+      app.querySelectorAll<HTMLButtonElement>("[data-studio-play-toggle]").forEach((button) => {
+        button.innerHTML = renderStudioIcon(isPlaying ? "Pause" : "Play");
+        button.setAttribute("aria-label", isPlaying ? "Pause track" : "Play track");
+        button.setAttribute("aria-pressed", String(isPlaying));
+      });
+      app.querySelectorAll<HTMLButtonElement>("[data-studio-action='previous']").forEach((button) => { button.disabled = currentIndex <= 0; });
+      app.querySelectorAll<HTMLButtonElement>("[data-studio-action='next']").forEach((button) => { button.disabled = currentIndex < 0 || currentIndex >= entries.length - 1; });
+      app.querySelectorAll<HTMLInputElement>("[data-studio-volume]").forEach((volume) => {
+        if (document.activeElement !== volume) volume.value = String(audioPlayer.volume);
+        volume.style.setProperty("--studio-volume", `${audioPlayer.volume * 100}%`);
+      });
+      app.querySelectorAll<HTMLButtonElement>("[data-studio-mute-toggle]").forEach((button) => {
+        const muted = audioPlayer.muted || audioPlayer.volume === 0;
+        button.innerHTML = renderStudioIcon(muted ? "VolumeX" : "Volume2");
+        button.setAttribute("aria-label", muted ? "Unmute" : "Mute");
+        button.setAttribute("aria-pressed", String(muted));
+      });
+      setStatus(statusMessage);
+    };
+
+    const report = (session: PlaybackSession, event: PlaybackEventKind) => {
+      if (!personalPlayback || !session.entry.id || !session.entry.sourceId) return;
+      if (event === "start") session.lifecycleStarted = true;
       const durationSeconds = Number.isFinite(audioPlayer.duration) && audioPlayer.duration > 0 ? audioPlayer.duration : null;
       const positionSeconds = durationSeconds === null ? Math.max(0, audioPlayer.currentTime || 0) : Math.min(durationSeconds, Math.max(0, audioPlayer.currentTime || 0));
       eventQueue = eventQueue.then(async () => {
-        if (event !== "start" && !sessionId) return;
+        if (event !== "start" && !session.sessionId) return;
         const result = await reportStudioPlayback({
           durationSeconds,
           event,
           eventId: createBrowserUuid(),
-          itemId: playingEntry.id!,
+          itemId: session.entry.id!,
           positionSeconds,
-          sessionId,
-          sourceId: playingEntry.sourceId!
+          sessionId: session.sessionId,
+          sourceId: session.entry.sourceId!
         });
-        sessionId = result.session.id;
+        session.sessionId = result.session.id;
         if (result.state.lastPlayedAt) {
-          history.set(playingEntry.id!, {
+          history.set(session.entry.id!, {
             completed: result.state.completed,
             durationSeconds: result.state.durationSeconds,
-            itemId: playingEntry.id!,
+            itemId: session.entry.id!,
             lastPlayedAt: result.state.lastPlayedAt,
             playCount: result.state.playCount,
             positionSeconds: result.state.positionSeconds,
@@ -614,76 +694,41 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       }).catch(() => setStatus("Playing locally; listening history is unavailable."));
     };
 
-    const onPlay = () => {
-      setStatus("Playback requested.");
-      void activateAnalyser();
-      if (!lifecycleStarted) report("start");
-    };
-    const onPlaying = () => {
-      setStatus("Playing from the local Studio server.");
-      void activateAnalyser();
-    };
-    const onPause = () => { setStatus("Paused."); if (!ended && lifecycleStarted) report("pause"); };
-    const onEnded = () => { ended = true; setStatus("Finished."); report("complete"); };
-    const onTimeUpdate = () => {
-      if (sessionId && Date.now() - lastProgressAt >= 10_000) {
-        lastProgressAt = Date.now();
-        report("progress");
+    const stopSession = () => {
+      if (playbackSession && !playbackSession.ended && playbackSession.lifecycleStarted) {
+        playbackSession.ended = true;
+        report(playbackSession, "stop");
       }
     };
-    const onStalled = () => setStatus("Playback is waiting for more data from the server.");
-    const onError = () =>
-      setStatus("This audio file could not be played here. The browser may not support this format, especially some FLAC files.");
 
-    audioPlayer.addEventListener("play", onPlay);
-    audioPlayer.addEventListener("playing", onPlaying);
-    audioPlayer.addEventListener("pause", onPause);
-    audioPlayer.addEventListener("ended", onEnded);
-    audioPlayer.addEventListener("stalled", onStalled);
-    audioPlayer.addEventListener("error", onError);
-    audioPlayer.addEventListener("timeupdate", onTimeUpdate);
+    setPlayerEntry = (entry: MusicEntry, force = false) => {
+      if (!force && playingEntry?.path === entry.path) return;
+      stopSession();
+      audioPlayer.pause();
+      playingEntry = entry;
+      playbackSession = { ended: false, entry, lastProgressAt: 0, lifecycleStarted: false, sessionId: null };
+      miniContent.innerHTML = renderMiniPlayer(entry);
+      audioPlayer.src = entry.streamUrl;
+      audioPlayer.load();
+      statusMessage = "Ready to play.";
+      syncPlayerUi();
+    };
 
-    const stopPlayback = () => {
-      if (!ended && lifecycleStarted) {
-        ended = true;
-        report("stop");
+    playPlayerAt = (positionSeconds = 0) => {
+      if (!playingEntry) return;
+      const beginPlayback = () => {
+        if (Number.isFinite(audioPlayer.duration) && positionSeconds < audioPlayer.duration) audioPlayer.currentTime = Math.max(0, positionSeconds);
+        void audioPlayer.play().catch(() => setStatus("Ready to play. Select play again if this browser blocked playback."));
+      };
+      if (positionSeconds > 0 && audioPlayer.readyState < 1) {
+        audioPlayer.addEventListener("loadedmetadata", beginPlayback, { once: true });
+      } else {
+        beginPlayback();
       }
-      window.removeEventListener("pagehide", stopPlayback);
     };
-    const removePlayerListeners = () => {
-      stopPlayback();
-      audioPlayer.removeEventListener("play", onPlay);
-      audioPlayer.removeEventListener("playing", onPlaying);
-      audioPlayer.removeEventListener("pause", onPause);
-      audioPlayer.removeEventListener("ended", onEnded);
-      audioPlayer.removeEventListener("stalled", onStalled);
-      audioPlayer.removeEventListener("error", onError);
-      audioPlayer.removeEventListener("timeupdate", onTimeUpdate);
-    };
-    window.addEventListener("pagehide", stopPlayback, { once: true });
-
-    const context = visualizer?.getContext("2d");
-
-    if (!visualizer || !context) {
-      return removePlayerListeners;
-    }
-
-    const mediaUrl = new URL(audioPlayer.currentSrc || audioPlayer.src, window.location.href);
-    const canAnalyseAudio = mediaUrl.origin === window.location.origin && Boolean(window.AudioContext);
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const levels = new Float32Array(192);
-    let audioContext: AudioContext | null = null;
-    let source: MediaElementAudioSourceNode | null = null;
-    let analyser: AnalyserNode | null = null;
-    let spectrum: Uint8Array<ArrayBuffer> | null = null;
-    let animationFrame = 0;
-    let disposed = false;
 
     async function activateAnalyser() {
-      if (!canAnalyseAudio || disposed) {
-        return;
-      }
-
+      if (disposed || !window.AudioContext) return;
       try {
         if (!audioContext) {
           audioContext = new AudioContext();
@@ -697,46 +742,82 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
           analyser.connect(audioContext.destination);
           spectrum = new Uint8Array(analyser.frequencyBinCount);
         }
-
-        if (audioContext.state === "suspended") {
-          await audioContext.resume();
-        }
+        if (audioContext.state === "suspended") await audioContext.resume();
       } catch {
         analyser = null;
         spectrum = null;
       }
     }
 
-    const sizeCanvas = () => {
-      const bounds = visualizer.getBoundingClientRect();
-      const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-      const width = Math.max(1, Math.round(bounds.width * pixelRatio));
-      const height = Math.max(1, Math.round(bounds.height * pixelRatio));
-
-      if (visualizer.width !== width || visualizer.height !== height) {
-        visualizer.width = width;
-        visualizer.height = height;
+    const onPlay = () => {
+      if (playbackSession?.ended && playingEntry) {
+        playbackSession = {
+          ended: false,
+          entry: playingEntry,
+          lastProgressAt: 0,
+          lifecycleStarted: false,
+          sessionId: null
+        };
       }
-
-      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-      return { height: bounds.height, width: bounds.width };
+      setStatus("Playback requested.");
+      void activateAnalyser();
+      if (playbackSession && !playbackSession.lifecycleStarted) report(playbackSession, "start");
+      syncPlayerUi();
     };
+    const onPlaying = () => { setStatus("Playing from the local Studio server."); syncPlayerUi(); };
+    const onPause = () => {
+      setStatus("Paused.");
+      if (playbackSession && !playbackSession.ended && playbackSession.lifecycleStarted) report(playbackSession, "pause");
+      syncPlayerUi();
+    };
+    const onEnded = () => {
+      if (playbackSession) { playbackSession.ended = true; report(playbackSession, "complete"); }
+      setStatus("Finished.");
+      syncPlayerUi();
+    };
+    const onTimeUpdate = () => {
+      if (playbackSession?.sessionId && Date.now() - playbackSession.lastProgressAt >= 10_000) {
+        playbackSession.lastProgressAt = Date.now();
+        report(playbackSession, "progress");
+      }
+      syncPlayerUi();
+    };
+    const onStalled = () => setStatus("Playback is waiting for more data from the server.");
+    const onError = () => setStatus("This audio file could not be played here. The browser may not support this format, especially some FLAC files.");
+
+    audioPlayer.addEventListener("durationchange", syncPlayerUi);
+    audioPlayer.addEventListener("ended", onEnded);
+    audioPlayer.addEventListener("error", onError);
+    audioPlayer.addEventListener("pause", onPause);
+    audioPlayer.addEventListener("play", onPlay);
+    audioPlayer.addEventListener("playing", onPlaying);
+    audioPlayer.addEventListener("stalled", onStalled);
+    audioPlayer.addEventListener("timeupdate", onTimeUpdate);
+    audioPlayer.addEventListener("volumechange", syncPlayerUi);
 
     const drawVisualizer = (timestamp: number) => {
-      if (disposed) {
+      if (disposed) return;
+      const visualizer = content.querySelector<HTMLCanvasElement>("[data-studio-visualizer]");
+      const context = visualizer?.getContext("2d");
+      if (!visualizer || !context) {
+        animationFrame = window.requestAnimationFrame(drawVisualizer);
         return;
       }
 
-      if (!visualizer.isConnected) {
-        cleanup();
-        return;
+      const bounds = visualizer.getBoundingClientRect();
+      const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      const canvasWidth = Math.max(1, Math.round(bounds.width * pixelRatio));
+      const canvasHeight = Math.max(1, Math.round(bounds.height * pixelRatio));
+      if (visualizer.width !== canvasWidth || visualizer.height !== canvasHeight) {
+        visualizer.width = canvasWidth;
+        visualizer.height = canvasHeight;
       }
-
-      const { height, width } = sizeCanvas();
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      const height = bounds.height;
+      const width = bounds.width;
       const isPlaying = !audioPlayer.paused && !audioPlayer.ended && !audioPlayer.error;
       const isReactive = isPlaying && Boolean(analyser && spectrum && audioContext?.state === "running");
-      const mode = isReactive ? "reactive" : isPlaying ? "ambient-playback" : "ambient";
-      visualizer.dataset.studioVisualizerMode = mode;
+      visualizer.dataset.studioVisualizerMode = isReactive ? "reactive" : isPlaying ? "ambient-playback" : "ambient";
 
       let fftEnergy = 0;
       const nyquistFrequency = (audioContext?.sampleRate ?? 48_000) / 2;
@@ -833,25 +914,32 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     };
 
     function cleanup() {
-      if (disposed) {
-        return;
-      }
-
+      if (disposed) return;
       disposed = true;
+      stopSession();
+      audioPlayer.pause();
       window.cancelAnimationFrame(animationFrame);
-      removePlayerListeners();
+      audioPlayer.removeEventListener("durationchange", syncPlayerUi);
+      audioPlayer.removeEventListener("ended", onEnded);
+      audioPlayer.removeEventListener("error", onError);
+      audioPlayer.removeEventListener("pause", onPause);
+      audioPlayer.removeEventListener("play", onPlay);
+      audioPlayer.removeEventListener("playing", onPlaying);
+      audioPlayer.removeEventListener("stalled", onStalled);
+      audioPlayer.removeEventListener("timeupdate", onTimeUpdate);
+      audioPlayer.removeEventListener("volumechange", syncPlayerUi);
+      window.removeEventListener("pagehide", cleanup);
       source?.disconnect();
       analyser?.disconnect();
       void audioContext?.close().catch(() => undefined);
     }
 
+    window.addEventListener("pagehide", cleanup, { once: true });
     animationFrame = window.requestAnimationFrame(drawVisualizer);
     return cleanup;
   };
 
   const render = () => {
-    playerCleanup?.();
-    playerCleanup = null;
     const visible = visibleEntries();
     const scopedEntries = libraryScope
       ? visible.filter((entry) => libraryScope?.tracks.some((track) => track.path === entry.path))
@@ -898,31 +986,26 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
 
     renderTabState();
     renderFooter();
-    playerCleanup = bindPlayer();
+    syncPlayerUi();
   };
 
   const closeResumePrompt = () => {
     pendingResume = null;
     dialogHost.hidden = true;
     dialogHost.innerHTML = "";
-    queueMicrotask(() => content.querySelector<HTMLAudioElement>("[data-studio-player]")?.focus());
+    content.scrollTop = 0;
+    queueMicrotask(() => content.querySelector<HTMLButtonElement>("[data-studio-play-toggle]")?.focus({ preventScroll: true }));
   };
 
-  const playSelected = (positionSeconds = 0) => {
-    const player = content.querySelector<HTMLAudioElement>("[data-studio-player]");
-    const status = content.querySelector<HTMLElement>("[data-studio-player-status]");
-    if (!player) return;
-    const seek = () => {
-      if (Number.isFinite(player.duration) && positionSeconds < player.duration) player.currentTime = Math.max(0, positionSeconds);
-    };
-    if (player.readyState >= 1) seek(); else player.addEventListener("loadedmetadata", seek, { once: true });
-    void player.play().catch(() => {
-      if (status) status.textContent = "Ready to play. Use the audio controls if autoplay was blocked.";
-    });
+  const playSelected = (positionSeconds = 0, restartSession = false) => {
+    if (!selected) return;
+    setPlayerEntry(selected, restartSession);
+    playPlayerAt(positionSeconds);
   };
 
   const selectTrack = (entry: MusicEntry, autoplay = false) => {
     selected = entry;
+    setPlayerEntry(entry);
     render();
     content.scrollTop = 0;
 
@@ -939,11 +1022,12 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   };
 
   const selectAdjacentTrack = (offset: -1 | 1) => {
-    if (!selected) {
+    const current = playingEntry ?? selected;
+    if (!current) {
       return;
     }
 
-    const index = entries.findIndex((entry) => entry.path === selected?.path);
+    const index = entries.findIndex((entry) => entry.path === current.path);
     const next = entries[index + offset];
 
     if (next) {
@@ -1026,6 +1110,27 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       return;
     }
 
+    if (actionButton?.dataset.studioAction === "open-player" && playingEntry) {
+      selected = playingEntry;
+      render();
+      content.scrollTop = 0;
+      return;
+    }
+
+    if (actionButton?.dataset.studioAction === "toggle-play") {
+      if (!playingEntry && selected) setPlayerEntry(selected);
+      if (!playingEntry) return;
+      if (audioPlayer.paused || audioPlayer.ended) playPlayerAt(audioPlayer.ended ? 0 : audioPlayer.currentTime);
+      else audioPlayer.pause();
+      return;
+    }
+
+    if (actionButton?.dataset.studioAction === "toggle-mute") {
+      audioPlayer.muted = !audioPlayer.muted;
+      syncPlayerUi();
+      return;
+    }
+
     if (actionButton?.dataset.studioAction === "close-resume") { closeResumePrompt(); return; }
     if (actionButton?.dataset.studioAction === "resume-play" || actionButton?.dataset.studioAction === "restart-play") {
       const request = pendingResume;
@@ -1033,7 +1138,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       const position = actionButton.dataset.studioAction === "resume-play" ? request.state.positionSeconds : 0;
       selected = request.entry;
       closeResumePrompt();
-      playSelected(position);
+      playSelected(position, true);
       return;
     }
 
@@ -1073,7 +1178,26 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   });
 
   app.addEventListener("input", (event) => {
-    const input = (event.target as HTMLElement).closest<HTMLInputElement>("[data-studio-search]");
+    const target = event.target as HTMLElement;
+    const seek = target.closest<HTMLInputElement>("[data-studio-seek]");
+
+    if (seek) {
+      const duration = Number.isFinite(audioPlayer.duration) ? audioPlayer.duration : 0;
+      if (duration > 0) audioPlayer.currentTime = (Number(seek.value) / 1000) * duration;
+      syncPlayerUi();
+      return;
+    }
+
+    const volume = target.closest<HTMLInputElement>("[data-studio-volume]");
+
+    if (volume) {
+      audioPlayer.volume = Number(volume.value);
+      audioPlayer.muted = false;
+      syncPlayerUi();
+      return;
+    }
+
+    const input = target.closest<HTMLInputElement>("[data-studio-search]");
 
     if (input) {
       query = input.value.trim();
@@ -1085,6 +1209,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     }
   });
 
+  playerCleanup = bindPlayer();
   render();
   void Promise.all([listMediaLists("playlist", "audio"), listMediaLists("collection", "audio")]).then(([personal, shared]) => {
     playlists = personal.lists; collections = shared.lists; render();
