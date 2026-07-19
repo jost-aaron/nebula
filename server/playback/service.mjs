@@ -95,6 +95,14 @@ export const createPlaybackService = ({
     return (visibilityFilter ? entries.filter((entry) => visibilityFilter(entry, principal)) : entries).slice(0, numericLimit);
   };
 
+  const listHistory = ({ limit = 50 } = {}, principal) => {
+    const userId = requireUser(principal);
+    const numericLimit = Number(limit);
+    if (!Number.isInteger(numericLimit) || numericLimit < 1 || numericLimit > 100) throw badRequest("limit must be an integer from 1 to 100.");
+    const entries = (repository.listHistory ?? repository.listContinueWatching)(userId, visibilityFilter ? null : numericLimit);
+    return (visibilityFilter ? entries.filter((entry) => visibilityFilter(entry, principal)) : entries).slice(0, numericLimit);
+  };
+
   const setWatched = async (request, principal) => {
     const userId = requireUser(principal);
     if (typeof request?.watched !== "boolean") throw badRequest("watched must be a boolean.");
@@ -105,5 +113,5 @@ export const createPlaybackService = ({
     return repository.setWatched({ ...identity, userId, watched: request.watched, recordedAt: new Date(now()).toISOString() });
   };
 
-  return { getSession, getState, listContinueWatching, recordEvent, setWatched };
+  return { getSession, getState, listContinueWatching, listHistory, recordEvent, setWatched };
 };

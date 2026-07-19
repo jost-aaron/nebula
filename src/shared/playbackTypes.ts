@@ -53,6 +53,16 @@ export interface ContinueWatchingResponse {
   entries: ContinueWatchingEntry[];
 }
 
+export interface PlaybackHistoryEntry extends ContinueWatchingEntry {
+  completed: boolean;
+  durationSeconds: number | null;
+  playCount: number;
+}
+
+export interface PlaybackHistoryResponse {
+  entries: PlaybackHistoryEntry[];
+}
+
 export interface PlaybackWatchedRequest {
   itemId: CatalogId;
   sourceId: CatalogId;

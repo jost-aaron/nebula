@@ -32,6 +32,7 @@
  * @typedef {object} PlaybackRepository
  * @property {(userId: string, itemId: CatalogId) => object | null} getState
  * @property {(userId: string, limit?: number) => object[]} listContinueWatching
+ * @property {(userId: string, limit?: number) => object[]} [listHistory]
  * @property {(event: object) => object} recordEvent
  * @property {(sessionId: CatalogId) => object | null} getSession
  */

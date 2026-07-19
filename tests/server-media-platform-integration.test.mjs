@@ -83,6 +83,11 @@ test("playback routes derive user identity and reject service principals", async
   const serviceRequest = { ...request, nebulaAuth: { principalId: "service-token", user: null } };
   const serviceResponse = responseCapture();
   await assert.rejects(() => route(serviceRequest, serviceResponse, new URL("http://nebula/api/playback/events")), { status: 403 });
+
+  const historyResponse = responseCapture();
+  assert.equal(await route({ headers: {}, method: "GET", nebulaAuth: request.nebulaAuth }, historyResponse, new URL("http://nebula/api/playback/history")), true);
+  assert.equal(historyResponse.status(), 200);
+  assert.equal(historyResponse.json().entries.length, 1);
   database.close();
 });
 

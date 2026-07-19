@@ -1,9 +1,10 @@
 import { createElement, icons } from "lucide";
 import { getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken } from "../api/http";
-import { listMusicLibrary } from "../api/musicApi";
+import { listMusicLibrary, listStudioPlaybackHistory, reportStudioPlayback } from "../api/musicApi";
 import type { MusicEntry } from "../shared/musicTypes";
 import { addMediaListItem, createMediaList, listMediaLists } from "../api/mediaListsApi";
 import type { MediaList } from "../shared/mediaListTypes";
+import type { PlaybackEventKind, PlaybackHistoryEntry } from "../shared/playbackTypes";
 
 interface StudioServerInfo {
   address: string;
@@ -62,6 +63,12 @@ const formatSize = (size: number) => {
 const formatAudioFormat = (entry: MusicEntry) => {
   const extension = entry.name.split(".").pop()?.toUpperCase();
   return extension ? `${extension} audio` : "Audio file";
+};
+
+const formatTime = (seconds: number) => {
+  const safeSeconds = Math.max(0, Math.round(seconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  return `${minutes}:${String(safeSeconds % 60).padStart(2, "0")}`;
 };
 
 const metadataLine = (entry: MusicEntry) =>
@@ -263,6 +270,36 @@ const renderLibraryItems = (items: StudioLibraryItem[], selected: MusicEntry | n
     .join("");
 };
 
+const renderPlaybackHistory = (entries: MusicEntry[], history: Map<string, PlaybackHistoryEntry>) => {
+  const available = entries
+    .flatMap((entry) => entry.id && history.has(entry.id) ? [{ entry, state: history.get(entry.id)! }] : [])
+    .sort((left, right) => Date.parse(right.state.lastPlayedAt) - Date.parse(left.state.lastPlayedAt));
+  const continueListening = available.filter(({ state }) => !state.completed && state.positionSeconds > 0).slice(0, 8);
+  const recent = available.slice(0, 10);
+  const rail = (items: typeof available, mode: "continue" | "recent") => items.map(({ entry, state }) => `
+    <button type="button" data-studio-path="${escapeHtml(entry.path)}">
+      ${renderArtwork(entry, entry.title)}
+      <span><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.artist || entry.album || "Local music")}</small></span>
+      ${mode === "continue"
+        ? `<i class="studio-history-progress" aria-label="${Math.round(state.progress * 100)}% played"><b style="width:${Math.round(state.progress * 100)}%"></b></i><em>Resume at ${formatTime(state.positionSeconds)}</em>`
+        : `<em>${state.completed ? "Completed" : `Last played ${formatTime(state.positionSeconds)}`}</em>`}
+    </button>`).join("");
+
+  return `${continueListening.length ? `<section class="studio-history" aria-label="Continue listening"><header><div><p class="eyebrow">Continue Listening</p><strong>Pick up where you left off</strong></div><span>${continueListening.length} saved</span></header><div>${rail(continueListening, "continue")}</div></section>` : ""}
+    ${recent.length ? `<section class="studio-history studio-recent" aria-label="Recently played"><header><div><p class="eyebrow">Listening History</p><strong>Recently played</strong></div><span>${recent.length} tracks</span></header><div>${rail(recent, "recent")}</div></section>` : ""}`;
+};
+
+const renderResumeDialog = (entry: MusicEntry, state: PlaybackHistoryEntry) => `
+  <section class="studio-resume-sheet" role="presentation">
+    <div class="studio-resume-dialog" role="dialog" aria-modal="true" aria-labelledby="studio-resume-title" aria-describedby="studio-resume-description">
+      <button type="button" data-studio-action="close-resume" aria-label="Close resume dialog">${renderStudioIcon("X")}</button>
+      <span class="studio-resume-mark">${renderStudioIcon("History")}</span>
+      <div><p class="eyebrow">Continue Listening</p><h3 id="studio-resume-title">Resume ${escapeHtml(entry.title)}?</h3><p id="studio-resume-description">Pick up at <strong>${formatTime(state.positionSeconds)}</strong>, or restart this track.</p></div>
+      <div class="studio-resume-progress" role="progressbar" aria-label="${Math.round(state.progress * 100)}% played" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(state.progress * 100)}"><i style="width:${Math.round(state.progress * 100)}%"></i></div>
+      <div class="studio-resume-actions"><button class="primary" type="button" data-studio-action="resume-play">${renderStudioIcon("Play")} Resume at ${formatTime(state.positionSeconds)}</button><button type="button" data-studio-action="restart-play">${renderStudioIcon("RotateCcw")} Start over</button></div>
+    </div>
+  </section>`;
+
 const queueEntries = (entries: MusicEntry[], selected: MusicEntry | null) =>
   entries.filter((entry) => entry.path !== selected?.path).slice(0, 8);
 
@@ -447,17 +484,19 @@ export const renderStudioView = () => {
           <span>Scanning content for audio files.</span>
         </div>
       </main>
+      <div class="studio-dialog-host" data-studio-dialog-host hidden></div>
       <footer class="studio-footer" data-studio-footer></footer>
     </section>
   `;
 };
 
-export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
+export const bindStudioView = (container: ParentNode, onHome?: () => void, options: { personalPlayback?: boolean } = {}) => {
   const app = container.querySelector<HTMLElement>("[data-studio-app]");
   const content = container.querySelector<HTMLElement>("[data-studio-content]");
   const footer = container.querySelector<HTMLElement>("[data-studio-footer]");
+  const dialogHost = container.querySelector<HTMLElement>("[data-studio-dialog-host]");
 
-  if (!app || !content || !footer) {
+  if (!app || !content || !footer || !dialogHost) {
     return;
   }
 
@@ -471,6 +510,9 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
   let playerCleanup: (() => void) | null = null;
   let playlists: MediaList[] = [];
   let collections: MediaList[] = [];
+  let history = new Map<string, PlaybackHistoryEntry>();
+  let pendingResume: { entry: MusicEntry; state: PlaybackHistoryEntry } | null = null;
+  const personalPlayback = options.personalPlayback !== false;
 
   const visibleEntries = () =>
     query
@@ -527,21 +569,67 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
 
     const audioPlayer = player;
     const playerStatus = status;
+    const playingEntry = selected;
+    let sessionId: string | null = null;
+    let lifecycleStarted = false;
+    let ended = false;
+    let lastProgressAt = 0;
+    let eventQueue = Promise.resolve();
 
     const setStatus = (message: string) => {
       playerStatus.textContent = message;
     };
 
+    const report = (event: PlaybackEventKind) => {
+      if (!personalPlayback || !playingEntry?.id || !playingEntry.sourceId) return;
+      if (event === "start") lifecycleStarted = true;
+      const durationSeconds = Number.isFinite(audioPlayer.duration) && audioPlayer.duration > 0 ? audioPlayer.duration : null;
+      const positionSeconds = durationSeconds === null ? Math.max(0, audioPlayer.currentTime || 0) : Math.min(durationSeconds, Math.max(0, audioPlayer.currentTime || 0));
+      eventQueue = eventQueue.then(async () => {
+        if (event !== "start" && !sessionId) return;
+        const result = await reportStudioPlayback({
+          durationSeconds,
+          event,
+          eventId: crypto.randomUUID(),
+          itemId: playingEntry.id!,
+          positionSeconds,
+          sessionId,
+          sourceId: playingEntry.sourceId!
+        });
+        sessionId = result.session.id;
+        if (result.state.lastPlayedAt) {
+          history.set(playingEntry.id!, {
+            completed: result.state.completed,
+            durationSeconds: result.state.durationSeconds,
+            itemId: playingEntry.id!,
+            lastPlayedAt: result.state.lastPlayedAt,
+            playCount: result.state.playCount,
+            positionSeconds: result.state.positionSeconds,
+            progress: result.state.durationSeconds ? result.state.positionSeconds / result.state.durationSeconds : 0,
+            sourceId: result.state.sourceId
+          });
+          if (!selected) render();
+        }
+      }).catch(() => setStatus("Playing locally; listening history is unavailable."));
+    };
+
     const onPlay = () => {
       setStatus("Playback requested.");
       void activateAnalyser();
+      if (!lifecycleStarted) report("start");
     };
     const onPlaying = () => {
       setStatus("Playing from the local Studio server.");
       void activateAnalyser();
     };
-    const onPause = () => setStatus("Paused.");
-    const onEnded = () => setStatus("Finished.");
+    const onPause = () => { setStatus("Paused."); if (!ended && lifecycleStarted) report("pause"); };
+    const onEnded = () => { ended = true; setStatus("Finished."); report("complete"); };
+    const onTimeUpdate = () => {
+      if (sessionId && Date.now() - lastProgressAt >= 10_000) {
+        lastProgressAt = Date.now();
+        report("progress");
+      }
+    };
     const onStalled = () => setStatus("Playback is waiting for more data from the server.");
     const onError = () =>
       setStatus("This audio file could not be played here. The browser may not support this format, especially some FLAC files.");
@@ -552,18 +640,31 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
     audioPlayer.addEventListener("ended", onEnded);
     audioPlayer.addEventListener("stalled", onStalled);
     audioPlayer.addEventListener("error", onError);
+    audioPlayer.addEventListener("timeupdate", onTimeUpdate);
+
+    const stopPlayback = () => {
+      if (!ended && lifecycleStarted) {
+        ended = true;
+        report("stop");
+      }
+      window.removeEventListener("pagehide", stopPlayback);
+    };
+    const removePlayerListeners = () => {
+      stopPlayback();
+      audioPlayer.removeEventListener("play", onPlay);
+      audioPlayer.removeEventListener("playing", onPlaying);
+      audioPlayer.removeEventListener("pause", onPause);
+      audioPlayer.removeEventListener("ended", onEnded);
+      audioPlayer.removeEventListener("stalled", onStalled);
+      audioPlayer.removeEventListener("error", onError);
+      audioPlayer.removeEventListener("timeupdate", onTimeUpdate);
+    };
+    window.addEventListener("pagehide", stopPlayback, { once: true });
 
     const context = visualizer?.getContext("2d");
 
     if (!visualizer || !context) {
-      return () => {
-        audioPlayer.removeEventListener("play", onPlay);
-        audioPlayer.removeEventListener("playing", onPlaying);
-        audioPlayer.removeEventListener("pause", onPause);
-        audioPlayer.removeEventListener("ended", onEnded);
-        audioPlayer.removeEventListener("stalled", onStalled);
-        audioPlayer.removeEventListener("error", onError);
-      };
+      return removePlayerListeners;
     }
 
     const mediaUrl = new URL(audioPlayer.currentSrc || audioPlayer.src, window.location.href);
@@ -737,12 +838,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
 
       disposed = true;
       window.cancelAnimationFrame(animationFrame);
-      audioPlayer.removeEventListener("play", onPlay);
-      audioPlayer.removeEventListener("playing", onPlaying);
-      audioPlayer.removeEventListener("pause", onPause);
-      audioPlayer.removeEventListener("ended", onEnded);
-      audioPlayer.removeEventListener("stalled", onStalled);
-      audioPlayer.removeEventListener("error", onError);
+      removePlayerListeners();
       source?.disconnect();
       analyser?.disconnect();
       void audioContext?.close().catch(() => undefined);
@@ -793,6 +889,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
               ? `<button class="studio-back-command" type="button" data-studio-action="library-root">${renderStudioIcon("ArrowLeft")} Back to ${escapeHtml(browseLabel(browseMode))}</button>`
               : ""
           }
+          ${personalPlayback ? renderPlaybackHistory(scopedEntries, history) : ""}
           <div class="studio-track-list">${renderLibraryItems(libraryItems, selected)}</div>
         </section>
       `;
@@ -803,21 +900,41 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
     playerCleanup = bindPlayer();
   };
 
+  const closeResumePrompt = () => {
+    pendingResume = null;
+    dialogHost.hidden = true;
+    dialogHost.innerHTML = "";
+    queueMicrotask(() => content.querySelector<HTMLAudioElement>("[data-studio-player]")?.focus());
+  };
+
+  const playSelected = (positionSeconds = 0) => {
+    const player = content.querySelector<HTMLAudioElement>("[data-studio-player]");
+    const status = content.querySelector<HTMLElement>("[data-studio-player-status]");
+    if (!player) return;
+    const seek = () => {
+      if (Number.isFinite(player.duration) && positionSeconds < player.duration) player.currentTime = Math.max(0, positionSeconds);
+    };
+    if (player.readyState >= 1) seek(); else player.addEventListener("loadedmetadata", seek, { once: true });
+    void player.play().catch(() => {
+      if (status) status.textContent = "Ready to play. Use the audio controls if autoplay was blocked.";
+    });
+  };
+
   const selectTrack = (entry: MusicEntry, autoplay = false) => {
     selected = entry;
     render();
     content.scrollTop = 0;
 
-    if (autoplay) {
-      const player = content.querySelector<HTMLAudioElement>("[data-studio-player]");
-      const status = content.querySelector<HTMLElement>("[data-studio-player-status]");
-
-      void player?.play().catch(() => {
-        if (status) {
-          status.textContent = "Ready to play. Use the audio controls if autoplay was blocked.";
-        }
-      });
+    const resumable = personalPlayback && entry.id ? history.get(entry.id) : undefined;
+    if (resumable && !resumable.completed && resumable.positionSeconds > 0) {
+      pendingResume = { entry, state: resumable };
+      dialogHost.hidden = false;
+      dialogHost.innerHTML = renderResumeDialog(entry, resumable);
+      queueMicrotask(() => dialogHost.querySelector<HTMLButtonElement>("[data-studio-action='resume-play']")?.focus());
+      return;
     }
+
+    if (autoplay) playSelected();
   };
 
   const selectAdjacentTrack = (offset: -1 | 1) => {
@@ -839,7 +956,12 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
     render();
 
     try {
-      entries = (await listMusicLibrary()).entries;
+      const [library, playbackHistory] = await Promise.all([
+        listMusicLibrary(),
+        personalPlayback ? listStudioPlaybackHistory() : Promise.resolve({ entries: [] })
+      ]);
+      entries = library.entries;
+      history = new Map(playbackHistory.entries.map((entry) => [entry.itemId, entry]));
       selected = selected ? entries.find((entry) => entry.path === selected?.path) ?? null : null;
     } catch (error) {
       loadError = error instanceof Error ? error.message : "Unable to scan content.";
@@ -869,6 +991,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
     }
 
     if (actionButton?.dataset.studioAction === "home") {
+      closeResumePrompt();
       playerCleanup?.();
       playerCleanup = null;
       onHome?.();
@@ -876,6 +999,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
     }
 
     if (actionButton?.dataset.studioAction === "library") {
+      closeResumePrompt();
       selected = null;
       render();
       content.scrollTop = 0;
@@ -883,6 +1007,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
     }
 
     if (actionButton?.dataset.studioAction === "library-root") {
+      closeResumePrompt();
       selected = null;
       libraryScope = null;
       render();
@@ -897,6 +1022,17 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void) => {
 
     if (actionButton?.dataset.studioAction === "next") {
       selectAdjacentTrack(1);
+      return;
+    }
+
+    if (actionButton?.dataset.studioAction === "close-resume") { closeResumePrompt(); return; }
+    if (actionButton?.dataset.studioAction === "resume-play" || actionButton?.dataset.studioAction === "restart-play") {
+      const request = pendingResume;
+      if (!request) return;
+      const position = actionButton.dataset.studioAction === "resume-play" ? request.state.positionSeconds : 0;
+      selected = request.entry;
+      closeResumePrompt();
+      playSelected(position);
       return;
     }
 

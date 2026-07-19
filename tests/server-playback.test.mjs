@@ -51,6 +51,24 @@ test("state, sessions, and Continue Watching are strictly isolated by user", asy
   await assert.rejects(() => start(service, { ...identity, eventId: randomUUID() }, { type: "service", userId: "service" }), { status: 403 });
 });
 
+test("playback history includes completed and resumable items in per-user recency order", async (t) => {
+  let clock = Date.parse("2026-01-01T00:00:00.000Z");
+  const { db, service } = fixture({ now: () => clock });
+  t.after(() => db.close());
+  const resumable = await start(service, ids());
+  await event(service, resumable, "pause", 35);
+  clock += 1_000;
+  const completed = await start(service, ids());
+  await event(service, completed, "complete", 100);
+  assert.deepEqual(service.listHistory({}, principal()).map(({ itemId, completed }) => ({ itemId, completed })), [
+    { itemId: completed.state.itemId, completed: true },
+    { itemId: resumable.state.itemId, completed: false }
+  ]);
+  assert.deepEqual(service.listHistory({}, principal("user-b")), []);
+  assert.equal(service.listHistory({ limit: 1 }, principal()).length, 1);
+  assert.throws(() => service.listHistory({ limit: 101 }, principal()), { status: 400 });
+});
+
 test("rejects malformed positions, durations, identities, and completion below threshold", async (t) => {
   const { db, service } = fixture();
   t.after(() => db.close());

@@ -71,6 +71,13 @@ export const createPlaybackRoutes = (service, planner = null, delivery = null) =
     return true;
   }
 
+  if (request.method === "GET" && url.pathname === "/api/playback/history") {
+    const rawLimit = url.searchParams.get("limit");
+    const entries = service.listHistory(rawLimit === null ? {} : { limit: Number(rawLimit) }, principal);
+    json(response, 200, { entries });
+    return true;
+  }
+
   if (request.method === "PATCH" && url.pathname === "/api/playback/watched") {
     json(response, 200, { state: await service.setWatched(await readBody(request), principal) });
     return true;
