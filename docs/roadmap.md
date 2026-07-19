@@ -5,13 +5,19 @@ for multiple dashboard apps and future native-style media playback.
 
 ## Near Term
 
-- Split `src/main.ts` into smaller modules.
-- Add persistent shell state.
-- Add real focus management for accessibility and controller navigation.
-- Add a command/input abstraction that can support keyboard, controller, and
-  remote control inputs.
+- Continue moving app-surface rendering and feature bindings out of
+  `src/main.ts`; typed shell state, persistence, commands, input gates, and
+  gamepad lifecycle now live in `src/shell/`.
+- Extend the current account-scoped shell focus persistence to app lifecycle
+  state only where restoration is predictable and safe.
+- Expand controller coverage from dashboard selection/launch/close into media
+  transport and app-specific navigation.
 - Make the WebGPU background respond to app focus.
-- Add Playwright smoke tests in Docker.
+- Keep broadening the Docker Playwright suite as new app workflows land; the
+  account gate, shell navigation, responsive layout, and core media workflows
+  now have browser coverage.
+- Harden and package the single-host deployment CLI beyond its current
+  no-clobber preview installer before recommending public-internet exposure.
 
 ## App System
 
