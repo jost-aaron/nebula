@@ -217,7 +217,10 @@ Read these in order:
 At handoff time:
 
 - `docker compose run --rm dashboard npm run check` passed.
-- `docker compose run --rm dashboard npm test` passed with 220 tests.
+- `docker compose run --rm dashboard npm test` passed with 238 tests.
+- `./scripts/test-e2e.sh` passed all 10 fresh-volume Playwright scenarios,
+  including guest/owner bootstrap, shell input and focus persistence, app smoke
+  paths, Studio playback history/resume, and 390×844 reachability.
 - Fresh-server owner setup and owner Settings / Storage browser smoke checks
   passed at desktop and 390×844 during the rendition implementation.
 - Rendition policy owner/service authorization, member denial, cookie CSRF,
