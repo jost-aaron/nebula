@@ -49,3 +49,60 @@ test("shard delivery rejects stale sources and another coordinator's session", a
   const created = await service.create(input, peer);
   assert.throws(() => service.get({ clusterSessionId: input.clusterSessionId, deliveryId: created.deliveryId }, { nodeId: "node_other_01", role: "coordinator" }), { code: "shard_delivery_not_found" });
 });
+
+test("permanently queued shard delivery has a hard expiry and is cancelled exactly once", async () => {
+  let currentTime = 2_000;
+  let sweep = null;
+  let timerCleared = 0;
+  let cancellations = 0;
+  const delivery = {
+    cancel: async () => { cancellations += 1; },
+    create: async () => ({
+      plan: { decision: "transcode", output: { protocol: "hls" }, reasons: [] },
+      session: { id: "delivery_fixture_01", status: "queued" }
+    }),
+    get: () => ({ id: "delivery_fixture_01", status: "queued" })
+  };
+  const service = createClusterShardDeliveryService({
+    catalog: { getSource: () => source },
+    delivery,
+    localNodeId: "node_shard_01",
+    now: () => currentTime,
+    sessionTtlMs: 50,
+    setTimer: (callback) => { sweep = callback; return { unref() {} }; },
+    clearTimer: () => { timerCleared += 1; }
+  });
+  const created = await service.create(input, peer);
+  currentTime = 2_040;
+  assert.equal(service.get({ clusterSessionId: input.clusterSessionId, deliveryId: created.deliveryId }, peer).status, "queued");
+  currentTime = 2_050;
+  sweep();
+  await new Promise(setImmediate);
+  assert.equal(cancellations, 1);
+  assert.throws(() => service.get({ clusterSessionId: input.clusterSessionId, deliveryId: created.deliveryId }, peer), { code: "shard_delivery_not_found" });
+  await service.shutdown();
+  await service.shutdown();
+  assert.equal(cancellations, 1);
+  assert.equal(timerCleared, 1);
+});
+
+test("shard shutdown cancels delivery creation that finishes after the registry closes", async () => {
+  let finishCreate;
+  let cancellations = 0;
+  const service = createClusterShardDeliveryService({
+    catalog: { getSource: () => source },
+    delivery: {
+      create: () => new Promise((resolve) => { finishCreate = resolve; }),
+      cancel: async () => { cancellations += 1; }
+    },
+    localNodeId: "node_shard_01"
+  });
+  const pending = service.create(input, peer);
+  await Promise.resolve();
+  await service.shutdown();
+  finishCreate({ plan: { decision: "transcode", output: { protocol: "hls" }, reasons: [] }, session: { id: "delivery_fixture_01", status: "queued" } });
+  await assert.rejects(pending, { code: "shard_delivery_closed" });
+  assert.equal(cancellations, 1);
+  await service.shutdown();
+  assert.equal(cancellations, 1);
+});

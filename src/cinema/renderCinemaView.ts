@@ -44,6 +44,7 @@ import type { PlaybackPlanResponse } from "../shared/playbackPlanTypes";
 import type { FederatedAvailabilitySummary } from "../shared/federatedTypes";
 import { createBrowserUuid } from "../shared/browserUuid";
 import { createHlsPlayback, supportsHlsPlayback, type HlsPlaybackHandle } from "./hlsPlayback";
+import { pollDeliveryUntilReady } from "../shared/deliveryPolling.js";
 
 const cinemaBrandMarkUrl = new URL(
   "../assets/branding/cinema/nebula-cinema-symbol.svg",
@@ -1203,6 +1204,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       let failoverPlayback: () => Promise<void> = async () => undefined;
       let pendingDeliveryId: string | null = null;
       let pendingDeliveryIsCluster = false;
+      let preparationController: AbortController | null = null;
       let hlsPlayback: HlsPlaybackHandle | null = null;
       let remoteSubtitleUrl: string | null = null;
       let requestGeneration = 0;
@@ -1450,6 +1452,9 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       player.addEventListener("webkitendfullscreen", syncFullscreenControl);
       const stopPlayback = () => {
         clearControlsHideTimer();
+        const preparationWasActive = Boolean(preparationController);
+        preparationController?.abort();
+        preparationController = null;
         deliveryGeneration += 1;
         requestGeneration += 1;
         if (!ended && lifecycleStarted) {
@@ -1467,7 +1472,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         hlsPlayback?.destroy();
         hlsPlayback = null;
         if (deliveryId) void (deliveryIsCluster ? cancelClusterCinemaDelivery(deliveryId) : cancelCinemaDelivery(deliveryId)).catch(() => {});
-        if (pendingDeliveryId && pendingDeliveryId !== deliveryId) void (pendingDeliveryIsCluster ? cancelClusterCinemaDelivery(pendingDeliveryId) : cancelCinemaDelivery(pendingDeliveryId)).catch(() => {});
+        if (!preparationWasActive && pendingDeliveryId && pendingDeliveryId !== deliveryId) void (pendingDeliveryIsCluster ? cancelClusterCinemaDelivery(pendingDeliveryId) : cancelCinemaDelivery(pendingDeliveryId)).catch(() => {});
       };
       stopActivePlayback = stopPlayback;
       window.addEventListener("pagehide", stopPlayback, { once: true });
@@ -1529,15 +1534,21 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         const failedNodeId = deliveryNodeId;
         const position = Number.isFinite(player.currentTime) ? player.currentTime : 0;
         setStatus("The active shard stopped responding. Finding an exact replica…");
+        preparationController?.abort();
+        const controller = new AbortController();
+        preparationController = controller;
         try {
-          let replacement = await failoverClusterCinemaDelivery(deliveryId, failedNodeId);
-          while (["queued", "running"].includes(replacement.session.status)) {
-            await new Promise((resolve) => window.setTimeout(resolve, 350));
-            if (generation !== deliveryGeneration || deliveryId !== replacement.session.id) return;
-            replacement = await getClusterCinemaDelivery(replacement.session.id);
+          const initial = await failoverClusterCinemaDelivery(deliveryId, failedNodeId);
+          const replacement = await pollDeliveryUntilReady({
+            initial,
+            getStatus: getClusterCinemaDelivery,
+            cancel: cancelClusterCinemaDelivery,
+            signal: controller.signal
+          });
+          if (generation !== deliveryGeneration || deliveryId !== replacement.session.id) {
+            void cancelClusterCinemaDelivery(replacement.session.id).catch(() => {});
+            return;
           }
-          if (replacement.session.status !== "ready") throw new Error("Replica delivery did not become ready.");
-          if (generation !== deliveryGeneration || deliveryId !== replacement.session.id) return;
           await attachDelivery(replacement, position, true);
           deliveryNodeId = replacement.session.candidate.nodeId;
           deliveryFederatedSourceId = replacement.session.candidate.sourceId;
@@ -1545,6 +1556,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         } catch {
           setStatus("The active shard is unavailable and no exact replica could resume this video.");
         } finally {
+          if (preparationController === controller) preparationController = null;
           failoverPending = false;
         }
       };
@@ -1553,9 +1565,13 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         const remote = !playingEntry.sourceId && Boolean(playingEntry.federation);
         if (!remote && (!playingEntry.sourceId || getApiConnectionMode() !== "Same origin")) return useFallback();
         const localRequest = ++requestGeneration;
+        preparationController?.abort();
+        const controller = new AbortController();
+        preparationController = controller;
         const oldDeliveryId = deliveryId;
         const oldDeliveryIsCluster = deliveryIsCluster;
         const shouldPlay = switching ? !player.paused : true;
+        let pollingCompleted = false;
         setStatus(switching ? `Preparing ${qualityResultLabel(preference)}…` : "Preparing compatible playback…");
         try {
           const clusterCreated = remote
@@ -1564,17 +1580,16 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
           const created = clusterCreated ?? await createCinemaDelivery({ capabilities: deliveryCapabilities(player), itemId: playingEntry.id, quality: preference, sourceId: playingEntry.sourceId!, startPositionSeconds: targetPosition });
           pendingDeliveryId = created.session.id;
           pendingDeliveryIsCluster = remote;
-          let delivery = created.session;
-          let current = created;
-          while (["queued", "running"].includes(delivery.status)) {
-            await new Promise((resolve) => window.setTimeout(resolve, 350));
-            if (generation !== deliveryGeneration || localRequest !== requestGeneration) {
-              void (remote ? cancelClusterCinemaDelivery(delivery.id) : cancelCinemaDelivery(delivery.id)).catch(() => {});
-              return false;
-            }
-            if (remote) current = await getClusterCinemaDelivery(delivery.id);
-            delivery = remote ? current.session : (await getCinemaDelivery(delivery.id)).session;
-          }
+          const current = await pollDeliveryUntilReady({
+            initial: created,
+            getStatus: remote
+              ? getClusterCinemaDelivery
+              : async (id, signal) => ({ ...created, session: (await getCinemaDelivery(id, signal)).session }),
+            cancel: remote ? cancelClusterCinemaDelivery : cancelCinemaDelivery,
+            signal: controller.signal
+          });
+          pollingCompleted = true;
+          const delivery = current.session;
           if (delivery.status !== "ready" || generation !== deliveryGeneration || localRequest !== requestGeneration) throw new Error("Delivery did not become ready.");
           await attachDelivery({ ...current, session: delivery }, targetPosition, shouldPlay);
           if (generation !== deliveryGeneration || localRequest !== requestGeneration) {
@@ -1600,7 +1615,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
           return true;
         } catch {
           if (pendingDeliveryId) {
-            void (pendingDeliveryIsCluster ? cancelClusterCinemaDelivery(pendingDeliveryId) : cancelCinemaDelivery(pendingDeliveryId)).catch(() => {});
+            if (pollingCompleted) void (pendingDeliveryIsCluster ? cancelClusterCinemaDelivery(pendingDeliveryId) : cancelCinemaDelivery(pendingDeliveryId)).catch(() => {});
             pendingDeliveryId = null;
             pendingDeliveryIsCluster = false;
           }
@@ -1611,6 +1626,8 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
           else if (remote) setStatus("Remote playback could not start. Try again or choose another source.");
           else useFallback(targetPosition);
           return false;
+        } finally {
+          if (preparationController === controller) preparationController = null;
         }
       };
       const qualitySelect = content.querySelector<HTMLSelectElement>("[data-cinema-player-quality]");

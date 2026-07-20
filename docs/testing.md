@@ -58,6 +58,11 @@ delivery create/status/cancel routes, range media responses, content-root
 containment, exact coordinator-origin CORS, remote direct/remux/HLS activation,
 safe ticketed playlist rewriting and segment delivery, fixed-quality planning,
 coordinator-owned federated playback state, and exact-replica-only failover.
+The lifecycle fixtures also hold generated delivery permanently in `queued`,
+advance injected clocks beyond hard coordinator and shard deadlines, and verify
+exactly-once scheduler/delivery release. Client polling tests inject time,
+randomness, delays, and timers to prove finite deadlines, bounded exponential
+backoff, source-switch abort, session cancellation, and zero retained timers.
 These tests do not establish real Tailscale reachability or browser codec
 compatibility.
 
@@ -76,6 +81,8 @@ docker compose run --rm dashboard node --test \
   tests/server-cluster-grant-client.test.mjs \
   tests/server-cluster-media-routes.test.mjs \
   tests/server-cluster-playback-service.test.mjs \
+  tests/server-cluster-shard-delivery.test.mjs \
+  tests/delivery-polling.test.mjs \
   tests/server-cluster-protocol.test.mjs \
   tests/server-cluster-routes.test.mjs \
   tests/server-cluster-sync.test.mjs \
@@ -153,8 +160,7 @@ in `deployment.md`, use an isolated tailnet/copied Nebula data and verify:
     session, grants and URLs do not appear in logs or rendered HTML, and the
     deployment still rejects Funnel/public access. Verify remote remux,
     HLS/transcode, fixed-quality renditions, and coordinator-owned personal
-    playback history explicitly. Remote subtitles remain unimplemented and must
-    not be marked passed.
+    playback history and remote subtitle delivery explicitly.
     Also confirm that revocation blocks new grant activation while an already
     accepted bearer ticket remains bounded by its expiry or shard restart; an
     immediate distributed active-ticket revocation mechanism does not exist yet.

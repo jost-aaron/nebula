@@ -5,11 +5,18 @@ const quality = (profileId) => profileId && profileId !== "auto"
   : { mode: "auto" };
 const TERMINAL_FAILURES = new Set(["cancelled", "expired", "failed"]);
 
-export const createClusterPlaybackService = ({ scheduler, grants, client, deliveryClient = null, localDelivery = null }) => {
+export const createClusterPlaybackService = ({
+  scheduler, grants, client, deliveryClient = null, localDelivery = null,
+  now = () => Date.now(), sessionTtlMs = 30 * 60 * 1000,
+  sweepIntervalMs = Math.min(sessionTtlMs, 60_000),
+  setTimer = setInterval, clearTimer = clearInterval
+}) => {
   if (!scheduler || !grants || !client) throw new TypeError("Cluster scheduler, grant, and client services are required.");
   const ownedLocalDeliveries = new Map();
   const remoteDeliveries = new Map();
   const readyRemoteSessions = new Map();
+  const sessions = new Map();
+  let closed = false;
 
   const releaseLocalDelivery = async (sessionId, accountId) => {
     const deliveryId = ownedLocalDeliveries.get(sessionId);
@@ -30,6 +37,36 @@ export const createClusterPlaybackService = ({ scheduler, grants, client, delive
   const releaseOwnedDelivery = async (sessionId, accountId) => {
     await Promise.all([releaseLocalDelivery(sessionId, accountId), releaseRemoteDelivery(sessionId)]);
   };
+  const releaseSession = async (sessionId, accountId) => {
+    const entry = sessions.get(sessionId);
+    if (!entry || entry.accountId !== accountId) return false;
+    if (entry.releasePromise) { await entry.releasePromise; return false; }
+    entry.releasePromise = (async () => {
+      sessions.delete(sessionId);
+      await releaseOwnedDelivery(sessionId, accountId);
+      try { scheduler.release(sessionId, { accountId }); }
+      catch (releaseError) {
+        if (![404, 410].includes(releaseError?.status)) throw releaseError;
+      }
+    })();
+    await entry.releasePromise;
+    return true;
+  };
+  const requireSession = async (sessionId, accountId) => {
+    const entry = sessions.get(sessionId);
+    if (!entry || entry.accountId !== accountId) throw error(404, "cluster_playback_session_not_found", "Cluster playback session not found.");
+    if (now() >= entry.expiresAt) {
+      await releaseSession(sessionId, accountId);
+      throw error(410, "cluster_playback_session_expired", "Cluster playback session expired.");
+    }
+    return entry;
+  };
+  const sweepExpired = async () => {
+    const expired = [...sessions.entries()].filter(([, entry]) => now() >= entry.expiresAt);
+    await Promise.allSettled(expired.map(([sessionId, entry]) => releaseSession(sessionId, entry.accountId)));
+  };
+  const sweepTimer = setTimer(() => { void sweepExpired(); }, sweepIntervalMs);
+  sweepTimer?.unref?.();
   const remotePlan = (scheduled, result) => ({
     decision: result.decision,
     federatedItemId: scheduled.internal.federatedItemId,
@@ -113,6 +150,13 @@ export const createClusterPlaybackService = ({ scheduler, grants, client, delive
       startPositionSeconds: scheduled.internal.request.startPositionSeconds ?? null,
       subtitleId: scheduled.internal.request.subtitleId ?? null
     }));
+    if (!sessions.has(scheduled.internal.id)) {
+      await deliveryClient.cancel(candidate.endpoint, {
+        clusterSessionId: scheduled.internal.id,
+        deliveryId: result.deliveryId
+      }).catch(() => undefined);
+      throw error(410, "cluster_playback_session_expired", "Cluster playback session expired while delivery was being prepared.");
+    }
     remoteDeliveries.set(scheduled.internal.id, { candidate, result, scheduled });
     if (result.status !== "ready") {
       if (TERMINAL_FAILURES.has(result.status)) throw error(502, "shard_delivery_failed", "The shard could not prepare playback delivery.");
@@ -135,6 +179,10 @@ export const createClusterPlaybackService = ({ scheduler, grants, client, delive
           sourceId: candidate.localSourceId,
           startPositionSeconds: scheduled.internal.request.startPositionSeconds ?? null
         }, principal(accountId));
+        if (!sessions.has(scheduled.session.id)) {
+          await localDelivery.cancel(local.session.id, principal(accountId)).catch(() => undefined);
+          throw error(410, "cluster_playback_session_expired", "Cluster playback session expired while delivery was being prepared.");
+        }
         ownedLocalDeliveries.set(scheduled.session.id, local.session.id);
         return { plan: local.plan, session: { ...scheduled.session, delivery: local.session, deliveryUrl: local.session.deliveryUrl } };
       }
@@ -144,18 +192,25 @@ export const createClusterPlaybackService = ({ scheduler, grants, client, delive
       }
       return await activateGenerated(scheduled, context);
     } catch (activationError) {
-      await releaseOwnedDelivery(scheduled.session.id, accountId);
-      scheduler.release(scheduled.session.id, { accountId });
+      await releaseSession(scheduled.session.id, accountId);
       throw activationError;
     }
   };
 
   return {
     async create(request, context) {
+      if (closed) throw error(503, "cluster_playback_closed", "Cluster playback is shutting down.");
       const scheduled = scheduler.create(request, { accountId: context.accountId });
+      const schedulerExpiry = Date.parse(scheduled.session.expiresAt ?? "");
+      sessions.set(scheduled.session.id, {
+        accountId: context.accountId,
+        expiresAt: Number.isFinite(schedulerExpiry) ? schedulerExpiry : now() + sessionTtlMs,
+        releasePromise: null
+      });
       return activate(scheduled, context);
     },
     async get(sessionId, context) {
+      await requireSession(sessionId, context.accountId);
       const publicSession = scheduler.get(sessionId, context);
       const ready = readyRemoteSessions.get(sessionId);
       if (ready) return ready;
@@ -167,8 +222,7 @@ export const createClusterPlaybackService = ({ scheduler, grants, client, delive
       }));
       remote.result = result;
       if (TERMINAL_FAILURES.has(result.status)) {
-        await releaseRemoteDelivery(sessionId);
-        scheduler.release(sessionId, context);
+        await releaseSession(sessionId, context.accountId);
         throw error(502, "shard_delivery_failed", "The shard could not prepare playback delivery.");
       }
       if (result.status !== "ready") return pendingRemoteResponse({ ...remote.scheduled, session: publicSession }, result);
@@ -177,13 +231,21 @@ export const createClusterPlaybackService = ({ scheduler, grants, client, delive
       return activated;
     },
     async failover(sessionId, context, failedNodeId) {
+      await requireSession(sessionId, context.accountId);
       const replacement = scheduler.failover(sessionId, context, failedNodeId);
       await releaseOwnedDelivery(sessionId, context.accountId);
       return activate(replacement, context);
     },
     async release(sessionId, context) {
-      await releaseOwnedDelivery(sessionId, context.accountId);
-      scheduler.release(sessionId, context);
+      if (!await releaseSession(sessionId, context.accountId)) {
+        throw error(404, "cluster_playback_session_not_found", "Cluster playback session not found.");
+      }
+    },
+    async shutdown() {
+      if (closed) return;
+      closed = true;
+      clearTimer(sweepTimer);
+      await Promise.allSettled([...sessions.entries()].map(([sessionId, entry]) => releaseSession(sessionId, entry.accountId)));
     }
   };
 };

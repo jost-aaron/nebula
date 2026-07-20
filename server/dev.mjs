@@ -430,6 +430,7 @@ const shutdown = async () => {
   renditionCleanupScheduler.stop();
   await new Promise((resolve) => httpServer.close(resolve));
   await jobsWorker.stop();
+  await clusterPlayback?.shutdown();
   await playbackDelivery.shutdown();
   await clusterShardDelivery?.shutdown();
   await clusterDelivery?.shutdown();

@@ -282,8 +282,7 @@ At handoff time:
   deterministic direct/remux/transcode preference metadata, a local bonus,
   active-session load, drain state, and failure cooldown. Remote original,
   remux, HLS/live transcode, prebuilt rendition reuse, and fixed Cinema quality
-  profiles are activated through fixed signed shard routes. Remote subtitle
-  delivery still fails closed.
+  profiles and remote subtitles are activated through fixed signed shard routes.
 - A coordinator signs a short-lived, account/device/session/source/revision-
   bound grant. The target shard validates the pinned paired-node signature and
   replay nonce, resolves only the bound catalog source, and serves `GET`/`HEAD`
@@ -302,6 +301,12 @@ At handoff time:
   browser position. Federated personal playback history, resume, completion,
   and Continue Watching are coordinator-owned and account-isolated. Remote
   mutations remain local-source-only.
+- Coordinator playback assignments and shard-generated deliveries have hard,
+  non-sliding expirations with periodic cleanup. Cleanup is idempotent and
+  releases scheduler capacity plus generated delivery work after explicit
+  cancellation, failure, expiry, or shutdown. Cinema and Studio use a finite,
+  abortable preparation deadline with bounded exponential polling backoff and
+  cancel on source changes, request supersession, app teardown, or timeout.
 - Phase 4 generated-fixture checks cover scheduler, grants, ingress, activation,
   signed generated-delivery lifecycle, ticketed HLS playlist and segment
   delivery, federated playback state, account isolation, and exact-replica

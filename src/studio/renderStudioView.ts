@@ -15,6 +15,7 @@ import type { MediaList } from "../shared/mediaListTypes";
 import type { PlaybackEventKind, PlaybackHistoryEntry } from "../shared/playbackTypes";
 import { createBrowserUuid } from "../shared/browserUuid";
 import type { FederatedAvailabilitySummary } from "../shared/federatedTypes";
+import { pollDeliveryUntilReady } from "../shared/deliveryPolling.js";
 
 interface StudioServerInfo {
   address: string;
@@ -652,6 +653,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     let clusterDeliveryNodeId: string | null = null;
     let clusterDeliverySourceId: string | null = null;
     let failoverPending = false;
+    let preparationController: AbortController | null = null;
     let playerRequestGeneration = 0;
     let playerReady = Promise.resolve();
     let eventQueue = Promise.resolve();
@@ -749,6 +751,8 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     };
 
     const releaseClusterDelivery = () => {
+      preparationController?.abort();
+      preparationController = null;
       const id = clusterDeliveryId;
       clusterDeliveryId = null;
       clusterDeliveryNodeId = null;
@@ -780,16 +784,16 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
               void cancelClusterMusicDelivery(created.session.id).catch(() => undefined);
               return;
             }
-            let current = created;
-            while (["queued", "running"].includes(current.session.status)) {
-              await new Promise((resolve) => window.setTimeout(resolve, 350));
-              if (disposed || requestGeneration !== playerRequestGeneration || playingEntry?.path !== entry.path) {
-                void cancelClusterMusicDelivery(current.session.id).catch(() => undefined);
-                return;
-              }
-              current = await getClusterMusicDelivery(current.session.id);
-            }
-            if (current.session.status !== "ready") throw new Error("Remote playback delivery did not become ready.");
+            const controller = new AbortController();
+            preparationController = controller;
+            const current = await pollDeliveryUntilReady({
+              initial: created,
+              getStatus: getClusterMusicDelivery,
+              cancel: cancelClusterMusicDelivery,
+              signal: controller.signal
+            }).finally(() => {
+              if (preparationController === controller) preparationController = null;
+            });
             clusterDeliveryId = current.session.id;
             clusterDeliveryNodeId = current.session.candidate.nodeId;
             clusterDeliverySourceId = current.session.candidate.sourceId;
@@ -892,14 +896,22 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       const position = Number.isFinite(audioPlayer.currentTime) ? audioPlayer.currentTime : 0;
       setStatus("The active shard stopped responding. Finding an exact replica…");
       try {
-        let replacement = await failoverClusterMusicDelivery(deliveryId, clusterDeliveryNodeId);
-        while (["queued", "running"].includes(replacement.session.status)) {
-          await new Promise((resolve) => window.setTimeout(resolve, 350));
-          if (disposed || clusterDeliveryId !== replacement.session.id) return;
-          replacement = await getClusterMusicDelivery(replacement.session.id);
+        preparationController?.abort();
+        const controller = new AbortController();
+        preparationController = controller;
+        const initial = await failoverClusterMusicDelivery(deliveryId, clusterDeliveryNodeId);
+        const replacement = await pollDeliveryUntilReady({
+          initial,
+          getStatus: getClusterMusicDelivery,
+          cancel: cancelClusterMusicDelivery,
+          signal: controller.signal
+        }).finally(() => {
+          if (preparationController === controller) preparationController = null;
+        });
+        if (disposed || clusterDeliveryId !== replacement.session.id) {
+          void cancelClusterMusicDelivery(replacement.session.id).catch(() => undefined);
+          return;
         }
-        if (replacement.session.status !== "ready") throw new Error("Replica delivery did not become ready.");
-        if (disposed || clusterDeliveryId !== replacement.session.id) return;
         clusterDeliveryNodeId = replacement.session.candidate.nodeId;
         clusterDeliverySourceId = replacement.session.candidate.sourceId;
         audioPlayer.src = apiUrl(replacement.session.deliveryUrl);

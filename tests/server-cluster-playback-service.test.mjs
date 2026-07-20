@@ -85,3 +85,80 @@ test("generated delivery plan mismatch releases shard delivery and scheduler cap
   assert.equal(cancelled, null);
   assert.equal(released, "cluster_session_fixture_01");
 });
+
+test("abandoned coordinator sessions expire without status refresh and release exactly once", async () => {
+  let currentTime = 1_000;
+  let sweep = null;
+  let timerCleared = 0;
+  let schedulerReleases = 0;
+  let shardCancels = 0;
+  const candidate = { decision: "transcode", endpoint: "https://basement.tail024251.ts.net", federatedSourceId: "fsource_fixture_01", local: false, localItemId: "item_fixture_01", localSourceId: "source_fixture_01", mode: "live-transcode", nodeId: "node_fixture_01", sourceRevision: 4 };
+  const scheduled = session(candidate);
+  scheduled.session.expiresAt = new Date(1_050).toISOString();
+  const scheduler = {
+    create: () => scheduled,
+    get: () => scheduled.session,
+    release: () => { schedulerReleases += 1; }
+  };
+  const result = { decision: "transcode", deliveryId: "delivery_fixture_01", output: { protocol: "hls" }, reasons: [], status: "queued" };
+  const playback = createClusterPlaybackService({
+    client: {},
+    deliveryClient: {
+      cancel: async () => { shardCancels += 1; },
+      create: async () => result,
+      get: async () => result
+    },
+    grants: {},
+    scheduler,
+    now: () => currentTime,
+    sessionTtlMs: 50,
+    setTimer: (callback) => { sweep = callback; return { unref() {} }; },
+    clearTimer: () => { timerCleared += 1; }
+  });
+
+  const created = await playback.create(request, { accountId: "account_fixture_01" });
+  currentTime = 1_040;
+  assert.equal((await playback.get(created.session.id, { accountId: "account_fixture_01" })).session.status, "queued");
+  currentTime = 1_050;
+  sweep();
+  await new Promise(setImmediate);
+  assert.equal(shardCancels, 1);
+  assert.equal(schedulerReleases, 1);
+  await assert.rejects(playback.get(created.session.id, { accountId: "account_fixture_01" }), { code: "cluster_playback_session_not_found" });
+  await playback.shutdown();
+  await playback.shutdown();
+  assert.equal(shardCancels, 1);
+  assert.equal(schedulerReleases, 1);
+  assert.equal(timerCleared, 1);
+});
+
+test("delivery creation finishing after coordinator expiry is cancelled without reclaiming capacity", async () => {
+  let currentTime = 3_000;
+  let sweep = null;
+  let finishCreate;
+  let schedulerReleases = 0;
+  let shardCancels = 0;
+  const candidate = { decision: "transcode", endpoint: "https://basement.tail024251.ts.net", federatedSourceId: "fsource_fixture_01", local: false, localItemId: "item_fixture_01", localSourceId: "source_fixture_01", mode: "live-transcode", nodeId: "node_fixture_01", sourceRevision: 4 };
+  const scheduled = session(candidate);
+  scheduled.session.expiresAt = new Date(3_050).toISOString();
+  const playback = createClusterPlaybackService({
+    client: {}, grants: {}, now: () => currentTime, sessionTtlMs: 50,
+    scheduler: { create: () => scheduled, release: () => { schedulerReleases += 1; } },
+    deliveryClient: {
+      create: () => new Promise((resolve) => { finishCreate = resolve; }),
+      cancel: async () => { shardCancels += 1; }
+    },
+    setTimer: (callback) => { sweep = callback; return { unref() {} }; }, clearTimer: () => undefined
+  });
+  const pending = playback.create(request, { accountId: "account_fixture_01" });
+  await Promise.resolve();
+  currentTime = 3_050;
+  sweep();
+  await new Promise(setImmediate);
+  finishCreate({ decision: "transcode", deliveryId: "delivery_fixture_01", output: { protocol: "hls" }, reasons: [], status: "queued" });
+  await assert.rejects(pending, { code: "cluster_playback_session_expired" });
+  assert.equal(schedulerReleases, 1);
+  assert.equal(shardCancels, 1);
+  await playback.shutdown();
+  assert.equal(shardCancels, 1);
+});

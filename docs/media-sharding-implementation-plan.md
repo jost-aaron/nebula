@@ -7,8 +7,16 @@ implementation status. Phases 0-3 are complete. Phase 4 now implements
 coordinator-scheduled original, remuxed, live-HLS, and persistent-rendition
 delivery through signed shard grants, plus coordinator-owned personal playback
 state. Phase 5 owner priority, capacity, safe display-name, and maintenance-drain
-controls are implemented; the remaining operations, real-tailnet, and subtitle
-limitations below remain part of the contract.
+controls are implemented; the remaining operations and real-tailnet limitations
+below remain part of the contract.
+
+Generated playback sessions now use hard, non-sliding deadlines at both the
+coordinator and shard. Periodic sweeps release scheduler claims and cancel
+underlying local or remote delivery exactly once, including after an abandoned
+browser session. Cinema and Studio preparation polling is finite, abortable,
+and exponentially backed off; teardown, source replacement, supersession, and
+deadline failure cancel the coordinator session instead of leaving capacity
+claimed. Status polling never extends these cluster-level deadlines.
 
 The recommended first release uses one **coordinator** and one or more **media
 shards**. A normal single-server Nebula installation remains supported and acts

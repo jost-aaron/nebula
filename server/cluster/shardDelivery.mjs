@@ -9,9 +9,15 @@ const requireId = (value, label) => {
 const quality = (profileId) => profileId === "auto" ? { mode: "auto" }
   : profileId === "original" ? { mode: "original" } : { mode: "profile", profileId };
 
-export const createClusterShardDeliveryService = ({ catalog, delivery, localNodeId, subtitles = null }) => {
+export const createClusterShardDeliveryService = ({
+  catalog, delivery, localNodeId, subtitles = null,
+  now = () => Date.now(), sessionTtlMs = 30 * 60 * 1000,
+  sweepIntervalMs = Math.min(sessionTtlMs, 60_000),
+  setTimer = setInterval, clearTimer = clearInterval
+}) => {
   if (!catalog || !delivery || !localNodeId) throw new TypeError("Catalog, delivery, and local node identity are required.");
   const sessions = new Map();
+  let closed = false;
   const principalFor = (clusterSessionId, subtitleId) => ({ type: "user", userId: `cluster_${clusterSessionId}`, subtitleId: subtitleId ?? null });
   const validatePeer = (peer) => {
     if (!peer || !new Set(["coordinator", "hybrid"]).has(peer.role)) throw error(403, "shard_delivery_denied", "Only a paired coordinator can manage shard delivery.");
@@ -32,10 +38,20 @@ export const createClusterShardDeliveryService = ({ catalog, delivery, localNode
     }
     return source;
   };
+  const cleanup = async (entry) => {
+    if (entry.cleanupPromise) return entry.cleanupPromise;
+    sessions.delete(entry.deliveryId);
+    entry.cleanupPromise = delivery.cancel(entry.deliveryId, entry.principal).catch(() => undefined);
+    return entry.cleanupPromise;
+  };
   const find = (deliveryId, clusterSessionId, peer) => {
     validatePeer(peer);
     const entry = sessions.get(deliveryId);
     if (!entry || entry.clusterSessionId !== clusterSessionId || entry.peerNodeId !== peer.nodeId) throw error(404, "shard_delivery_not_found", "Shard delivery was not found.");
+    if (now() >= entry.expiresAt) {
+      void cleanup(entry);
+      throw error(410, "shard_delivery_expired", "Shard delivery expired.");
+    }
     return entry;
   };
   const publicResult = (entry) => {
@@ -55,9 +71,16 @@ export const createClusterShardDeliveryService = ({ catalog, delivery, localNode
       status: session.status
     };
   };
+  const sweepExpired = async () => {
+    const expired = [...sessions.values()].filter((entry) => now() >= entry.expiresAt);
+    await Promise.allSettled(expired.map(cleanup));
+  };
+  const sweepTimer = setTimer(() => { void sweepExpired(); }, sweepIntervalMs);
+  sweepTimer?.unref?.();
 
   return {
     async create(input, peer) {
+      if (closed) throw error(503, "shard_delivery_closed", "Shard delivery is shutting down.");
       validatePeer(peer);
       validateRequest(input);
       const principal = principalFor(input.clusterSessionId, input.subtitleId);
@@ -68,10 +91,16 @@ export const createClusterShardDeliveryService = ({ catalog, delivery, localNode
         sourceId: input.localSourceId,
         startPositionSeconds: input.startPositionSeconds ?? null
       }, principal);
+      if (closed) {
+        await delivery.cancel(created.session.id, principal).catch(() => undefined);
+        throw error(503, "shard_delivery_closed", "Shard delivery is shutting down.");
+      }
       const entry = {
         accountId: input.accountId,
         clusterSessionId: input.clusterSessionId,
+        cleanupPromise: null,
         deliveryId: created.session.id,
+        expiresAt: now() + sessionTtlMs,
         federatedItemId: input.federatedItemId,
         localItemId: input.localItemId,
         localSourceId: input.localSourceId,
@@ -92,8 +121,7 @@ export const createClusterShardDeliveryService = ({ catalog, delivery, localNode
     async cancel(input, peer) {
       if (!exactKeys(input, new Set(["clusterSessionId", "deliveryId"]))) throw error(400, "invalid_shard_delivery", "The shard delivery cancellation request is invalid.");
       const entry = find(input.deliveryId, input.clusterSessionId, peer);
-      sessions.delete(entry.deliveryId);
-      await delivery.cancel(entry.deliveryId, entry.principal);
+      await cleanup(entry);
       return { cancelled: true, deliveryId: entry.deliveryId };
     },
     authorizeGrant(grant) {
@@ -112,6 +140,7 @@ export const createClusterShardDeliveryService = ({ catalog, delivery, localNode
     resolveFile(entry) { return delivery.resolveFile(entry.deliveryId, entry.principal); },
     resolveHlsAsset(entry, asset) { return delivery.resolveHlsAsset(entry.deliveryId, asset, entry.principal); },
     operationsSnapshot() {
+      for (const entry of sessions.values()) if (now() >= entry.expiresAt) void cleanup(entry);
       const states = Object.fromEntries([...STATUSES].map((status) => [status, 0]));
       for (const entry of sessions.values()) {
         try { publicResult(entry); } catch { entry.lastStatus = "failed"; }
@@ -120,8 +149,10 @@ export const createClusterShardDeliveryService = ({ catalog, delivery, localNode
       return { active: states.queued + states.running + states.ready, states };
     },
     async shutdown() {
-      await Promise.allSettled([...sessions.values()].map((entry) => delivery.cancel(entry.deliveryId, entry.principal)));
-      sessions.clear();
+      if (closed) return;
+      closed = true;
+      clearTimer(sweepTimer);
+      await Promise.allSettled([...sessions.values()].map(cleanup));
     },
     localNodeId
   };
