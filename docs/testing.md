@@ -181,6 +181,9 @@ Automated tests cannot establish a private HTTPS endpoint without an approved
 tailnet and operator-generated credential. After following the bootstrap runbook
 in `deployment.md`, use an isolated tailnet/copied Nebula data and verify:
 
+Record completed operator evidence and remaining gaps in
+`media-sharding-tailnet-acceptance.md`.
+
 1. `tailscale serve status` reports private HTTPS `/` proxying only to
    `http://127.0.0.1:5173`, and the reviewed config still has
    `AllowFunnel: false`.

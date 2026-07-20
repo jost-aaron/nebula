@@ -352,8 +352,12 @@ At handoff time:
   diagnostics, stale-manifest/cooldown reporting, mixed-version rolling tests,
   and backup/restore coverage are implemented. Public readiness stays opaque;
   detailed reasons and rotation controls remain owner/service-admin only.
-- Media-sharding Phases 0-5 are implementation-complete. The remaining MVP
-  acceptance work is a disposable real-tailnet Direct/DERP multi-node pass.
+- Media-sharding Phases 0-5 are implementation-complete. A real-tailnet
+  single-node pass verified private HTTPS, Funnel disabled, account restoration,
+  CORS, DERP-to-Direct transition, and live Cinema playback/seek. The remaining
+  MVP acceptance work is the disposable paired-node load, failover, revocation,
+  and sustained-DERP pass recorded in
+  `docs/media-sharding-tailnet-acceptance.md`.
   Member federation is implemented for the current shared-content library;
   guest federation remains fail-closed, distributed generated-playback policy
   is enforced at the coordinator, and future multi-library federation requires

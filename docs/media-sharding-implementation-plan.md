@@ -13,7 +13,9 @@ experiment is now researched with a **defer** recommendation. Current manifests
 lack cryptographic segment maps and cross-host FFmpeg byte determinism is
 unproven. Detached, default-off contract/loader utilities and a generated-fixture
 benchmark are documented in `docs/multi-origin-hls-experiment.md`; they are not
-wired into production. Real-tailnet acceptance remains outstanding.
+wired into production. A single-node private HTTPS, DERP-to-Direct, and Cinema
+playback pass is recorded in `docs/media-sharding-tailnet-acceptance.md`.
+Disposable paired-node acceptance remains outstanding.
 
 Generated playback sessions now use hard, non-sliding deadlines at both the
 coordinator and shard. Periodic sweeps release scheduler claims and cancel
