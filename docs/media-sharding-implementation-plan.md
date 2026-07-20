@@ -3,9 +3,11 @@
 ## Status
 
 This document scopes the media-platform sharding feature and records its staged
-implementation status. Phases 0-3 are complete. Phase 4 currently implements
-coordinator-scheduled original/direct-play delivery through signed shard grants;
-the limitations in the Phase 4 status section remain part of the contract.
+implementation status. Phases 0-3 are complete. Phase 4 now implements
+coordinator-scheduled original, remuxed, live-HLS, and persistent-rendition
+delivery through signed shard grants, plus coordinator-owned personal playback
+state. The remaining operator and subtitle limitations in the Phase 4 status
+section remain part of the contract.
 
 The recommended first release uses one **coordinator** and one or more **media
 shards**. A normal single-server Nebula installation remains supported and acts
@@ -511,13 +513,14 @@ deliberately disabled until coordinator permissions can be projected safely.
 - Phase 4 is in progress: deterministic session-level scheduling, account-bound
   cluster playback sessions, signed delegated grants, fixed range-capable shard
   media ingress, direct client-to-shard original playback in Cinema and Studio,
-  and the exact-replica failover API are implemented with generated fixtures.
-  Cinema and Studio attempt failover after a remote media error.
-- Remote remux, remote HLS/live transcode, remote prebuilt rendition delivery,
-  remote subtitle delivery, remote fixed-quality switching, federated personal
-  playback-state integration, member/guest federation, and production policy
-  admission are not implemented. A real-tailnet multi-node playback/failover
-  pass has not been completed.
+  remote remux, remote HLS/live transcode, persistent-rendition reuse,
+  fixed-quality Cinema switching, coordinator-owned federated playback history
+  and resume state, and the exact-replica failover API are implemented with
+  generated fixtures. Cinema and Studio attempt failover after a remote media
+  error.
+- Remote subtitle delivery, member/guest federation, and distributed production
+  policy admission are not implemented. A real-tailnet multi-node
+  playback/failover pass has not been completed.
 
 ### Phase 0: contracts and threat model
 
@@ -580,14 +583,17 @@ Exit: concurrent sessions distribute across shards, permissions remain
 isolated, and killing the active shard resumes an exact replica near the same
 position.
 
-Status: partially implemented. Generated-fixture tests cover deterministic
+Status: implementation-complete pending operator acceptance, except for remote
+subtitle delivery and distributed production policy admission. Generated-fixture tests cover deterministic
 balancing, sticky sessions, scheduler explanations, drain/cooldown handling,
 grant signature and replay defenses, source/revision binding, range media
-ingress, account isolation, and the exact-replica-only failover contract. The
-exit criterion is not met until remote generated delivery and personal-state
-integration are complete and an operator verifies real Direct and DERP paths,
-simultaneous sessions, shard loss, resume tolerance, browser CORS, and grant
-expiry/revocation behavior on an approved test tailnet.
+ingress, signed remote delivery creation/status/cancellation, remote remux and
+HLS output, safe ticketed playlist/segment delivery, fixed-quality and
+persistent-rendition planning, federated personal-state isolation, and the
+exact-replica-only failover contract. The exit criterion is not met until an
+operator verifies real Direct and DERP paths, simultaneous sessions, shard
+loss, resume tolerance, browser CORS, and grant expiry/revocation behavior on
+an approved test tailnet.
 
 ### Phase 5: operations and hardening
 

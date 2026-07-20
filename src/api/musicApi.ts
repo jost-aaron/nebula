@@ -29,6 +29,9 @@ export const createClusterMusicDelivery = (body: {
   method: "POST"
 });
 
+export const getClusterMusicDelivery = (id: string) =>
+  apiJson<ClusterPlaybackCreateResponse>(`/api/cluster/playback-sessions/${encodeURIComponent(id)}`);
+
 export const failoverClusterMusicDelivery = (id: string, failedNodeId: string) =>
   apiJson<ClusterPlaybackCreateResponse>(`/api/cluster/playback-sessions/${encodeURIComponent(id)}/failover`, {
     body: JSON.stringify({ failedNodeId }), headers: { "content-type": "application/json" }, method: "POST"

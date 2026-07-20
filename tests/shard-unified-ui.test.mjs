@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("Cinema and Studio route direct remote playback through cluster sessions", async () => {
+test("Cinema and Studio poll remote delivery and persist federated playback through cluster sessions", async () => {
   const [cinema, cinemaApi, studio, musicApi, styles] = await Promise.all([
     readFile(new URL("../src/cinema/renderCinemaView.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/api/cinemaApi.ts", import.meta.url), "utf8"),
@@ -12,10 +12,14 @@ test("Cinema and Studio route direct remote playback through cluster sessions", 
   ]);
   assert.match(cinema, /aria-label="Available on"/);
   assert.match(cinema, /createClusterCinemaDelivery/);
+  assert.match(cinema, /getClusterCinemaDelivery/);
+  assert.match(cinema, /federatedIdentity/);
   assert.match(cinemaApi, /\/api\/cluster\/playback-sessions/);
   assert.match(cinema, /!selected\.streamUrl && !selected\.federation/);
   assert.match(studio, /aria-label="Available on"/);
   assert.match(studio, /createClusterMusicDelivery/);
+  assert.match(studio, /getClusterMusicDelivery/);
+  assert.match(studio, /federatedIdentity/);
   assert.match(musicApi, /\/api\/cluster\/playback-sessions/);
   assert.match(styles, /\.cinema-shard-availability/);
   assert.match(styles, /\.studio-shard-availability/);

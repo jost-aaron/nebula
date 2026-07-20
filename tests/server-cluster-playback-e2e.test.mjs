@@ -177,8 +177,8 @@ test("coordinator scheduling delegates exact-replica playback to isolated shard 
   assert.equal(initialRange.headers.get("content-range"), `bytes 19-27/${mediaBytes.length}`);
   assert.equal(initialRange.headers.get("cache-control"), "private, no-store");
 
-  assert.throws(
-    () => playback.get(first.session.id, { accountId: "account_bob_fixture" }),
+  await assert.rejects(
+    playback.get(first.session.id, { accountId: "account_bob_fixture" }),
     { code: "cluster_playback_session_not_found" }
   );
   await assert.rejects(

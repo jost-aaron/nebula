@@ -11,7 +11,7 @@ const sameText = (left, right) => {
 
 export const createClusterGrantService = ({
   catalog, trust, now = () => Date.now(), uuid = randomUUID, random = (bytes) => randomBytes(bytes),
-  grantTtlMs = 10 * 60 * 1000, isClientOriginAllowed = () => false
+  grantTtlMs = 10 * 60 * 1000, isClientOriginAllowed = () => false, shardDelivery = null
 }) => {
   if (!catalog || !trust) throw new TypeError("Catalog and cluster trust services are required.");
   const accepted = new Map();
@@ -27,7 +27,7 @@ export const createClusterGrantService = ({
   };
 
   return {
-    issue({ accountId, candidate, clientOrigin = null, deviceId, federatedItemId, profileId = "auto", sessionId }) {
+    issue({ accountId, candidate, clientOrigin = null, delivery = null, deviceId, federatedItemId, profileId = "auto", sessionId }) {
       const issuedAt = now();
       const grantId = `grant_${uuid().replaceAll("-", "")}`;
       const identity = trust.identity();
@@ -41,6 +41,8 @@ export const createClusterGrantService = ({
         assetPrefix: `/api/shard/v1/media/${grantId}/`,
         clientOrigin: delegatedOrigin,
         clusterId: identity.clusterId,
+        deliveryId: delivery?.deliveryId ?? null,
+        deliveryProtocol: delivery?.output?.protocol ?? "file",
         deviceId,
         expiresAt: new Date(issuedAt + grantTtlMs).toISOString(),
         federatedItemId,
@@ -67,8 +69,10 @@ export const createClusterGrantService = ({
       const peer = trust.verifyRequest(input?.envelope, grant, { method: "POST", path: GRANT_PATH });
       if (!new Set(["coordinator", "hybrid"]).has(peer.role)) throw error(403, "grant_issuer_denied", "Only a coordinator can delegate media access.");
       validateSource(grant);
+      const delivery = shardDelivery?.authorizeGrant(grant) ?? null;
+      if (grant.deliveryId && !delivery) throw error(404, "grant_delivery_unavailable", "The delegated delivery is unavailable.");
       const ticket = random(32).toString("base64url");
-      accepted.set(grant.grantId, { clientOrigin: grant.clientOrigin, expiresAt: Date.parse(grant.expiresAt), grant, ticketHash: sha256(ticket) });
+      accepted.set(grant.grantId, { clientOrigin: grant.clientOrigin, delivery, expiresAt: Date.parse(grant.expiresAt), grant, ticketHash: sha256(ticket) });
       return { expiresAt: grant.expiresAt, grantId: grant.grantId, mediaTicket: ticket };
     },
     resolve({ grantId, method, ticket }) {
@@ -77,7 +81,7 @@ export const createClusterGrantService = ({
       if (!entry || !entry.grant.methods.includes(method) || typeof ticket !== "string" || !sameText(entry.ticketHash, sha256(ticket))) {
         throw error(404, "delegated_media_not_found", "Delegated media was not found.");
       }
-      return { clientOrigin: entry.clientOrigin, grant: entry.grant, source: validateSource(entry.grant) };
+      return { clientOrigin: entry.clientOrigin, delivery: entry.delivery, grant: entry.grant, source: validateSource(entry.grant) };
     },
     revoke(grantId) { accepted.delete(grantId); },
     shutdown() { accepted.clear(); }

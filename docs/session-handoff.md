@@ -280,10 +280,10 @@ At handoff time:
   permissions are implemented.
 - Phase 4 now schedules owner playback per session across online sources using
   deterministic direct/remux/transcode preference metadata, a local bonus,
-  active-session load, drain state, and failure cooldown. Only remote
-  original/direct play is activated today; remote remux, HLS/live transcode,
-  prebuilt rendition delivery, subtitles, and fixed-quality conversion fail
-  closed as pending modes.
+  active-session load, drain state, and failure cooldown. Remote original,
+  remux, HLS/live transcode, prebuilt rendition reuse, and fixed Cinema quality
+  profiles are activated through fixed signed shard routes. Remote subtitle
+  delivery still fails closed.
 - A coordinator signs a short-lived, account/device/session/source/revision-
   bound grant. The target shard validates the pinned paired-node signature and
   replay nonce, resolves only the bound catalog source, and serves `GET`/`HEAD`
@@ -295,14 +295,18 @@ At handoff time:
   but an already accepted ticket lasts until expiry or shard restart. CORS is
   exact-origin defense in depth, not authentication; active-ticket revocation
   and per-request device binding remain hardening work.
-- Cinema and Studio can play eligible remote-only original files directly from
-  the selected shard. Both players react to a media error by requesting another
+- Cinema and Studio can play eligible remote-only files directly from the
+  selected shard; Cinema also polls remote generated delivery for remux and HLS
+  profiles. Both players react to a media error by requesting another
   online source with the identical strong fingerprint and seeking to the last
-  browser position. Federated personal playback history/resume is not wired
-  yet. Remote mutations remain local-source-only.
+  browser position. Federated personal playback history, resume, completion,
+  and Continue Watching are coordinator-owned and account-isolated. Remote
+  mutations remain local-source-only.
 - Phase 4 generated-fixture checks cover scheduler, grants, ingress, activation,
-  account isolation, and exact-replica failover contracts. Real-tailnet Direct
+  signed generated-delivery lifecycle, ticketed HLS playlist and segment
+  delivery, federated playback state, account isolation, and exact-replica
+  failover contracts. Real-tailnet Direct
   and DERP playback, simultaneous load distribution, browser CORS, grant expiry
   and revocation, shard-loss resume tolerance, and URL/log leakage checks remain
-  operator verification. Do not claim remote generated delivery or production
-  tailnet readiness; see `docs/media-sharding-implementation-plan.md`.
+  operator verification. Do not claim production tailnet readiness; see
+  `docs/media-sharding-implementation-plan.md`.

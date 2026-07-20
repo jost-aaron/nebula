@@ -4,6 +4,7 @@ import {
   cancelClusterMusicDelivery,
   createClusterMusicDelivery,
   failoverClusterMusicDelivery,
+  getClusterMusicDelivery,
   listMusicLibrary,
   listStudioPlaybackHistory,
   reportStudioPlayback
@@ -649,6 +650,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     let playbackSession: PlaybackSession | null = null;
     let clusterDeliveryId: string | null = null;
     let clusterDeliveryNodeId: string | null = null;
+    let clusterDeliverySourceId: string | null = null;
     let failoverPending = false;
     let playerRequestGeneration = 0;
     let playerReady = Promise.resolve();
@@ -705,20 +707,22 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     };
 
     const report = (session: PlaybackSession, event: PlaybackEventKind) => {
-      if (!personalPlayback || !session.entry.id || !session.entry.sourceId) return;
+      if (!personalPlayback || !session.entry.id || (!session.entry.sourceId && !clusterDeliverySourceId)) return;
       if (event === "start") session.lifecycleStarted = true;
       const durationSeconds = Number.isFinite(audioPlayer.duration) && audioPlayer.duration > 0 ? audioPlayer.duration : null;
       const positionSeconds = durationSeconds === null ? Math.max(0, audioPlayer.currentTime || 0) : Math.min(durationSeconds, Math.max(0, audioPlayer.currentTime || 0));
       eventQueue = eventQueue.then(async () => {
         if (event !== "start" && !session.sessionId) return;
+        const identity = session.entry.sourceId
+          ? { itemId: session.entry.id!, sourceId: session.entry.sourceId }
+          : { federatedIdentity: { itemId: session.entry.id!, sourceId: clusterDeliverySourceId! } };
         const result = await reportStudioPlayback({
           durationSeconds,
           event,
           eventId: createBrowserUuid(),
-          itemId: session.entry.id!,
+          ...identity,
           positionSeconds,
-          sessionId: session.sessionId,
-          sourceId: session.entry.sourceId!
+          sessionId: session.sessionId
         });
         session.sessionId = result.session.id;
         if (result.state.lastPlayedAt) {
@@ -748,6 +752,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       const id = clusterDeliveryId;
       clusterDeliveryId = null;
       clusterDeliveryNodeId = null;
+      clusterDeliverySourceId = null;
       if (id) void cancelClusterMusicDelivery(id).catch(() => undefined);
     };
 
@@ -770,14 +775,25 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
             federatedItemId: entry.id!,
             preferredProfileId: "original",
             startPositionSeconds: null
-          }).then((created) => {
+          }).then(async (created) => {
             if (disposed || requestGeneration !== playerRequestGeneration || playingEntry?.path !== entry.path) {
               void cancelClusterMusicDelivery(created.session.id).catch(() => undefined);
               return;
             }
-            clusterDeliveryId = created.session.id;
-            clusterDeliveryNodeId = created.session.candidate.nodeId;
-            audioPlayer.src = apiUrl(created.session.deliveryUrl);
+            let current = created;
+            while (["queued", "running"].includes(current.session.status)) {
+              await new Promise((resolve) => window.setTimeout(resolve, 350));
+              if (disposed || requestGeneration !== playerRequestGeneration || playingEntry?.path !== entry.path) {
+                void cancelClusterMusicDelivery(current.session.id).catch(() => undefined);
+                return;
+              }
+              current = await getClusterMusicDelivery(current.session.id);
+            }
+            if (current.session.status !== "ready") throw new Error("Remote playback delivery did not become ready.");
+            clusterDeliveryId = current.session.id;
+            clusterDeliveryNodeId = current.session.candidate.nodeId;
+            clusterDeliverySourceId = current.session.candidate.sourceId;
+            audioPlayer.src = apiUrl(current.session.deliveryUrl);
             audioPlayer.load();
             statusMessage = "Ready from a remote shard.";
             syncPlayerUi();
@@ -876,9 +892,16 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       const position = Number.isFinite(audioPlayer.currentTime) ? audioPlayer.currentTime : 0;
       setStatus("The active shard stopped responding. Finding an exact replica…");
       try {
-        const replacement = await failoverClusterMusicDelivery(deliveryId, clusterDeliveryNodeId);
+        let replacement = await failoverClusterMusicDelivery(deliveryId, clusterDeliveryNodeId);
+        while (["queued", "running"].includes(replacement.session.status)) {
+          await new Promise((resolve) => window.setTimeout(resolve, 350));
+          if (disposed || clusterDeliveryId !== replacement.session.id) return;
+          replacement = await getClusterMusicDelivery(replacement.session.id);
+        }
+        if (replacement.session.status !== "ready") throw new Error("Replica delivery did not become ready.");
         if (disposed || clusterDeliveryId !== replacement.session.id) return;
         clusterDeliveryNodeId = replacement.session.candidate.nodeId;
+        clusterDeliverySourceId = replacement.session.candidate.sourceId;
         audioPlayer.src = apiUrl(replacement.session.deliveryUrl);
         audioPlayer.load();
         const resume = () => {

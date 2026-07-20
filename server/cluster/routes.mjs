@@ -1,9 +1,10 @@
 import { json, readBody } from "../http.mjs";
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { parseByteRange } from "../ranges.mjs";
 import { mimeType } from "../storage.mjs";
 import { resolveRemuxSourcePath } from "../remux/index.mjs";
+import path from "node:path";
 
 const sendError = (response, error) => json(response, error.status ?? 500, {
   ...(error.code ? { code: error.code } : {}),
@@ -14,6 +15,7 @@ export const createClusterIngressRoutes = (options) => {
   const service = options?.service ?? options;
   const manifest = options?.manifest ?? null;
   const grants = options?.grants ?? null;
+  const shardDelivery = options?.shardDelivery ?? null;
   const contentRoot = options?.contentRoot ?? null;
   return async (request, response, url) => {
   if (!url.pathname.startsWith("/api/shard/v1/")) return false;
@@ -41,17 +43,63 @@ export const createClusterIngressRoutes = (options) => {
       return true;
     }
     if (request.method === "POST" && url.pathname === "/api/shard/v1/playback/grants/validate" && grants) {
-      json(response, 201, grants.accept(await readBody(request, { limit: 64 * 1024 })));
+      json(response, 201, await grants.accept(await readBody(request, { limit: 64 * 1024 })));
       return true;
     }
-    const mediaMatch = /^\/api\/shard\/v1\/media\/([A-Za-z0-9_-]+)\/file$/.exec(url.pathname);
+    const deliveryOperation = new Map([
+      ["/api/shard/v1/playback/delivery", "create"],
+      ["/api/shard/v1/playback/delivery/status", "get"],
+      ["/api/shard/v1/playback/delivery/cancel", "cancel"]
+    ]).get(url.pathname);
+    if (request.method === "POST" && deliveryOperation && shardDelivery) {
+      const body = await readBody(request, { limit: 64 * 1024 });
+      const peer = service.verifyRequest(body?.envelope, body?.payload, { method: request.method, path: url.pathname });
+      const payload = await shardDelivery[deliveryOperation](body?.payload, peer);
+      json(response, deliveryOperation === "create" ? 201 : 200, {
+        envelope: service.signRequest({ body: payload, method: "POST", path: url.pathname }),
+        payload
+      });
+      return true;
+    }
+    const mediaMatch = /^\/api\/shard\/v1\/media\/([A-Za-z0-9_-]+)\/(file|hls\/([^/]+))$/.exec(url.pathname);
     if (mediaMatch && grants && contentRoot && ["GET", "HEAD"].includes(request.method)) {
       const resolved = grants.resolve({ grantId: mediaMatch[1], method: request.method, ticket: url.searchParams.get("ticket") });
-      const asset = await resolveRemuxSourcePath(contentRoot, resolved.source.path);
+      let asset;
+      let explicitType = null;
+      let playlist = false;
+      if (resolved.delivery) {
+        if (!shardDelivery) throw Object.assign(new Error("Shard delivery is unavailable."), { status: 404, code: "delegated_media_not_found", expose: true });
+        if (mediaMatch[2] === "file") {
+          const result = await shardDelivery.resolveFile(resolved.delivery);
+          asset = result.path; explicitType = result.type;
+        } else {
+          let assetName;
+          try { assetName = decodeURIComponent(mediaMatch[3]); } catch { throw Object.assign(new Error("The requested delivery asset is invalid."), { status: 400, expose: true }); }
+          asset = await shardDelivery.resolveHlsAsset(resolved.delivery, assetName);
+          playlist = path.extname(asset) === ".m3u8";
+          explicitType = playlist ? "application/vnd.apple.mpegurl" : "video/mp2t";
+        }
+      } else {
+        if (mediaMatch[2] !== "file") throw Object.assign(new Error("Delegated media was not found."), { status: 404, code: "delegated_media_not_found", expose: true });
+        asset = await resolveRemuxSourcePath(contentRoot, resolved.source.path);
+      }
       const details = await stat(asset);
-      const headers = { "accept-ranges": "bytes", "cache-control": "private, no-store", "content-type": mimeType(asset), "vary": "Origin" };
+      const headers = { "accept-ranges": "bytes", "cache-control": playlist ? "no-store" : "private, no-store", "content-type": explicitType ?? mimeType(asset), "vary": "Origin" };
       if (request.headers.origin === resolved.clientOrigin) headers["access-control-allow-origin"] = resolved.clientOrigin;
       if (request.method === "HEAD") { response.writeHead(200, { ...headers, "content-length": details.size }); response.end(); return true; }
+      if (playlist) {
+        const raw = await readFile(asset, "utf8");
+        const ticket = encodeURIComponent(url.searchParams.get("ticket"));
+        const rewritten = raw.split("\n").map((line) => {
+          if (!line || line.startsWith("#")) return line;
+          const parsed = new URL(line, "https://nebula.invalid/");
+          if (parsed.origin !== "https://nebula.invalid" || parsed.pathname.includes("..") || parsed.pathname.split("/").filter(Boolean).length !== 1) {
+            throw Object.assign(new Error("The generated playlist contains an invalid asset reference."), { status: 502, code: "invalid_delivery_playlist", expose: true });
+          }
+          return `${line}${line.includes("?") ? "&" : "?"}ticket=${ticket}`;
+        }).join("\n");
+        response.writeHead(200, { ...headers, "content-length": Buffer.byteLength(rewritten) }); response.end(rewritten); return true;
+      }
       const range = request.headers.range;
       if (!range) { response.writeHead(200, { ...headers, "content-length": details.size }); createReadStream(asset).pipe(response); return true; }
       const parsed = parseByteRange(range, details.size);
@@ -130,7 +178,7 @@ export const createClusterPlaybackRoutes = (playback) => async (request, respons
     return true;
   }
   const match = /^\/api\/cluster\/playback-sessions\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
-  if (match && request.method === "GET") { json(response, 200, playback.get(match[1], context)); return true; }
+  if (match && request.method === "GET") { json(response, 200, await playback.get(match[1], context)); return true; }
   if (match && request.method === "DELETE") { await playback.release(match[1], context); response.writeHead(204); response.end(); return true; }
   const failover = /^\/api\/cluster\/playback-sessions\/([A-Za-z0-9_-]+)\/failover$/.exec(url.pathname);
   if (failover && request.method === "POST") {

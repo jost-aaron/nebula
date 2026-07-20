@@ -37,6 +37,7 @@ import {
   clusterMigration, clusterFederationMigration, createClusterIngressRoutes, createClusterManifestClient,
   createClusterManifestService, createClusterPairingClient, createClusterRepository, createClusterSyncService,
   createClusterGrantClient, createClusterGrantService, createClusterPlaybackScheduler, createClusterPlaybackService,
+  createClusterDeliveryClient, createClusterShardDeliveryService,
   createClusterTrustService, createFederatedCatalogRepository, syncLocalClusterManifest
 } from "./cluster/index.mjs";
 import {
@@ -93,15 +94,9 @@ const syncLocalProjection = clusterService ? () => syncLocalClusterManifest({
 const clusterSync = clusterService ? createClusterSyncService({
   client: createClusterManifestClient(), federation: federatedCatalog, trust: clusterService
 }) : null;
-const clusterGrantService = clusterService ? createClusterGrantService({ catalog: catalogRepository, isClientOriginAllowed: isApiCorsOriginAllowed, trust: clusterService }) : null;
 const clusterScheduler = clusterService ? createClusterPlaybackScheduler({ federation: federatedCatalog }) : null;
 const clusterGrantClient = clusterService ? createClusterGrantClient() : null;
-const clusterIngress = clusterService ? createClusterIngressRoutes({
-  contentRoot: storage.contentRoot,
-  grants: clusterGrantService,
-  manifest: localClusterManifest,
-  service: clusterService
-}) : null;
+const clusterDeliveryClient = clusterService ? createClusterDeliveryClient({ trust: clusterService }) : null;
 const fingerprintRepository = createFingerprintRepository(database);
 const fingerprintService = createFingerprintService({
   contentRoot: storage.contentRoot,
@@ -120,6 +115,12 @@ const scanCatalog = async () => {
 };
 const playbackRepository = createPlaybackRepository({ db: database });
 const playbackService = createPlaybackService({
+  federatedIdentityValidator: ({ itemId, sourceId }, principal) => {
+    if (!clusterService || principal?.type !== "user") return false;
+    const account = accountStore.listUsers().find((user) => user.id === principal.userId);
+    return account?.role === "owner" && federatedCatalog.listPlaybackSources(itemId)
+      .some((source) => source.federatedSourceId === sourceId && source.availability === "available");
+  },
   identityValidator: ({ itemId, sourceId }, principal) => {
     const source = catalogRepository.getSource(sourceId);
     return source?.itemId === itemId && source.availability === "available" && libraryPermissions.canAccessItem(principal, itemId);
@@ -170,8 +171,63 @@ const playbackDelivery = createDeliveryService({
   resolveSource: resolveCatalogSource,
   transcodeService
 });
+const resolveClusterCatalogSource = ({ itemId, sourceId }) => {
+  const item = catalogRepository.getItem(itemId);
+  const source = catalogRepository.getSource(sourceId);
+  if (!item || !source || source.itemId !== itemId || source.availability !== "available"
+    || source.rootId !== catalogRoot.id || item.libraryId !== catalogRoot.library_id) return null;
+  return source;
+};
+const clusterDeliveryPlanner = clusterService ? createPlaybackPlanner({ resolveMedia: async (ids) => {
+  const source = resolveClusterCatalogSource(ids);
+  if (!source) return null;
+  return { item: catalogRepository.getItem(ids.itemId), probe: probeReader.get(ids.sourceId), source, subtitleSelection: null };
+} }) : null;
+const clusterRemuxService = clusterService ? createRemuxService({
+  contentRoot: storage.contentRoot,
+  outputRoot: path.join(deliveryCacheRoot, "cluster-remux"),
+  resolveSource: resolveClusterCatalogSource,
+  concurrency: 2
+}) : null;
+const clusterTranscodeService = clusterService ? createTranscodeService({
+  acceleration: accelerationManager,
+  contentRoot: storage.contentRoot,
+  outputRoot: path.join(deliveryCacheRoot, "cluster-transcode"),
+  resolveSource: resolveClusterCatalogSource,
+  concurrency: 1,
+  renditionStore,
+  shouldPersistRendition: ({ origin }) => origin !== "interactive" || renditionPolicyRepository.get().cacheInteractive
+}) : null;
+if (clusterService) await Promise.all([clusterRemuxService.initialize(), clusterTranscodeService.initialize()]);
+const clusterDelivery = clusterService ? createDeliveryService({
+  authorize: ({ itemId, sourceId }) => Boolean(resolveClusterCatalogSource({ itemId, sourceId })),
+  contentRoot: storage.contentRoot,
+  planner: clusterDeliveryPlanner,
+  remuxService: clusterRemuxService,
+  resolveSource: resolveClusterCatalogSource,
+  transcodeService: clusterTranscodeService
+}) : null;
+const clusterShardDelivery = clusterService ? createClusterShardDeliveryService({
+  catalog: catalogRepository,
+  delivery: clusterDelivery,
+  localNodeId: clusterService.identity().descriptor.nodeId
+}) : null;
+const clusterGrantService = clusterService ? createClusterGrantService({
+  catalog: catalogRepository,
+  isClientOriginAllowed: isApiCorsOriginAllowed,
+  shardDelivery: clusterShardDelivery,
+  trust: clusterService
+}) : null;
+const clusterIngress = clusterService ? createClusterIngressRoutes({
+  contentRoot: storage.contentRoot,
+  grants: clusterGrantService,
+  manifest: localClusterManifest,
+  service: clusterService,
+  shardDelivery: clusterShardDelivery
+}) : null;
 const clusterPlayback = clusterService ? createClusterPlaybackService({
   client: clusterGrantClient,
+  deliveryClient: clusterDeliveryClient,
   grants: clusterGrantService,
   localDelivery: playbackDelivery,
   scheduler: clusterScheduler
@@ -353,9 +409,15 @@ const shutdown = async () => {
   await new Promise((resolve) => httpServer.close(resolve));
   await jobsWorker.stop();
   await playbackDelivery.shutdown();
+  await clusterShardDelivery?.shutdown();
+  await clusterDelivery?.shutdown();
   clusterGrantService?.shutdown();
   playbackPolicy.shutdown();
-  await Promise.allSettled([remuxService.shutdown(), transcodeService.shutdown(), vite.close()]);
+  await Promise.allSettled([
+    remuxService.shutdown(), transcodeService.shutdown(),
+    clusterRemuxService?.shutdown(), clusterTranscodeService?.shutdown(),
+    vite.close()
+  ]);
   database.close();
 };
 for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => { void shutdown().finally(() => process.exit(0)); });

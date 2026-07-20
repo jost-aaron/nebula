@@ -104,6 +104,8 @@ export interface ClusterDelegatedMediaGrant {
   clientOrigin: string;
   clusterId: string;
   deviceId: string;
+  deliveryId: string | null;
+  deliveryProtocol: "file" | "hls";
   expiresAt: string;
   federatedItemId: string;
   grantId: string;

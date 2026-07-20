@@ -4,7 +4,7 @@ import { createClusterGrantClient } from "../server/cluster/index.mjs";
 
 const grant = {
   accountId: "account_fixture_01", assetPrefix: "/api/shard/v1/media/grant_fixture_01/", clientOrigin: "https://home.tail024251.ts.net", clusterId: "cluster_fixture_01",
-  deviceId: "device_fixture_01", expiresAt: "2026-07-19T12:10:00.000Z", federatedItemId: "fitem_fixture_01",
+  deliveryId: null, deliveryProtocol: "file", deviceId: "device_fixture_01", expiresAt: "2026-07-19T12:10:00.000Z", federatedItemId: "fitem_fixture_01",
   grantId: "grant_fixture_01", issuedAt: "2026-07-19T12:00:00.000Z", localSourceId: "source_fixture_01",
   methods: ["GET", "HEAD"], nodeId: "node_fixture_01", nonce: "nonce_fixture_01", profileId: "original",
   protocolVersion: 1, sessionId: "session_fixture_01", sourceRevision: 1

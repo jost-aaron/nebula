@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { Readable } from "node:stream";
 import test from "node:test";
 import { createClusterAdminRoutes, createClusterIngressRoutes } from "../server/cluster/index.mjs";
@@ -77,4 +80,26 @@ test("manifest ingress and coordinator controls remain signed, bounded, and owne
   const override = response();
   await admin(request("POST", { action: "merge", leftOrigin: "node_a:item_a", rightOrigin: "node_b:item_b" }), override, new URL("http://nebula/api/admin/cluster/dedupe-overrides"));
   assert.equal(JSON.parse(override.body).targetItemId, "fitem_001");
+});
+
+test("generated HLS ingress rewrites only shard-owned relative assets with the media ticket", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "nebula-shard-hls-"));
+  t.after(() => rm(root, { force: true, recursive: true }));
+  const playlist = path.join(root, "master.m3u8");
+  await writeFile(playlist, "#EXTM3U\nsegment-000.ts\n");
+  const grants = { resolve: () => ({ clientOrigin: "http://127.0.0.1:5173", delivery: {}, source: {} }) };
+  const shardDelivery = { resolveHlsAsset: async () => playlist };
+  const routes = createClusterIngressRoutes({ contentRoot: root, grants, service: {}, shardDelivery });
+  const req = request("GET"); req.headers.origin = "http://127.0.0.1:5173";
+  const res = response();
+  await routes(req, res, new URL("http://nebula/api/shard/v1/media/grant_fixture_01/hls/master.m3u8?ticket=ticket_fixture_01"));
+  assert.equal(res.status, 200);
+  assert.match(res.body, /segment-000\.ts\?ticket=ticket_fixture_01/);
+  assert.equal(res.headers["access-control-allow-origin"], "http://127.0.0.1:5173");
+
+  await writeFile(playlist, "#EXTM3U\nhttps://attacker.example/segment.ts\n");
+  const denied = response();
+  await routes(req, denied, new URL("http://nebula/api/shard/v1/media/grant_fixture_01/hls/master.m3u8?ticket=ticket_fixture_01"));
+  assert.equal(denied.status, 502);
+  assert.equal(JSON.parse(denied.body).code, "invalid_delivery_playlist");
 });

@@ -12,5 +12,7 @@ export { createClusterPlaybackScheduler } from "./scheduler.mjs";
 export { CLUSTER_GRANT_VALIDATION_PATH, createClusterGrantService } from "./grants.mjs";
 export { createClusterGrantClient } from "./grantClient.mjs";
 export { createClusterPlaybackService } from "./playbackService.mjs";
+export { createClusterDeliveryClient } from "./deliveryClient.mjs";
+export { createClusterShardDeliveryService } from "./shardDelivery.mjs";
 export { createClusterPlaybackRoutes } from "./routes.mjs";
 export * from "./protocol.mjs";

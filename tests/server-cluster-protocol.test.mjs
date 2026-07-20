@@ -88,7 +88,7 @@ test("signed envelopes reject traversal, query targets, bad signatures, and unkn
 test("delegated grants are source-scoped, read-only, and short lived", () => {
   const grant = {
     accountId: "account_fixture_01", assetPrefix: "/api/shard/v1/media/grant_fixture_01/", clientOrigin: "https://home.tail024251.ts.net", clusterId: "cluster_fixture_01",
-    deviceId: "device_fixture_01", expiresAt: "2026-07-19T12:15:00.000Z", federatedItemId: "federated_item_01",
+    deliveryId: null, deliveryProtocol: "file", deviceId: "device_fixture_01", expiresAt: "2026-07-19T12:15:00.000Z", federatedItemId: "federated_item_01",
     grantId: "grant_fixture_01", issuedAt: "2026-07-19T12:00:00.000Z", localSourceId: "source_fixture_01",
     methods: ["GET", "HEAD"], nodeId: node().nodeId, nonce: "nonce_fixture_01", profileId: "720p",
     protocolVersion: 1, sessionId: "session_fixture_01", sourceRevision: 2

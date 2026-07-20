@@ -4,17 +4,18 @@ When clustering is enabled on a coordinator, owner and service library requests
 are projected through the federated catalog. Duplicate sources render as one
 title with a shard-count badge and an `Available on` list. A local source keeps
 the existing playback and metadata workflow. An owner can play a remote-only
-title when an online shard advertises compatible direct play: the coordinator
-schedules one source, activates a short-lived signed grant, and the browser
-streams the original file directly from that shard. Remote metadata, watchlist,
+title when an online shard advertises compatible delivery: the coordinator
+schedules one source, asks that shard to prepare original, remux, live HLS, or
+persistent-rendition output, activates a short-lived delivery-bound signed
+grant, and the browser streams directly from that shard. Remote metadata, watchlist,
 playlist, watched-state, optimization, and TMDB mutations remain disabled.
 Member and guest libraries remain local-only.
 
-Remote Cinema delivery currently supports only original/direct playback. A
-remote request that requires remux, HLS/live transcode, a prebuilt rendition,
-subtitles, or fixed-quality conversion fails closed rather than falling back to
-an unauthorized or incompatible path. Local Cinema retains all existing direct,
-remux, HLS, rendition, subtitle, quality, and playback-state behavior.
+Remote Cinema delivery supports original/direct playback, MP4 remux, HLS/live
+transcode, persistent rendition reuse, and fixed-quality conversion. Remote
+subtitle selection still fails closed rather than falling back to an
+unauthorized path. Personal lifecycle and resume state remain on the
+coordinator and use only federated item/source identities.
 
 Cinema is the local video browser and web player prototype.
 
@@ -79,9 +80,9 @@ It renders:
   library and streaming behavior retained as a compatibility fallback.
 - Per-account Continue Watching, resume prompts, progress bars, watched state
   controls, and throttled playback lifecycle reporting.
-- Owner-only remote original playback through account-bound cluster playback
+- Owner-only remote original and generated playback through account-bound cluster playback
   sessions. Scheduler responses identify the selected shard and explain the
-  direct-play choice without returning local shard IDs or filesystem paths.
+  delivery choice without returning local shard IDs or filesystem paths.
 - On a remote media error, Cinema asks the coordinator for another source with
   the same strong exact-replica key, reopens the replacement grant URL, and
   seeks to the browser's last position. Alternate encodes are never treated as
@@ -192,6 +193,7 @@ The frontend updates these through:
 - `POST /api/playback/delivery-sessions` - plan and create compatible account-bound delivery.
 - `POST /api/cluster/playback-sessions` - create an owner-bound scheduled local
   or remote cluster playback session for a federated item.
+- `GET /api/cluster/playback-sessions/:id` - poll queued remote remux/HLS work.
 - `POST /api/cluster/playback-sessions/:id/failover` - replace a failed shard
   only with an online exact replica.
 - `DELETE /api/cluster/playback-sessions/:id` - release scheduler capacity and

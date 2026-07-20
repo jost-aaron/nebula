@@ -203,9 +203,11 @@ export const validateClusterSignedEnvelope = (input) => {
 
 export const validateClusterDelegatedMediaGrant = (input) => {
   const value = plainObject(input, "delegated media grant");
-  exactKeys(value, new Set(["accountId", "assetPrefix", "clientOrigin", "clusterId", "deviceId", "expiresAt", "federatedItemId", "grantId", "issuedAt", "localSourceId", "methods", "nodeId", "nonce", "profileId", "protocolVersion", "sessionId", "sourceRevision"]), "delegated media grant");
+  exactKeys(value, new Set(["accountId", "assetPrefix", "clientOrigin", "clusterId", "deliveryId", "deliveryProtocol", "deviceId", "expiresAt", "federatedItemId", "grantId", "issuedAt", "localSourceId", "methods", "nodeId", "nonce", "profileId", "protocolVersion", "sessionId", "sourceRevision"]), "delegated media grant");
   protocolVersion(value.protocolVersion);
   for (const key of ["accountId", "clusterId", "deviceId", "federatedItemId", "grantId", "localSourceId", "nodeId", "sessionId"]) id(value[key], key);
+  if (value.deliveryId !== null) id(value.deliveryId, "deliveryId");
+  if (!new Set(["file", "hls"]).has(value.deliveryProtocol) || (value.deliveryId === null && value.deliveryProtocol !== "file")) fail("invalid_delivery", "The delegated delivery scope is invalid.");
   if (!Array.isArray(value.methods) || value.methods.length === 0 || value.methods.length > 2 || value.methods.some((entry) => !MEDIA_METHODS.has(entry))) fail("invalid_method", "methods may contain only GET and HEAD.");
   if (typeof value.assetPrefix !== "string" || !/^\/api\/shard\/v1\/media\/[A-Za-z0-9_-]+\/$/.test(value.assetPrefix)) fail("invalid_path", "assetPrefix must be a scoped shard media prefix.");
   if (value.clientOrigin !== "capacitor://localhost") {

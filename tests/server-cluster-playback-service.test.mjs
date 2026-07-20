@@ -48,11 +48,40 @@ test("failed local activation releases scheduler capacity", async () => {
   assert.equal(released, "cluster_session_fixture_01");
 });
 
-test("unsupported remote modes release scheduling capacity", async () => {
-  let released = null;
-  const candidate = { decision: "transcode", endpoint: "https://basement.tail024251.ts.net", local: false, mode: "live-transcode", nodeId: "node_fixture_01" };
+test("remote generated delivery is polled and activated with a delivery-bound HLS grant", async () => {
+  const candidate = { decision: "transcode", endpoint: "https://basement.tail024251.ts.net", federatedSourceId: "fsource_fixture_01", local: false, localItemId: "item_fixture_01", localSourceId: "source_fixture_01", mode: "live-transcode", nodeId: "node_fixture_01", sourceRevision: 4 };
+  const scheduled = session(candidate);
+  const scheduler = { create: () => scheduled, get: () => scheduled.session, release: () => assert.fail("should not release") };
+  const result = { decision: "transcode", deliveryId: "delivery_fixture_01", output: { protocol: "hls" }, reasons: [], status: "queued" };
+  let issued = null;
+  const deliveryClient = {
+    create: async () => result,
+    get: async () => ({ ...result, status: "ready" })
+  };
+  const grants = { issue: (value) => {
+    issued = value;
+    return { grant: { assetPrefix: "/api/shard/v1/media/grant_fixture_01/" } };
+  } };
+  const client = { activate: async () => ({ expiresAt: "2026-07-19T12:10:00.000Z", mediaTicket: "ticket_fixture_01" }) };
+  const playback = createClusterPlaybackService({ client, deliveryClient, grants, scheduler });
+  const created = await playback.create(request, { accountId: "account_fixture_01" });
+  assert.equal(created.session.status, "queued");
+  const ready = await playback.get(created.session.id, { accountId: "account_fixture_01" });
+  assert.equal(issued.delivery.deliveryId, "delivery_fixture_01");
+  assert.equal(ready.session.deliveryUrl, "https://basement.tail024251.ts.net/api/shard/v1/media/grant_fixture_01/hls/master.m3u8?ticket=ticket_fixture_01");
+  assert.doesNotMatch(JSON.stringify(ready), /localItemId|localSourceId|endpoint|account_fixture/);
+});
+
+test("generated delivery plan mismatch releases shard delivery and scheduler capacity", async () => {
+  let cancelled = null; let released = null;
+  const candidate = { decision: "transcode", endpoint: "https://basement.tail024251.ts.net", local: false, localItemId: "item_fixture_01", localSourceId: "source_fixture_01", mode: "live-transcode", nodeId: "node_fixture_01", sourceRevision: 1 };
   const scheduler = { create: () => session(candidate), release: (id) => { released = id; } };
-  const playback = createClusterPlaybackService({ client: {}, grants: {}, scheduler });
-  await assert.rejects(playback.create(request, { accountId: "account_fixture_01" }), { code: "remote_delivery_mode_pending" });
+  const deliveryClient = {
+    cancel: async (_endpoint, payload) => { cancelled = payload; },
+    create: async () => ({ decision: "remux", deliveryId: "delivery_fixture_01", output: { protocol: "file" }, reasons: [], status: "ready" })
+  };
+  const playback = createClusterPlaybackService({ client: {}, deliveryClient, grants: {}, scheduler });
+  await assert.rejects(playback.create(request, { accountId: "account_fixture_01" }), { code: "shard_delivery_plan_mismatch" });
+  assert.equal(cancelled, null);
   assert.equal(released, "cluster_session_fixture_01");
 });

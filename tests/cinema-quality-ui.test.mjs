@@ -11,7 +11,7 @@ test("Cinema exposes Auto, Original, and fixed profile controls with actual deli
   assert.match(source, /data-cinema-quality-menu hidden/);
   for (const value of ["auto", "original", "240p", "360p", "480p", "720p", "1080p"]) assert.match(source, new RegExp(value));
   assert.match(source, /quality:\s*preference/);
-  assert.match(source, /qualityResultLabel\(preference, created\.plan\)/);
+  assert.match(source, /qualityResultLabel\(preference, current\.plan\)/);
   assert.match(source, /data-cinema-quality-result/);
   assert.match(source, /formatBitrate\(profile\.totalBitrate\)/);
 });

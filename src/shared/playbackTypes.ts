@@ -1,15 +1,24 @@
 import type { CatalogId, IsoDateTime } from "./catalogTypes";
 
 export type PlaybackEventKind = "start" | "progress" | "pause" | "stop" | "complete";
+export type PlaybackIdentityKind = "local" | "federated";
+
+/** Coordinator-owned opaque identity; never a shard-local catalog ID or path. */
+export interface FederatedPlaybackIdentity {
+  itemId: string;
+  sourceId: string;
+}
 
 export interface PlaybackState {
   completed: boolean;
   durationSeconds: number | null;
-  itemId: CatalogId;
+  federatedIdentity?: FederatedPlaybackIdentity;
+  identityKind?: PlaybackIdentityKind;
+  itemId: string;
   lastPlayedAt: IsoDateTime | null;
   playCount: number;
   positionSeconds: number;
-  sourceId: CatalogId | null;
+  sourceId: string | null;
   updatedAt: IsoDateTime;
   userId: string;
 }
@@ -18,23 +27,28 @@ export interface PlaybackSession {
   clientLabel: string;
   createdAt: IsoDateTime;
   id: CatalogId;
-  itemId: CatalogId;
+  federatedIdentity?: FederatedPlaybackIdentity;
+  identityKind?: PlaybackIdentityKind;
+  itemId: string;
   lastReportedAt: IsoDateTime;
-  sourceId: CatalogId;
+  sourceId: string;
   state: "active" | "paused" | "stopped" | "completed";
   userId: string;
 }
 
-export interface PlaybackEventRequest {
+interface PlaybackEventRequestBase {
   durationSeconds: number | null;
   event: PlaybackEventKind;
   /** Client-generated retry/idempotency key. */
   eventId: CatalogId;
-  itemId: CatalogId;
   positionSeconds: number;
   sessionId: CatalogId | null;
-  sourceId: CatalogId;
 }
+
+export type PlaybackEventRequest = PlaybackEventRequestBase & (
+  | { federatedIdentity?: never; itemId: CatalogId; sourceId: CatalogId }
+  | { federatedIdentity: FederatedPlaybackIdentity; itemId?: never; sourceId?: never }
+);
 
 export interface PlaybackEventResponse {
   session: PlaybackSession;
@@ -42,11 +56,13 @@ export interface PlaybackEventResponse {
 }
 
 export interface ContinueWatchingEntry {
-  itemId: CatalogId;
+  federatedIdentity?: FederatedPlaybackIdentity;
+  identityKind?: PlaybackIdentityKind;
+  itemId: string;
   lastPlayedAt: IsoDateTime;
   positionSeconds: number;
   progress: number;
-  sourceId: CatalogId | null;
+  sourceId: string | null;
 }
 
 export interface ContinueWatchingResponse {
@@ -63,8 +79,9 @@ export interface PlaybackHistoryResponse {
   entries: PlaybackHistoryEntry[];
 }
 
-export interface PlaybackWatchedRequest {
-  itemId: CatalogId;
-  sourceId: CatalogId;
+export type PlaybackWatchedRequest = (
+  | { federatedIdentity?: never; itemId: CatalogId; sourceId: CatalogId }
+  | { federatedIdentity: FederatedPlaybackIdentity; itemId?: never; sourceId?: never }
+) & {
   watched: boolean;
-}
+};

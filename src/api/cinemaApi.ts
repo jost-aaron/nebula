@@ -78,6 +78,8 @@ export const createClusterCinemaDelivery = (body: { capabilities: PlaybackDelive
   apiJson<ClusterPlaybackCreateResponse>("/api/cluster/playback-sessions", {
     body: JSON.stringify(body), headers: { "content-type": "application/json" }, method: "POST"
   });
+export const getClusterCinemaDelivery = (id: string) =>
+  apiJson<ClusterPlaybackCreateResponse>(`/api/cluster/playback-sessions/${encodeURIComponent(id)}`);
 export const failoverClusterCinemaDelivery = (id: string, failedNodeId: string) =>
   apiJson<ClusterPlaybackCreateResponse>(`/api/cluster/playback-sessions/${encodeURIComponent(id)}/failover`, {
     body: JSON.stringify({ failedNodeId }), headers: { "content-type": "application/json" }, method: "POST"

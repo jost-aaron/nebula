@@ -287,6 +287,21 @@ flowchart TD
 - Treat generated output as disposable cache cleaned on cancel, expiry,
   restart, and shutdown; absolute paths never cross the HTTP boundary.
 
+`server/cluster/`
+
+- Keeps coordinator scheduling, federation, paired-node trust, signed grants,
+  and fixed server-to-server delivery routes separate from local media APIs.
+- A shard replans generated delivery from signed catalog IDs, source revision,
+  client capabilities, and a server-owned profile. It never receives the
+  coordinator account database or caller-selected paths and returns only a
+  bounded decision, status, and opaque delivery ID.
+- Delivery-bound grants expose original/remux files or ticketed HLS assets
+  directly from the selected shard. Playlist rewriting accepts only one-level
+  shard-owned relative assets and rejects external or traversing references.
+- Coordinator playback persistence stores federated item/source identities;
+  shard-local catalog IDs, endpoints, filesystem paths, grants, and tickets do
+  not enter account history.
+
 `server/renditions/`
 
 - Defines trusted 240p, 360p, 480p, 720p, and 1080p H.264/AAC HLS profiles.
