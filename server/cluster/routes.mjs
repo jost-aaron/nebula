@@ -5,6 +5,9 @@ import { parseByteRange } from "../ranges.mjs";
 import { mimeType } from "../storage.mjs";
 import { resolveRemuxSourcePath } from "../remux/index.mjs";
 import path from "node:path";
+import {
+  CLUSTER_KEY_ROTATION_COMMIT_PATH, CLUSTER_KEY_ROTATION_PREPARE_PATH
+} from "./keyRotation.mjs";
 
 const sendError = (response, error) => json(response, error.status ?? 500, {
   ...(error.code ? { code: error.code } : {}),
@@ -18,6 +21,7 @@ export const createClusterIngressRoutes = (options) => {
   const shardDelivery = options?.shardDelivery ?? null;
   const contentRoot = options?.contentRoot ?? null;
   const subtitles = options?.subtitles ?? null;
+  const keyRotation = options?.keyRotation ?? null;
   return async (request, response, url) => {
   if (!url.pathname.startsWith("/api/shard/v1/")) return false;
   try {
@@ -29,6 +33,21 @@ export const createClusterIngressRoutes = (options) => {
       const body = await readBody(request, { limit: 64 * 1024 });
       const peer = service.verifyRequest(body.envelope, body.payload, { method: request.method, path: url.pathname });
       json(response, 200, { clusterId: service.identity().clusterId, node: service.identity().descriptor, peer: { nodeId: peer.nodeId }, status: "online" });
+      return true;
+    }
+    if (request.method === "POST" && keyRotation
+      && (url.pathname === CLUSTER_KEY_ROTATION_PREPARE_PATH || url.pathname === CLUSTER_KEY_ROTATION_COMMIT_PATH)) {
+      const body = await readBody(request, { limit: 64 * 1024 });
+      const accepted = url.pathname === CLUSTER_KEY_ROTATION_PREPARE_PATH
+        ? service.acceptKeyRotationPrepare(body?.envelope, body?.payload, { method: request.method, path: url.pathname })
+        : service.acceptKeyRotationCommit(body?.envelope, body?.payload, { method: request.method, path: url.pathname });
+      const payload = {
+        keyVersion: accepted.newKeyVersion,
+        nodeId: service.identity().descriptor.nodeId,
+        rotationId: accepted.rotationId,
+        state: url.pathname === CLUSTER_KEY_ROTATION_PREPARE_PATH ? "prepared" : "committed"
+      };
+      json(response, 200, { envelope: service.signRequest({ body: payload, method: "POST", path: url.pathname }), payload });
       return true;
     }
     if (request.method === "POST" && url.pathname === "/api/shard/v1/manifest" && manifest) {
@@ -129,7 +148,10 @@ export const createClusterIngressRoutes = (options) => {
   };
 };
 
-export const createClusterAdminRoutes = ({ service, pairingClient, federation = null, sync = null, scheduler = null, operations = null, audit = null }) => async (request, response, url) => {
+export const createClusterAdminRoutes = ({
+  service, pairingClient, federation = null, sync = null, scheduler = null,
+  operations = null, audit = null, keyRotation = null
+}) => async (request, response, url) => {
   if (!url.pathname.startsWith("/api/admin/cluster")) return false;
   if (request.method === "GET" && url.pathname === "/api/admin/cluster") {
     const identity = service.identity();
@@ -141,6 +163,21 @@ export const createClusterAdminRoutes = ({ service, pairingClient, federation = 
   }
   if (request.method === "GET" && url.pathname === "/api/admin/cluster/operations" && operations) {
     json(response, 200, { metrics: operations.metrics(), readiness: operations.readiness() });
+    return true;
+  }
+  if (request.method === "GET" && url.pathname === "/api/admin/cluster/key-rotation" && keyRotation) {
+    json(response, 200, { rotation: keyRotation.status() });
+    return true;
+  }
+  if (request.method === "POST" && url.pathname === "/api/admin/cluster/key-rotation" && keyRotation) {
+    try {
+      const rotation = await keyRotation.advance();
+      audit?.recordBestEffort({ actor: { kind: "system" }, eventType: "cluster.key_rotation_completed", outcome: "success", target: { type: "cluster-key-rotation", id: rotation.rotationId } });
+      json(response, 200, { rotation });
+    } catch (error) {
+      audit?.recordBestEffort({ actor: { kind: "system" }, eventType: "cluster.key_rotation_interrupted", outcome: "failure" });
+      throw error;
+    }
     return true;
   }
   if (request.method === "GET" && url.pathname === "/api/admin/cluster/items" && federation) {

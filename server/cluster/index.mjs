@@ -1,4 +1,6 @@
-export { clusterMigration, CLUSTER_SCHEMA_VERSION } from "./schema.mjs";
+export {
+  clusterKeyRotationMigration, clusterMigration, CLUSTER_KEY_ROTATION_SCHEMA_VERSION, CLUSTER_SCHEMA_VERSION
+} from "./schema.mjs";
 export { CLUSTER_PROTOCOL_SUPPORT, classifyClusterProtocolVersion, isClusterProtocolCompatible } from "./compatibility.mjs";
 export { clusterOperationsMigration, CLUSTER_OPERATIONS_SCHEMA_VERSION } from "./operationsSchema.mjs";
 export { clusterFederationMigration, CLUSTER_FEDERATION_SCHEMA_VERSION } from "./federationSchema.mjs";
@@ -17,5 +19,9 @@ export { createClusterPlaybackService } from "./playbackService.mjs";
 export { createClusterDeliveryClient } from "./deliveryClient.mjs";
 export { createClusterShardDeliveryService } from "./shardDelivery.mjs";
 export { createClusterOperationsService } from "./observability.mjs";
+export {
+  CLUSTER_KEY_ROTATION_COMMIT_PATH, CLUSTER_KEY_ROTATION_PREPARE_PATH,
+  createClusterKeyRotationClient, createClusterKeyRotationService
+} from "./keyRotation.mjs";
 export { createClusterPlaybackRoutes } from "./routes.mjs";
 export * from "./protocol.mjs";

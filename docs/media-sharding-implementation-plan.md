@@ -462,6 +462,8 @@ GET    /api/shard/v1/manifest?cursor=<cursor>
 GET    /api/shard/v1/health
 POST   /api/shard/v1/playback/plan
 POST   /api/shard/v1/playback/grants/validate
+POST   /api/shard/v1/key-rotation/prepare
+POST   /api/shard/v1/key-rotation/commit
 GET    /api/shard/v1/media/<scoped-asset>
 ```
 
@@ -491,6 +493,31 @@ or caller-selected filesystem locations.
 - Cluster data, keys, and cursors live in `/app/data` and follow the existing
   backup encryption and restore policy.
 
+### Signing-key rotation contract
+
+Phase 5 adds owner/service-admin initiated rotation at the exact
+`GET|POST /api/admin/cluster/key-rotation` endpoint. The transition does not
+change the strict `protocolVersion=1` envelope. Instead, an exact rotation
+payload binds the cluster, node, opaque rotation ID, immediately consecutive
+key versions, old and replacement public keys, and a maximum 15-minute expiry.
+
+The rotating node first signs `prepare` with its currently pinned key. Every
+active peer persists the replacement public key before acknowledging it. Only
+after all peers acknowledge preparation does the node atomically activate the
+replacement private key and send `commit` signed by that replacement key. A
+peer accepts the new key during this bounded prepared state, but atomically
+retires the old key when it commits; subsequent old-key requests fail signature
+verification. Nonces, timestamps, methods, paths, and body digests retain their
+normal replay and substitution protections throughout the transition.
+
+Local and peer progress is persisted in SQLite, including enough encrypted-at-
+rest backup state to resume an interrupted transition after restart. Completed
+rows retain versions and timestamps for diagnostics, but private key copies are
+erased. APIs, audit events, metrics, logs, and documentation never return key
+material. An expired or mismatched transition fails closed and requires
+operator recovery rather than silently accepting a downgrade or replacement
+rotation.
+
 For the current Phase 4 implementation, "short bounded revocation window" means
 the accepted grant's expiry or loss of its in-memory ticket state on shard
 restart; there is no distributed active-ticket revocation push yet. Cluster
@@ -515,6 +542,11 @@ deliberately disabled until coordinator permissions can be projected safely.
   duplicate shard sources into one logical item, and both apps show responsive
   availability badges and source lists. Local sources remain playable. Phase 4
   now permits eligible remote-only original/direct-play sources for owners.
+- Phase 5 signing-key rotation is complete: paired nodes use persisted
+  old-key prepare and new-key commit acknowledgements, bounded dual-key
+  verification, restart-safe progress, replay defense, and immediate old-key
+  rejection after peer confirmation. Real-tailnet operator acceptance remains
+  part of the overall Phase 5 exit criteria.
 - Federated browsing is currently limited to owners and service clients. Member
   and guest requests remain local-only until library permissions can be applied
   consistently across every shard.

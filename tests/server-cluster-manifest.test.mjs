@@ -6,7 +6,7 @@ import { catalogMigration, createCatalogRepository } from "../server/catalog/ind
 import { probeMigrations } from "../server/probe/index.mjs";
 import { renditionsMigration } from "../server/renditions/index.mjs";
 import {
-  clusterFederationMigration, clusterMigration, createClusterManifestService, createFederatedCatalogRepository
+  clusterFederationMigration, clusterKeyRotationMigration, clusterMigration, createClusterManifestService, createFederatedCatalogRepository
 } from "../server/cluster/index.mjs";
 
 const now = "2026-07-19T12:00:00.000Z";
@@ -14,7 +14,7 @@ const nodeIds = ["node_shard_alpha", "node_shard_bravo"];
 const setup = () => {
   const database = new DatabaseSync(":memory:");
   database.exec("PRAGMA foreign_keys = ON");
-  applyDomainMigrations(database, [catalogMigration, ...probeMigrations, renditionsMigration, clusterMigration, clusterFederationMigration]);
+  applyDomainMigrations(database, [catalogMigration, ...probeMigrations, renditionsMigration, clusterMigration, clusterKeyRotationMigration, clusterFederationMigration]);
   for (const nodeId of nodeIds) database.prepare(`INSERT INTO cluster_nodes
     (node_id, cluster_id, name, role, endpoint, public_key, capabilities_json, paired_at, updated_at)
     VALUES (?, 'cluster_fixture', ?, 'shard', ?, ?, '{}', ?, ?)`)

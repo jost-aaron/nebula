@@ -319,5 +319,11 @@ At handoff time:
   aliases, `-100..100` scheduling priority, bounded stream/live-transcode
   capacity, and maintenance drain/undrain. These controls are separate from
   signed identity, survive descriptor refresh and backup/restore, and affect
-  only new scheduler admission. Readiness/metrics hardening, key rotation,
-  mixed-version rolling tests, and real-tailnet acceptance remain open.
+  only new scheduler admission.
+- Phase 5 signing-key rotation is available through the exact owner/service-
+  admin `GET|POST /api/admin/cluster/key-rotation` route. It prepares a bounded
+  successor key with every active peer before local activation, commits with
+  the successor key, rejects the old key per peer after confirmation, and can
+  resume its persisted SQLite transition after restart or backup restore.
+  Rotation status never includes public or private key material. Real-tailnet
+  interrupted-transition acceptance remains an operator check.

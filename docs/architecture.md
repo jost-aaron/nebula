@@ -305,6 +305,11 @@ flowchart TD
   signed node descriptors. Display aliases cannot mutate trust identity;
   maintenance drain and capacity affect only new scheduler admission, while
   exact-replica filtering remains mandatory before failover ranking.
+- Signing-key rotation is an additive protocol-v1 state machine: an old-key
+  prepare pins one immediately consecutive successor on every peer, then a
+  new-key commit atomically retires the old peer key. Local private transition
+  material and peer acknowledgements persist in the account SQLite database;
+  completed transitions erase duplicate private-key copies.
 
 `server/renditions/`
 

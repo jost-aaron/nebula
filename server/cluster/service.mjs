@@ -1,5 +1,8 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { CLUSTER_PROTOCOL_VERSION, validateClusterNodeDescriptor, validateClusterPairingRequest, validateClusterSignedEnvelope } from "./protocol.mjs";
+import {
+  CLUSTER_PROTOCOL_VERSION, validateClusterKeyRotationPayload, validateClusterNodeDescriptor,
+  validateClusterPairingRequest, validateClusterSignedEnvelope
+} from "./protocol.mjs";
 import { digestJsonBody, generateClusterKeyPair, sha256, signClusterEnvelope, verifyClusterEnvelopeSignature } from "./crypto.mjs";
 
 const error = (status, code, message) => Object.assign(new Error(message), { status, code, expose: true });
@@ -17,11 +20,14 @@ const boundedInteger = (value, { min, max, nullable = false }, field) => {
 
 export const createClusterTrustService = ({
   repository, now = () => Date.now(), uuid = randomUUID, random = (bytes) => randomBytes(bytes),
-  pairingTtlMs = 10 * 60 * 1000, requestWindowMs = 2 * 60 * 1000,
+  pairingTtlMs = 10 * 60 * 1000, requestWindowMs = 2 * 60 * 1000, rotationTtlMs = 15 * 60 * 1000,
   name = "Nebula", role = "hybrid", endpoint, operations = null,
   capabilities = { directPlay: true, hls: true, remux: true, renditionProfiles: [], transcode: true }
 }) => {
   if (!repository) throw new TypeError("A cluster repository is required.");
+  if (!Number.isSafeInteger(rotationTtlMs) || rotationTtlMs < requestWindowMs || rotationTtlMs > 15 * 60 * 1000) {
+    throw new TypeError("rotationTtlMs must be between the signed request window and 15 minutes.");
+  }
   let identity = repository.getIdentity();
   if (!identity) {
     const keyPair = generateClusterKeyPair();
@@ -45,6 +51,20 @@ export const createClusterTrustService = ({
   });
 
   repository.upsertNode(descriptor(), identity.clusterId);
+
+  const verifyEnvelope = (envelope, body, expected, publicKeys) => {
+    validateClusterSignedEnvelope(envelope);
+    if (expected.method && envelope.method !== expected.method) throw error(401, "method_mismatch", "The signed method does not match the request.");
+    if (expected.path && envelope.path !== expected.path) throw error(401, "path_mismatch", "The signed path does not match the request.");
+    const skew = Math.abs(now() - Date.parse(envelope.timestamp));
+    const acceptedClock = Number.isFinite(skew) && skew <= requestWindowMs;
+    if (!sameText(envelope.bodyDigest, digestJsonBody(body))) throw error(401, "body_mismatch", "The cluster request body digest does not match.");
+    if (!publicKeys.some((publicKey) => verifyClusterEnvelopeSignature(envelope, publicKey))) throw error(401, "bad_signature", "The cluster request signature is invalid.");
+    operations?.recordClockSkew?.({ accepted: acceptedClock, skewMs: Number.isFinite(skew) ? skew : requestWindowMs + 1 });
+    if (!acceptedClock) throw error(401, "request_expired", "The cluster request timestamp is outside the accepted window.");
+    const expiresAt = new Date(Date.parse(envelope.timestamp) + requestWindowMs).toISOString();
+    if (!repository.consumeNonce(envelope.nodeId, envelope.nonce, expiresAt)) throw error(409, "request_replayed", "The cluster request nonce has already been used.");
+  };
 
   return {
     identity: () => ({ clusterId: identity.clusterId, descriptor: descriptor(), keyVersion: identity.keyVersion }),
@@ -100,23 +120,77 @@ export const createClusterTrustService = ({
       if (nodeId === identity.nodeId) throw error(400, "self_revoke", "The local node cannot revoke itself.");
       if (!repository.revokeNode(nodeId)) throw error(404, "node_not_found", "Cluster node not found.");
     },
+    beginKeyRotation() {
+      const open = repository.getOpenIdentityRotation();
+      if (open) return open;
+      const keyPair = generateClusterKeyPair();
+      return repository.beginIdentityRotation({
+        expiresAt: new Date(now() + rotationTtlMs).toISOString(),
+        newKeyVersion: identity.keyVersion + 1,
+        newPrivateJwk: keyPair.privateJwk,
+        newPublicKey: keyPair.publicKey,
+        nodeId: identity.nodeId,
+        oldKeyVersion: identity.keyVersion,
+        oldPrivateJwk: identity.privateJwk,
+        oldPublicKey: identity.publicKey,
+        rotationId: `rotation_${uuid().replaceAll("-", "")}`
+      }, repository.listNodes().filter((node) => node.nodeId !== identity.nodeId && node.state !== "revoked").map((node) => node.nodeId));
+    },
+    rotationPayload(rotation = repository.getOpenIdentityRotation()) {
+      if (!rotation) return null;
+      return validateClusterKeyRotationPayload({
+        clusterId: identity.clusterId, expiresAt: rotation.expiresAt,
+        newKeyVersion: rotation.newKeyVersion, newPublicKey: rotation.newPublicKey,
+        nodeId: identity.nodeId, oldKeyVersion: rotation.oldKeyVersion,
+        oldPublicKey: rotation.oldPublicKey, rotationId: rotation.rotationId
+      });
+    },
+    activateKeyRotation(rotationId) {
+      const rotation = repository.activateIdentityRotation(rotationId);
+      if (!rotation) throw error(409, "rotation_not_prepared", "Every active peer must confirm the replacement key before activation.");
+      identity = repository.getIdentity();
+      return rotation;
+    },
+    completeKeyRotation(rotationId) {
+      if (!repository.completeIdentityRotation(rotationId)) throw error(409, "rotation_not_committed", "Every active peer must confirm key retirement before completion.");
+    },
+    acceptKeyRotationPrepare(envelope, input, expected) {
+      const payload = validateClusterKeyRotationPayload(input);
+      if (payload.clusterId !== identity.clusterId || payload.nodeId !== envelope?.nodeId) throw error(409, "rotation_scope_mismatch", "The key rotation does not match this cluster peer.");
+      const node = repository.getNode(payload.nodeId);
+      if (!node || node.state === "revoked") throw error(401, "untrusted_node", "The cluster request is not trusted.");
+      verifyEnvelope(envelope, payload, expected, [node.publicKey]);
+      if (Date.parse(payload.expiresAt) <= now() || Date.parse(payload.expiresAt) > now() + rotationTtlMs) throw error(409, "rotation_expired", "The key rotation transition window is invalid or expired.");
+      const result = repository.prepareNodeKeyRotation(payload);
+      if (!result.rotation) throw error(409, result.code, "The key rotation could not be prepared.");
+      return result.rotation;
+    },
+    acceptKeyRotationCommit(envelope, input, expected) {
+      const payload = validateClusterKeyRotationPayload(input);
+      if (payload.clusterId !== identity.clusterId || payload.nodeId !== envelope?.nodeId) throw error(409, "rotation_scope_mismatch", "The key rotation does not match this cluster peer.");
+      const pending = repository.getNodeKeyRotation(payload.nodeId, payload.rotationId);
+      if (!pending || pending.state !== "prepared" || pending.newPublicKey !== payload.newPublicKey
+        || pending.oldPublicKey !== payload.oldPublicKey || pending.newKeyVersion !== payload.newKeyVersion
+        || pending.oldKeyVersion !== payload.oldKeyVersion || pending.expiresAt !== payload.expiresAt) {
+        throw error(409, "rotation_not_prepared", "The replacement key was not prepared for this peer.");
+      }
+      if (Date.parse(pending.expiresAt) <= now()) throw error(409, "rotation_expired", "The key rotation transition window expired.");
+      verifyEnvelope(envelope, payload, expected, [pending.newPublicKey]);
+      const committed = repository.commitNodeKeyRotation(payload.nodeId, payload.rotationId);
+      if (!committed) throw error(409, "rotation_commit_failed", "The key rotation could not be committed.");
+      return committed;
+    },
     signRequest({ method, path, body, nonce = random(18).toString("base64url"), timestamp = new Date(now()).toISOString() }) {
       return signClusterEnvelope({ bodyDigest: digestJsonBody(body), method, nodeId: identity.nodeId, nonce, path, protocolVersion: CLUSTER_PROTOCOL_VERSION, timestamp }, identity.privateJwk);
     },
     verifyRequest(envelope, body, expected = {}) {
       validateClusterSignedEnvelope(envelope);
-      if (expected.method && envelope.method !== expected.method) throw error(401, "method_mismatch", "The signed method does not match the request.");
-      if (expected.path && envelope.path !== expected.path) throw error(401, "path_mismatch", "The signed path does not match the request.");
       const node = repository.getNode(envelope.nodeId);
       if (!node || node.state === "revoked") throw error(401, "untrusted_node", "The cluster request is not trusted.");
-      const skew = Math.abs(now() - Date.parse(envelope.timestamp));
-      const acceptedClock = Number.isFinite(skew) && skew <= requestWindowMs;
-      if (!sameText(envelope.bodyDigest, digestJsonBody(body))) throw error(401, "body_mismatch", "The cluster request body digest does not match.");
-      if (!verifyClusterEnvelopeSignature(envelope, node.publicKey)) throw error(401, "bad_signature", "The cluster request signature is invalid.");
-      operations?.recordClockSkew?.({ accepted: acceptedClock, skewMs: Number.isFinite(skew) ? skew : requestWindowMs + 1 });
-      if (!acceptedClock) throw error(401, "request_expired", "The cluster request timestamp is outside the accepted window.");
-      const expiresAt = new Date(Date.parse(envelope.timestamp) + requestWindowMs).toISOString();
-      if (!repository.consumeNonce(node.nodeId, envelope.nonce, expiresAt)) throw error(409, "request_replayed", "The cluster request nonce has already been used.");
+      const pending = repository.getPreparedNodeKeyRotation(node.nodeId);
+      const keys = [node.publicKey];
+      if (pending && Date.parse(pending.expiresAt) > now()) keys.push(pending.newPublicKey);
+      verifyEnvelope(envelope, body, expected, keys);
       return node;
     }
   };

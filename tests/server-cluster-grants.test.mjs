@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { applyDomainMigrations } from "../server/database.mjs";
-import { createClusterGrantService, createClusterRepository, createClusterTrustService, clusterMigration } from "../server/cluster/index.mjs";
+import { clusterKeyRotationMigration, createClusterGrantService, createClusterRepository, createClusterTrustService, clusterMigration } from "../server/cluster/index.mjs";
 
 const capabilities = { directPlay: true, hls: true, remux: true, renditionProfiles: [], transcode: true };
 const fixture = ({ endpoint, name, role }) => {
   const database = new DatabaseSync(":memory:");
-  applyDomainMigrations(database, [clusterMigration]);
+  applyDomainMigrations(database, [clusterMigration, clusterKeyRotationMigration]);
   const trust = createClusterTrustService({ capabilities, endpoint, name, repository: createClusterRepository(database), role });
   return { database, trust };
 };

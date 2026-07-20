@@ -6,14 +6,14 @@ import { catalogMigration, createCatalogRepository } from "../server/catalog/ind
 import { probeMigrations } from "../server/probe/index.mjs";
 import { renditionsMigration } from "../server/renditions/index.mjs";
 import {
-  clusterFederationMigration, clusterMigration, createClusterManifestService, createClusterRepository,
+  clusterFederationMigration, clusterKeyRotationMigration, clusterMigration, createClusterManifestService, createClusterRepository,
   createClusterSyncService, createClusterTrustService, createFederatedCatalogRepository
 } from "../server/cluster/index.mjs";
 
 const capabilities = { directPlay: true, hls: true, remux: true, renditionProfiles: [], transcode: true };
 const fixture = ({ endpoint, name, role }) => {
   const database = new DatabaseSync(":memory:"); database.exec("PRAGMA foreign_keys = ON");
-  applyDomainMigrations(database, [catalogMigration, ...probeMigrations, renditionsMigration, clusterMigration, clusterFederationMigration]);
+  applyDomainMigrations(database, [catalogMigration, ...probeMigrations, renditionsMigration, clusterMigration, clusterKeyRotationMigration, clusterFederationMigration]);
   const trust = createClusterTrustService({ capabilities, endpoint, name, repository: createClusterRepository(database), role });
   return { database, trust };
 };

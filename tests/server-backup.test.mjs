@@ -15,7 +15,7 @@ import { playbackPolicyMigration } from "../server/playbackPolicy/index.mjs";
 import { auditMigration } from "../server/audit/schema.mjs";
 import { renditionsMigration } from "../server/renditions/index.mjs";
 import {
-  clusterFederationMigration, clusterMigration, clusterOperationsMigration,
+  clusterFederationMigration, clusterKeyRotationMigration, clusterMigration, clusterOperationsMigration,
   createClusterRepository, createClusterTrustService
 } from "../server/cluster/index.mjs";
 
@@ -26,7 +26,7 @@ const fixture = async (t) => {
   const databasePath = path.join(dataRoot, "nebula.sqlite");
   const database = await openNebulaDatabase(databasePath);
   migrateAccountSchema(database);
-  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, playbackPolicyMigration, auditMigration, renditionsMigration, clusterMigration, clusterOperationsMigration, clusterFederationMigration]);
+  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, playbackPolicyMigration, auditMigration, renditionsMigration, clusterMigration, clusterOperationsMigration, clusterKeyRotationMigration, clusterFederationMigration]);
   t.after(() => database.close());
   return { backupRoot: path.join(root, "backups"), dataRoot, database, databasePath, root };
 };
@@ -109,6 +109,7 @@ test("backup and restore preserve cluster identity, cursors, draining nodes, and
   scope.database.prepare(`INSERT INTO cluster_manifest_cursors
     (node_id, manifest_revision, cursor, sync_generation, last_sync_at, last_complete_at, last_error_code, updated_at)
     VALUES ('node_draining_01', 7, 'cursor_restore_01', 'sync_restore_01', ?, ?, 'cursor_lost', ?)`).run(now, now, now);
+  const pendingRotation = trust.beginKeyRotation();
 
   const originalIdentity = trust.identity();
   const backup = createBackupService({ ...scope, now: () => new Date(now) });
@@ -124,6 +125,13 @@ test("backup and restore preserve cluster identity, cursors, draining nodes, and
     now: () => Date.parse(now), repository: restoredRepository, role: "coordinator"
   });
   assert.deepEqual(restoredTrust.identity(), originalIdentity);
+  const restoredRotation = restoredRepository.getOpenIdentityRotation();
+  assert.equal(restoredRotation.rotationId, pendingRotation.rotationId);
+  assert.equal(restoredRotation.state, "preparing");
+  assert.equal(typeof restoredRotation.newPrivateJwk.d, "string");
+  assert.deepEqual(restoredRepository.listIdentityRotationPeers(restoredRotation.rotationId).map(({ nodeId, state }) => ({ nodeId, state })), [
+    { nodeId: "node_draining_01", state: "pending" }
+  ]);
   assert.equal(restoredRepository.getNode("node_draining_01").state, "draining");
   assert.equal(restoredRepository.getNode("node_revoked_01").state, "revoked");
   assert.equal(restoredTrust.listNodes().some(({ nodeId }) => nodeId === "node_revoked_01"), false);

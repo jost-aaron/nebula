@@ -85,6 +85,35 @@ test("cluster admin operations expose only the injected sanitized aggregate snap
   assert.doesNotMatch(result.body, /nodeId|endpoint|path|ticket|grant/);
 });
 
+test("key rotation uses only the exact signed shard and admin endpoints", async () => {
+  const calls = [];
+  const service = {
+    acceptKeyRotationCommit: (_envelope, payload) => { calls.push("commit"); return payload; },
+    acceptKeyRotationPrepare: (_envelope, payload) => { calls.push("prepare"); return payload; },
+    identity: () => ({ descriptor: { nodeId: "node_shard_001" } }),
+    signRequest: ({ body, path }) => ({ nodeId: body.nodeId, path, signature: "signed" })
+  };
+  const payload = { newKeyVersion: 2, rotationId: "rotation_fixture_01" };
+  const ingress = createClusterIngressRoutes({ keyRotation: {}, service });
+  for (const [path, expected] of [["/api/shard/v1/key-rotation/prepare", "prepared"], ["/api/shard/v1/key-rotation/commit", "committed"]]) {
+    const result = response();
+    await ingress(request("POST", { envelope: {}, payload }), result, new URL(`http://nebula${path}`));
+    assert.equal(result.status, 200);
+    assert.equal(JSON.parse(result.body).payload.state, expected);
+  }
+  assert.deepEqual(calls, ["prepare", "commit"]);
+
+  const rotation = { advance: async () => ({ rotationId: "rotation_fixture_01", state: "completed" }), status: () => null };
+  const admin = createClusterAdminRoutes({ keyRotation: rotation, pairingClient: {}, service: {} });
+  const status = response();
+  await admin(request("GET"), status, new URL("http://nebula/api/admin/cluster/key-rotation"));
+  assert.deepEqual(JSON.parse(status.body), { rotation: null });
+  const started = response();
+  await admin(request("POST"), started, new URL("http://nebula/api/admin/cluster/key-rotation"));
+  assert.equal(JSON.parse(started.body).rotation.state, "completed");
+  assert.equal(await admin(request("POST"), response(), new URL("http://nebula/api/admin/cluster/key-rotation/extra")), false);
+});
+
 test("manifest ingress and coordinator controls remain signed, bounded, and owner-routed", async () => {
   const service = {
     signRequest: ({ body }) => ({ nodeId: body.nodeId, signature: "signed" }),

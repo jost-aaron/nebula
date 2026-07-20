@@ -126,6 +126,35 @@ export const validateClusterPairingResponse = (input) => {
   return value;
 };
 
+export const validateClusterKeyRotationPayload = (input) => {
+  const value = plainObject(input, "key rotation payload");
+  exactKeys(value, new Set([
+    "clusterId", "expiresAt", "newKeyVersion", "newPublicKey", "nodeId",
+    "oldKeyVersion", "oldPublicKey", "rotationId"
+  ]), "key rotation payload");
+  if (typeof value.clusterId !== "string" || !/^cluster_[A-Za-z0-9_-]{8,127}$/.test(value.clusterId)) fail("invalid_cluster", "clusterId is invalid.");
+  id(value.nodeId, "nodeId");
+  id(value.rotationId, "rotationId");
+  integer(value.oldKeyVersion, "oldKeyVersion", { min: 1 });
+  integer(value.newKeyVersion, "newKeyVersion", { min: 2 });
+  if (value.newKeyVersion !== value.oldKeyVersion + 1) fail("invalid_key_version", "newKeyVersion must immediately follow oldKeyVersion.");
+  base64UrlBytes(value.oldPublicKey, "oldPublicKey", 32);
+  base64UrlBytes(value.newPublicKey, "newPublicKey", 32);
+  if (value.oldPublicKey === value.newPublicKey) fail("invalid_key_rotation", "The replacement key must be distinct.");
+  timestamp(value.expiresAt, "expiresAt");
+  return value;
+};
+
+export const validateClusterKeyRotationAck = (input) => {
+  const value = plainObject(input, "key rotation acknowledgement");
+  exactKeys(value, new Set(["keyVersion", "nodeId", "rotationId", "state"]), "key rotation acknowledgement");
+  id(value.nodeId, "nodeId");
+  id(value.rotationId, "rotationId");
+  integer(value.keyVersion, "keyVersion", { min: 1 });
+  if (!new Set(["prepared", "committed"]).has(value.state)) fail("invalid_rotation_state", "The key rotation acknowledgement state is invalid.");
+  return value;
+};
+
 const validateExternalIdentity = (input, index) => {
   const value = plainObject(input, `externalIds[${index}]`);
   exactKeys(value, new Set(["mediaType", "provider", "providerItemId"]), `externalIds[${index}]`);

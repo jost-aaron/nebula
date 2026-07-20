@@ -50,7 +50,7 @@ export const capabilitiesForRole = (role) => new Set(role === "owner"
 
 export const guestCapabilities = () => new Set(["account.use", "dashboard.use", "media.read"]);
 
-const capabilityForRoute = (request, url) => {
+export const capabilityForRoute = (request, url) => {
   const method = request.method ?? "GET";
   const path = url.pathname;
   if (path === "/api/auth/server-settings/tmdb") return "server.admin";

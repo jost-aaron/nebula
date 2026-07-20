@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { applyDomainMigrations } from "../server/database.mjs";
-import { clusterMigration, createClusterRepository, createClusterTrustService } from "../server/cluster/index.mjs";
+import { clusterKeyRotationMigration, clusterMigration, createClusterRepository, createClusterTrustService } from "../server/cluster/index.mjs";
 
 const fixedNow = Date.parse("2026-07-19T12:00:00.000Z");
 const capabilities = { directPlay: true, hls: true, remux: true, renditionProfiles: ["480p", "720p"], transcode: true };
@@ -10,7 +10,7 @@ const capabilities = { directPlay: true, hls: true, remux: true, renditionProfil
 const fixture = ({ endpoint, name, operations = null, role }) => {
   const database = new DatabaseSync(":memory:");
   database.exec("PRAGMA foreign_keys = ON");
-  applyDomainMigrations(database, [clusterMigration]);
+  applyDomainMigrations(database, [clusterMigration, clusterKeyRotationMigration]);
   const repository = createClusterRepository(database, { now: () => new Date(fixedNow).toISOString() });
   const service = createClusterTrustService({ capabilities, endpoint, name, now: () => fixedNow, operations, repository, role });
   return { database, repository, service };
@@ -28,7 +28,7 @@ const pair = ({ shardOperations = null } = {}) => {
 
 test("cluster migration is centrally composable and private identity is persistent", () => {
   const first = fixture({ endpoint: "https://nebula-home.example-tail.ts.net/", name: "Home", role: "hybrid" });
-  applyDomainMigrations(first.database, [clusterMigration]);
+  applyDomainMigrations(first.database, [clusterMigration, clusterKeyRotationMigration]);
   const before = first.service.identity();
   const reopened = createClusterTrustService({ capabilities, endpoint: before.descriptor.endpoint, name: "Ignored", now: () => fixedNow, repository: first.repository, role: "shard" });
   assert.deepEqual(reopened.identity(), before);
@@ -43,7 +43,7 @@ test("cluster migration is centrally composable and private identity is persiste
 
 test("invalid node configuration fails before cluster identity is persisted", () => {
   const database = new DatabaseSync(":memory:");
-  applyDomainMigrations(database, [clusterMigration]);
+  applyDomainMigrations(database, [clusterMigration, clusterKeyRotationMigration]);
   const repository = createClusterRepository(database, { now: () => new Date(fixedNow).toISOString() });
   assert.throws(
     () => createClusterTrustService({ capabilities, endpoint: "http://public.example.com/", name: "Unsafe", now: () => fixedNow, repository, role: "hybrid" }),

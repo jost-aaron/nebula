@@ -6,7 +6,7 @@ import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { applyDomainMigrations } from "../server/database.mjs";
 import {
-  clusterMigration,
+  clusterKeyRotationMigration, clusterMigration,
   classifyClusterProtocolVersion,
   createClusterRepository,
   createClusterSyncService,
@@ -122,7 +122,7 @@ test("coordinator and shard identities survive rolling database restarts while r
   const open = (name, endpoint, role) => {
     const database = new DatabaseSync(path.join(root, `${name}.sqlite`));
     database.exec("PRAGMA foreign_keys = ON");
-    applyDomainMigrations(database, [clusterMigration]);
+    applyDomainMigrations(database, [clusterMigration, clusterKeyRotationMigration]);
     const repository = createClusterRepository(database);
     const trust = createClusterTrustService({ capabilities, endpoint, name, repository, role });
     return { database, repository, trust };

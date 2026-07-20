@@ -7,7 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import { applyDomainMigrations } from "../server/database.mjs";
 import {
-  clusterMigration,
+  clusterKeyRotationMigration, clusterMigration,
   createClusterDeliveryClient,
   createClusterGrantClient,
   createClusterGrantService,
@@ -21,7 +21,7 @@ import {
 const capabilities = { directPlay: true, hls: true, remux: true, renditionProfiles: ["720p"], transcode: true };
 const fixture = (endpoint, name, role) => {
   const database = new DatabaseSync(":memory:");
-  applyDomainMigrations(database, [clusterMigration]);
+  applyDomainMigrations(database, [clusterMigration, clusterKeyRotationMigration]);
   return { database, trust: createClusterTrustService({ capabilities, endpoint, name, repository: createClusterRepository(database), role }) };
 };
 const listen = async (route) => {

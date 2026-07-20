@@ -66,6 +66,28 @@ backoff, source-switch abort, session cancellation, and zero retained timers.
 These tests do not establish real Tailscale reachability or browser codec
 compatibility.
 
+Phase 5 key-rotation fixtures generate fresh Ed25519 identities and verify the
+exact owner/service-admin route boundary, old-key-signed preparation,
+new-key-signed commit, consecutive-version enforcement, nonce replay and key
+substitution rejection, bounded transition expiry, restart resume after an
+interrupted commit, backup/restore of pending transition state, API redaction,
+and rejection of the retired key. Run them with:
+
+```sh
+docker compose run --rm dashboard node --test \
+  tests/server-cluster-key-rotation-client.test.mjs \
+  tests/server-cluster-key-rotation.test.mjs \
+  tests/server-cluster-routes.test.mjs \
+  tests/server-backup.test.mjs
+```
+
+These fixtures do not prove cross-node delivery over a real tailnet. Complete
+operator acceptance with paired disposable nodes, initiate rotation through
+`POST /api/admin/cluster/key-rotation`, interrupt one node between prepare and
+commit, restart it within 15 minutes, repeat the exact POST to resume, and then
+confirm signed health/manifest requests succeed while a captured old-key test
+request is rejected. Never capture or export private key rows for this test.
+
 Static/Compose checks that need no tailnet credentials:
 
 ```sh

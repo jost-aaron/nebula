@@ -9,7 +9,8 @@ export const AUDIT_EVENT_TYPES = Object.freeze([
   "rendition.policy_changed", "rendition.cleanup_requested", "rendition.cleanup_completed",
   "backup.created", "backup.inspected", "media_list.playlist_created", "media_list.collection_created",
   "cluster.pairing_code_created", "cluster.node_paired", "cluster.node_revoked",
-  "cluster.readiness_changed", "cluster.clock_skew_detected", "cluster.node_controls_updated"
+  "cluster.readiness_changed", "cluster.clock_skew_detected", "cluster.node_controls_updated",
+  "cluster.key_rotation_completed", "cluster.key_rotation_interrupted"
 ]);
 
 export const AUDIT_OUTCOMES = Object.freeze(["success", "failure", "denied"]);

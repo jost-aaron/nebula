@@ -34,10 +34,11 @@ import { createRenditionService, createRenditionStore, renditionsMigration } fro
 import { createRenditionCleanupScheduler, createRenditionPolicyRepository, createRenditionPolicyService, renditionPolicyMigrations } from "./renditionPolicy/index.mjs";
 import { createTailscaleEnrollmentService } from "./tailscaleEnrollment.mjs";
 import {
-  clusterMigration, clusterOperationsMigration, clusterFederationMigration, createClusterIngressRoutes, createClusterManifestClient,
+  clusterKeyRotationMigration, clusterMigration, clusterOperationsMigration, clusterFederationMigration, createClusterIngressRoutes, createClusterManifestClient,
   createClusterManifestService, createClusterPairingClient, createClusterRepository, createClusterSyncService,
   createClusterGrantClient, createClusterGrantService, createClusterPlaybackScheduler, createClusterPlaybackService,
-  createClusterDeliveryClient, createClusterOperationsService, createClusterShardDeliveryService,
+  createClusterDeliveryClient, createClusterKeyRotationClient, createClusterKeyRotationService,
+  createClusterOperationsService, createClusterShardDeliveryService,
   createClusterTrustService, createFederatedCatalogRepository, syncLocalClusterManifest
 } from "./cluster/index.mjs";
 import {
@@ -66,7 +67,7 @@ const accountStore = await createAccountStore({ database });
 const guestService = createGuestService({ accountStore });
 const tailscaleEnrollment = createTailscaleEnrollmentService();
 accountStore.setOwnerCreatedHook(() => guestService.revokeAll());
-applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration, clusterOperationsMigration, clusterFederationMigration]);
+applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration, clusterOperationsMigration, clusterKeyRotationMigration, clusterFederationMigration]);
 const auditService = createAuditService({
   db: database,
   maxEvents: Number(process.env.NEBULA_AUDIT_MAX_EVENTS ?? 10_000),
@@ -237,10 +238,14 @@ const clusterGrantService = clusterService ? createClusterGrantService({
   shardDelivery: clusterShardDelivery,
   trust: clusterService
 }) : null;
+const clusterKeyRotation = clusterService ? createClusterKeyRotationService({
+  client: createClusterKeyRotationClient(), repository: clusterRepository, trust: clusterService
+}) : null;
 const clusterIngress = clusterService ? createClusterIngressRoutes({
   contentRoot: storage.contentRoot,
   grants: clusterGrantService,
   manifest: localClusterManifest,
+  keyRotation: clusterKeyRotation,
   service: clusterService,
   shardDelivery: clusterShardDelivery,
   subtitles: subtitleService
@@ -345,7 +350,8 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   catalog: { libraryPermissions, probeReader, repository: catalogRepository, scan: scanCatalog },
   ...(clusterService ? { cluster: {
     audit: auditService, federation: federatedCatalog, pairingClient: createClusterPairingClient(),
-    operations: clusterOperations, playback: clusterPlayback, scheduler: clusterScheduler, service: clusterService, sync: clusterSync
+    keyRotation: clusterKeyRotation, operations: clusterOperations, playback: clusterPlayback,
+    scheduler: clusterScheduler, service: clusterService, sync: clusterSync
   } } : {}),
   jobs: jobsService,
   guestService,

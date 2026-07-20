@@ -7,7 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import { applyDomainMigrations } from "../server/database.mjs";
 import {
-  clusterMigration,
+  clusterKeyRotationMigration, clusterMigration,
   createClusterGrantClient,
   createClusterGrantService,
   createClusterIngressRoutes,
@@ -38,7 +38,7 @@ const listen = async (route) => {
 
 const trustFixture = ({ endpoint, name, role }) => {
   const database = new DatabaseSync(":memory:");
-  applyDomainMigrations(database, [clusterMigration]);
+  applyDomainMigrations(database, [clusterMigration, clusterKeyRotationMigration]);
   const trust = createClusterTrustService({
     capabilities: NODE_CAPABILITIES,
     endpoint,
