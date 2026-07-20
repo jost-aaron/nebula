@@ -1,5 +1,12 @@
 # Studio
 
+When clustering is enabled on a coordinator, owners and service clients see a
+deduplicated music library with shard availability badges and source details.
+Tracks with a local source use the existing persistent audio player. Remote-only
+tracks can be inspected but are excluded from the queue and playback controls
+until delegated shard delivery is implemented. Member and guest libraries stay
+local-only.
+
 Studio is the dedicated local music app.
 
 ## Content Source

@@ -436,8 +436,16 @@ or caller-selected filesystem locations.
   manifests, bounded revision-pinned cursor pages, explicit missing-source
   tombstones, full reconciliation, conservative projection/deduplication,
   conflict diagnostics, and durable merge/split overrides are implemented.
-- Phase 3 unified client browsing is next. Cinema and Studio still use their
-  local compatibility APIs until that phase is browser-verified.
+- Phase 3 implementation is complete: the coordinator keeps its own catalog in
+  the federated projection, Cinema and Studio compatibility responses collapse
+  duplicate shard sources into one logical item, and both apps show responsive
+  availability badges and source lists. Local sources remain playable; remote-
+  only entries are intentionally browse-only until Phase 4 issues scoped grants.
+- Federated browsing is currently limited to owners and service clients. Member
+  and guest requests remain local-only until library permissions can be applied
+  consistently across every shard.
+- Phase 4 scheduling, delegated grants, direct client-to-shard delivery, and
+  exact-replica failover are next.
 
 ### Phase 0: contracts and threat model
 
@@ -483,6 +491,10 @@ ambiguous titles are not incorrectly collapsed.
 
 Exit: desktop and 390x844 clients browse one deduplicated library while shards
 are added, removed, stale, and offline.
+
+Status: implemented with generated fixtures and automated responsive UI
+contracts. A real-tailnet, multi-node desktop/mobile browser pass remains an
+operator acceptance check; it does not block the standalone deployment.
 
 ### Phase 4: scheduled playback and failover
 

@@ -6,6 +6,7 @@ import { addMediaListItem, createMediaList, listMediaLists } from "../api/mediaL
 import type { MediaList } from "../shared/mediaListTypes";
 import type { PlaybackEventKind, PlaybackHistoryEntry } from "../shared/playbackTypes";
 import { createBrowserUuid } from "../shared/browserUuid";
+import type { FederatedAvailabilitySummary } from "../shared/federatedTypes";
 
 interface StudioServerInfo {
   address: string;
@@ -109,6 +110,11 @@ const renderArtwork = (entry: MusicEntry | null, fallbackLabel = "S") => {
 const normalizeGroupValue = (value: string) => value.trim();
 const groupId = (kind: StudioLibraryGroupKind, label: string) => `${kind}:${label.toLowerCase()}`;
 const pluralizeTracks = (count: number) => `${count} ${count === 1 ? "track" : "tracks"}`;
+const federationLabel = (federation: FederatedAvailabilitySummary) => federation.availability === "offline"
+  ? "Offline"
+  : federation.availability === "stale"
+    ? "Stale"
+    : federation.nodeCount === 1 ? federation.sources[0]?.nodeName || "1 shard" : `${federation.nodeCount} shards`;
 const sortEntries = (left: MusicEntry, right: MusicEntry) =>
   (left.sortTitle || left.title).localeCompare(right.sortTitle || right.title);
 
@@ -264,7 +270,7 @@ const renderLibraryItems = (items: StudioLibraryItem[], selected: MusicEntry | n
             <strong>${escapeHtml(entry.title)}</strong>
             <small>${escapeHtml(metadataLine(entry) || `${entry.folder || "Content"} / ${formatAudioFormat(entry)}`)}</small>
           </span>
-          <em>${escapeHtml(formatAudioFormat(entry).replace(" audio", ""))}</em>
+          <em class="${entry.playable === false ? "is-remote" : ""}">${escapeHtml(entry.federation ? federationLabel(entry.federation) : formatAudioFormat(entry).replace(" audio", ""))}</em>
         </button>
       `;
     })
@@ -302,7 +308,7 @@ const renderResumeDialog = (entry: MusicEntry, state: PlaybackHistoryEntry) => `
   </section>`;
 
 const queueEntries = (entries: MusicEntry[], selected: MusicEntry | null) =>
-  entries.filter((entry) => entry.path !== selected?.path).slice(0, 8);
+  entries.filter((entry) => entry.playable !== false && entry.path !== selected?.path).slice(0, 8);
 
 const renderQueue = (entries: MusicEntry[], selected: MusicEntry) => {
   const queue = queueEntries(entries, selected);
@@ -385,8 +391,16 @@ const renderRelated = (entries: MusicEntry[], selected: MusicEntry) => {
   `;
 };
 
+const renderFederatedSources = (entry: MusicEntry) => !entry.federation ? "" : `
+  <section class="studio-shard-availability" aria-label="Available on">
+    <header><div><p class="eyebrow">Sources</p><strong>Available on</strong></div><span class="is-${entry.federation.availability}">${escapeHtml(federationLabel(entry.federation))}</span></header>
+    <div>${entry.federation.sources.map((source) => `<article><i class="is-${source.availability}" aria-hidden="true"></i><span><strong>${escapeHtml(source.nodeName)}</strong><small>${source.local ? "This server" : "Remote shard"}</small></span><em>${source.capabilities.directPlay ? "Direct play" : source.capabilities.transcode ? "Transcode" : source.nodeState}</em></article>`).join("")}</div>
+    ${entry.playable === false ? `<p>This track is visible across the cluster. Secure remote playback routing is not enabled yet.</p>` : ""}
+  </section>`;
+
 const renderSourceCards = (entry: MusicEntry, server: StudioServerInfo) => `
-  <section class="studio-source-cards" aria-label="Track source details">
+  ${renderFederatedSources(entry)}
+  ${entry.playable === false ? "" : `<section class="studio-source-cards" aria-label="Track source details">
     <article>
       ${renderStudioIcon("AudioWaveform")}
       <span>Audio</span>
@@ -405,7 +419,7 @@ const renderSourceCards = (entry: MusicEntry, server: StudioServerInfo) => `
       <strong class="${server.online ? "is-online" : ""}">${server.online ? "Connected" : "Offline"}</strong>
       <small>${escapeHtml(`${server.name} / ${server.mode}`)}</small>
     </article>
-  </section>
+  </section>`}
 `;
 
 const renderTransportControls = () => `
@@ -455,7 +469,7 @@ const renderNowPlaying = (entry: MusicEntry, entries: MusicEntry[]) => {
       <section class="studio-now">
         <div class="studio-artwork-stage">
           ${renderArtwork(entry, entry.title)}
-          <span class="studio-format-chip">${escapeHtml(formatAudioFormat(entry).replace(" audio", ""))} / Local file</span>
+          <span class="studio-format-chip">${escapeHtml(entry.playable === false ? "Remote shard" : `${formatAudioFormat(entry).replace(" audio", "")} / Local file`)}</span>
         </div>
         <div class="studio-track-detail">
           <p class="eyebrow">Now Playing</p>
@@ -465,8 +479,8 @@ const renderNowPlaying = (entry: MusicEntry, entries: MusicEntry[]) => {
           <div class="studio-waveform" aria-hidden="true">
             <canvas data-studio-visualizer data-studio-visualizer-mode="ambient"></canvas>
           </div>
-          ${renderTransportControls()}
-          ${entry.id ? `<button class="studio-playlist-command" type="button" data-studio-action="save-playlist">${renderStudioIcon("ListPlus")} Save to playlist</button>` : ""}
+          ${entry.playable === false ? `<div class="studio-remote-playback-note">${renderStudioIcon("ServerOff")}<span><strong>Remote playback is not enabled yet</strong><small>This track is available on another shard and will become playable through the Phase 4 router.</small></span></div>` : renderTransportControls()}
+          ${entry.playable !== false && entry.id ? `<button class="studio-playlist-command" type="button" data-studio-action="save-playlist">${renderStudioIcon("ListPlus")} Save to playlist</button>` : ""}
         </div>
       </section>
       ${renderQueue(entries, entry)}
@@ -702,6 +716,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     };
 
     setPlayerEntry = (entry: MusicEntry, force = false) => {
+      if (entry.playable === false || !entry.streamUrl) return;
       if (!force && playingEntry?.path === entry.path) return;
       stopSession();
       audioPlayer.pause();
@@ -998,14 +1013,14 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   };
 
   const playSelected = (positionSeconds = 0, restartSession = false) => {
-    if (!selected) return;
+    if (!selected || selected.playable === false) return;
     setPlayerEntry(selected, restartSession);
     playPlayerAt(positionSeconds);
   };
 
   const selectTrack = (entry: MusicEntry, autoplay = false) => {
     selected = entry;
-    setPlayerEntry(entry);
+    if (entry.playable !== false) setPlayerEntry(entry);
     render();
     content.scrollTop = 0;
 
@@ -1027,8 +1042,9 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       return;
     }
 
-    const index = entries.findIndex((entry) => entry.path === current.path);
-    const next = entries[index + offset];
+    const playableEntries = entries.filter((entry) => entry.playable !== false);
+    const playableIndex = playableEntries.findIndex((entry) => entry.path === current.path);
+    const next = playableEntries[playableIndex + offset];
 
     if (next) {
       selectTrack(next, true);

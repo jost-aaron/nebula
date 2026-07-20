@@ -272,8 +272,11 @@ At handoff time:
 - App-surface rendering and feature-specific bindings remain in `src/main.ts`;
   shell state, persistence, input gates, and gamepad lifecycle live in
   `src/shell/`.
-- Media sharding Phase 2 now persists exact source fingerprints, exchanges
-  signed path-free manifests, and builds a conservative coordinator projection.
-  Cinema/Studio still read their local compatibility APIs; unified federated
-  browsing, source badges, playback scheduling, grants, and failover are the
-  next phases in `docs/media-sharding-implementation-plan.md`.
+- Media sharding Phase 3 now feeds the conservative coordinator projection into
+  the existing Cinema and Studio compatibility APIs. Owners see one logical
+  item for duplicate sources, shard-count/status badges, and an `Available on`
+  source list. Remote-only items are browseable but cannot invoke local playback
+  or mutation endpoints. Members and guests remain local-only until federated
+  library permissions are implemented. Scheduling, delegated media grants,
+  direct shard delivery, and failover are Phase 4 in
+  `docs/media-sharding-implementation-plan.md`.

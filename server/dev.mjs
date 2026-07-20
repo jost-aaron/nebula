@@ -36,7 +36,7 @@ import { createTailscaleEnrollmentService } from "./tailscaleEnrollment.mjs";
 import {
   clusterMigration, clusterFederationMigration, createClusterIngressRoutes, createClusterManifestClient,
   createClusterManifestService, createClusterPairingClient, createClusterRepository, createClusterSyncService,
-  createClusterTrustService, createFederatedCatalogRepository
+  createClusterTrustService, createFederatedCatalogRepository, syncLocalClusterManifest
 } from "./cluster/index.mjs";
 import {
   createCatalogCheck,
@@ -78,11 +78,21 @@ const clusterService = clusterEnabled ? createClusterTrustService({
   role: process.env.NEBULA_CLUSTER_ROLE ?? "hybrid"
 }) : null;
 const catalogRepository = createCatalogRepository(database);
+const localClusterManifest = clusterService ? createClusterManifestService({
+  database, nodeId: clusterService.identity().descriptor.nodeId
+}) : null;
 const clusterIngress = clusterService ? createClusterIngressRoutes({
-  manifest: createClusterManifestService({ database, nodeId: clusterService.identity().descriptor.nodeId }),
+  manifest: localClusterManifest,
   service: clusterService
 }) : null;
-const federatedCatalog = clusterService ? createFederatedCatalogRepository(database) : null;
+const federatedCatalog = clusterService ? createFederatedCatalogRepository(database, {
+  localNodeId: clusterService.identity().descriptor.nodeId
+}) : null;
+const syncLocalProjection = clusterService ? () => syncLocalClusterManifest({
+  federation: federatedCatalog,
+  manifest: localClusterManifest,
+  nodeId: clusterService.identity().descriptor.nodeId
+}) : () => null;
 const clusterSync = clusterService ? createClusterSyncService({
   client: createClusterManifestClient(), federation: federatedCatalog, trust: clusterService
 }) : null;
@@ -99,6 +109,7 @@ const { root: catalogRoot } = bootstrapSharedContentRoot(catalogRepository, { co
 const scanCatalog = async () => {
   const scan = await scanLocalRoot({ absoluteRoot: storage.contentRoot, repository: catalogRepository, rootId: catalogRoot.id });
   await importLegacyCinemaMetadata({ metadataPath: storage.cinemaMetadataPath, repository: catalogRepository, rootId: catalogRoot.id });
+  syncLocalProjection();
   return scan;
 };
 const playbackRepository = createPlaybackRepository({ db: database });
@@ -182,9 +193,9 @@ const jobsWorker = createJobsWorker({
       }
       return scan;
     },
-    probeSource: ({ sourceId }) => probeService.probeSource(sourceId),
-    fingerprintSource: ({ sourceId }, context) => fingerprintService.fingerprintSource(sourceId, context),
-    buildRendition: (payload, context) => renditionService.build(payload, context),
+    probeSource: async ({ sourceId }) => { const result = await probeService.probeSource(sourceId); syncLocalProjection(); return result; },
+    fingerprintSource: async ({ sourceId }, context) => { const result = await fingerprintService.fingerprintSource(sourceId, context); syncLocalProjection(); return result; },
+    buildRendition: async (payload, context) => { const result = await renditionService.build(payload, context); syncLocalProjection(); return result; },
     refreshMetadata: async () => ({ skipped: "metadata orchestration pending" }),
     cacheArtwork: async () => ({ skipped: "artwork cache pending" }),
     cleanup: (payload, context) => payload?.scope === "renditions"

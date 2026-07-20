@@ -37,15 +37,17 @@ classification; reject malformed, oversized, and symlinked snapshots; and
 confirm that endpoint addresses, node keys, and Tailscale user identities do
 not appear in owner API responses.
 
-Media-cluster Phase 1 and 2 tests cover strict protocol shapes, exact Tailscale HTTPS
+Media-cluster Phase 1 through 3 tests cover strict protocol shapes, exact Tailscale HTTPS
 origins, fixed userspace proxy configuration, Ed25519 identity persistence,
 hashed one-time pairing codes, signed body/method/path binding, persistent nonce
 replay rejection, clock windows, revocation, bounded responses, owner/shard
 route separation, revision-bound full-file fingerprints, path-free manifests,
 cursor-loss recovery, exact-replica collapse, provider-identity grouping,
-ambiguous-title conflicts, merge/split overrides, and authenticated coordinator
-sync. They use generated keys, generated media fixtures, and isolated SQLite
-databases and do not require tailnet credentials.
+ambiguous-title conflicts, merge/split overrides, authenticated coordinator
+sync, local-source preference, remote-only browse safety, role-gated unified
+libraries, client-safe availability projections, and Cinema/Studio responsive
+availability UI contracts. They use generated keys, generated media fixtures,
+and isolated SQLite databases and do not require tailnet credentials.
 
 Static/Compose checks that need no tailnet credentials:
 
@@ -55,10 +57,12 @@ docker compose --env-file .env.example -f compose.deploy.yaml config --services
 docker compose run --rm dashboard node --test \
   tests/server-cluster-client.test.mjs \
   tests/server-cluster-manifest.test.mjs \
+  tests/server-cluster-library-projection.test.mjs \
   tests/server-cluster-protocol.test.mjs \
   tests/server-cluster-routes.test.mjs \
   tests/server-cluster-sync.test.mjs \
   tests/server-cluster-trust.test.mjs \
+  tests/shard-unified-ui.test.mjs \
   tests/server-catalog-fingerprints.test.mjs \
   tests/nebula-server-cli.test.mjs \
   tests/server-tailscale-enrollment.test.mjs \
@@ -110,7 +114,12 @@ in `deployment.md`, use an isolated tailnet/copied Nebula data and verify:
    wait for fingerprint jobs, explicitly sync the shard, and confirm the
    coordinator projection contains one item with two nodes. Add a same-title
    different-byte fixture and confirm it stays separate with an open conflict.
-   Unified client browsing and playback remain later-phase acceptance criteria.
+   Sign in as the coordinator owner and confirm Cinema and Studio show one card
+   per logical item, a multi-shard badge, and every source in `Available on`.
+   Stop one shard and confirm stale/offline availability remains visible. A
+   remote-only item must be browseable without offering playback. Member and
+   guest sessions must remain local-only. Remote playback is a later-phase
+   acceptance criterion.
 
 Harmless operator CLI smoke checks:
 

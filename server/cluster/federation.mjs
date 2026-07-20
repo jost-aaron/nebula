@@ -17,7 +17,7 @@ const providerKey = (source) => {
 const fingerprintKey = (source) => source.fingerprint.state === "ready"
   ? `${source.fingerprint.algorithm}:${source.fingerprint.digest}:${source.sizeBytes}` : null;
 
-export const createFederatedCatalogRepository = (database, { now = () => new Date().toISOString(), uuid = randomUUID } = {}) => {
+export const createFederatedCatalogRepository = (database, { localNodeId = null, now = () => new Date().toISOString(), uuid = randomUUID } = {}) => {
   const getItemForSource = (nodeId, source) => {
     const exact = fingerprintKey(source);
     if (exact) {
@@ -117,10 +117,40 @@ export const createFederatedCatalogRepository = (database, { now = () => new Dat
       FROM federated_items i JOIN federated_sources s ON s.item_id = i.id AND s.availability = 'available'
       WHERE i.merged_into_id IS NULL AND (? IS NULL OR i.media_kind = ?)
       GROUP BY i.id ORDER BY i.title, i.id`).all(mediaKind ?? null, mediaKind ?? null);
-    return rows.map((row) => ({
-      id: row.id, itemKind: row.item_kind, mediaKind: row.media_kind, nodeCount: row.node_count,
-      sourceCount: row.source_count, title: row.title, year: row.year
-    }));
+    const sourceQuery = database.prepare(`SELECT fs.id, fs.local_item_id, fs.local_source_id, fs.source_revision,
+      fs.availability, fs.metadata_json, n.node_id, n.name, n.state, n.capabilities_json
+      FROM federated_sources fs JOIN cluster_nodes n ON n.node_id = fs.node_id
+      WHERE fs.item_id = ? AND fs.availability != 'tombstone' ORDER BY n.name, fs.id`);
+    return rows.map((row) => {
+      const sources = sourceQuery.all(row.id).map((source) => {
+        const metadata = JSON.parse(source.metadata_json);
+        const capabilities = JSON.parse(source.capabilities_json);
+        return {
+          availability: source.availability,
+          capabilities: {
+            directPlay: Boolean(capabilities.directPlay),
+            renditionProfiles: Array.isArray(capabilities.renditionProfiles) ? capabilities.renditionProfiles : [],
+            transcode: Boolean(capabilities.transcode)
+          },
+          height: metadata.height ?? null,
+          id: source.id,
+          local: source.node_id === localNodeId,
+          localItemId: source.local_item_id,
+          localSourceId: source.local_source_id,
+          nodeName: source.name,
+          nodeState: source.state,
+          renditions: Array.isArray(metadata.renditions) ? metadata.renditions : [],
+          sourceRevision: source.source_revision,
+          width: metadata.width ?? null
+        };
+      });
+      const available = sources.filter((source) => source.availability === "available" && source.nodeState === "online");
+      return {
+        availability: available.length ? "available" : sources.some((source) => source.availability === "available") ? "offline" : "stale",
+        id: row.id, itemKind: row.item_kind, mediaKind: row.media_kind, nodeCount: row.node_count,
+        sourceCount: row.source_count, sources, title: row.title, year: row.year
+      };
+    });
   };
   const listConflicts = () => database.prepare(`SELECT id, candidate_signature AS candidateSignature,
     left_item_id AS leftItemId, right_item_id AS rightItemId, state FROM federated_dedupe_conflicts ORDER BY created_at, id`).all();

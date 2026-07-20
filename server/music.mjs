@@ -5,8 +5,9 @@ import { readMetadata, scanMediaLibrary } from "./mediaLibrary.mjs";
 import { isAudioFile, mimeType } from "./storage.mjs";
 import { parseByteRange } from "./ranges.mjs";
 import { projectRepositoryItems } from "./catalog/projections.mjs";
+import { canBrowseFederatedLibrary, projectUnifiedLibrary } from "./cluster/index.mjs";
 
-export const createMusicRoutes = (storage, accountStore, { catalog = null, guestService = null, libraryPermissions = null } = {}) => {
+export const createMusicRoutes = (storage, accountStore, { catalog = null, federation = null, guestService = null, libraryPermissions = null } = {}) => {
   const catalogEntries = () => catalog
     ? projectRepositoryItems(catalog.repository, { availability: "available", mediaKind: "audio" })
     : [];
@@ -28,7 +29,7 @@ export const createMusicRoutes = (storage, accountStore, { catalog = null, guest
       });
     });
     const context = request.nebulaAuth;
-    const entries = libraryPermissions ? scanned.filter((entry) => libraryPermissions.canAccessPath(context, entry.path, "audio")) : scanned;
+    let entries = libraryPermissions ? scanned.filter((entry) => libraryPermissions.canAccessPath(context, entry.path, "audio")) : scanned;
     if (context) {
       entries.forEach((entry) => {
         const ticket = context.kind === "guest" ? guestService.issueMediaTicket({ contentPath: entry.path, mediaKind: "audio", sessionId: context.sessionId }) : accountStore.issueMediaTicket({
@@ -39,6 +40,9 @@ export const createMusicRoutes = (storage, accountStore, { catalog = null, guest
         });
         entry.streamUrl = `/api/music/media?path=${encodeURIComponent(entry.path)}&ticket=${encodeURIComponent(ticket)}`;
       });
+    }
+    if (federation && canBrowseFederatedLibrary(context)) {
+      entries = projectUnifiedLibrary({ entries, federation, mediaKind: "audio" });
     }
     entries.sort((a, b) => (a.sortTitle || a.title).localeCompare(b.sortTitle || b.title));
     json(response, 200, { entries });

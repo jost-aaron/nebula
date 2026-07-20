@@ -1,5 +1,6 @@
 import type { CinemaEpisodeMetadata } from "./cinemaTmdbTypes";
 import type { CatalogCompatibilityIdentity } from "./catalogTypes";
+import type { FederatedAvailabilitySummary } from "./federatedTypes";
 
 export type CinemaCategory = "movies" | "tv";
 
@@ -12,10 +13,12 @@ export interface CinemaEntry extends CatalogCompatibilityIdentity {
   collection: string;
   episode: CinemaEpisodeMetadata | null;
   folder: string;
+  federation?: FederatedAvailabilitySummary;
   genres: string[];
   mediaKind: CinemaMediaKind;
   modifiedAt: string;
   name: string;
+  playable?: boolean;
   path: string;
   posterUrl: string;
   rating: string;

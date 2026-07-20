@@ -36,11 +36,11 @@ export const createClusterTrustService = ({
     protocolVersion: CLUSTER_PROTOCOL_VERSION, publicKey: identity.publicKey, role: identity.role
   });
 
-  descriptor();
+  repository.upsertNode(descriptor(), identity.clusterId);
 
   return {
     identity: () => ({ clusterId: identity.clusterId, descriptor: descriptor(), keyVersion: identity.keyVersion }),
-    listNodes: repository.listNodes,
+    listNodes: () => repository.listNodes().filter((node) => node.nodeId !== identity.nodeId),
     createPairingCode() {
       const pairingCode = random(24).toString("base64url");
       const expiresAt = new Date(now() + pairingTtlMs).toISOString();
@@ -54,6 +54,7 @@ export const createClusterTrustService = ({
       if (!repository.consumePairingCode(presentedHash)) throw error(401, "pairing_denied", "The pairing code is invalid or expired.");
       const clusterId = value.clusterId;
       identity = repository.updateClusterId(clusterId);
+      repository.upsertNode(descriptor(), clusterId);
       repository.upsertNode(value.requester, clusterId);
       return { clusterId, node: descriptor() };
     },

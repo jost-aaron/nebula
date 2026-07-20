@@ -6,5 +6,6 @@ export { createClusterPairingClient, isTailscaleAddress, validateClusterProxyUrl
 export { createClusterAdminRoutes, createClusterIngressRoutes } from "./routes.mjs";
 export { createClusterManifestService } from "./manifest.mjs";
 export { createFederatedCatalogRepository } from "./federation.mjs";
-export { createClusterManifestClient, createClusterSyncService } from "./sync.mjs";
+export { createClusterManifestClient, createClusterSyncService, syncLocalClusterManifest } from "./sync.mjs";
+export { canBrowseFederatedLibrary, projectUnifiedLibrary } from "./libraryProjection.mjs";
 export * from "./protocol.mjs";

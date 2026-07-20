@@ -1,5 +1,12 @@
 # Cinema
 
+When clustering is enabled on a coordinator, owner and service library requests
+are projected through the federated catalog. Duplicate sources render as one
+title with a shard-count badge and an `Available on` list. A local source keeps
+the existing playback and metadata workflow. Remote-only titles remain
+browseable but disable playback and local mutations until delegated shard
+delivery is implemented. Member and guest libraries remain local-only.
+
 Cinema is the local video browser and web player prototype.
 
 ## Content Source

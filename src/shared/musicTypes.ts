@@ -1,14 +1,17 @@
 import type { CatalogCompatibilityIdentity } from "./catalogTypes";
+import type { FederatedAvailabilitySummary } from "./federatedTypes";
 
 export interface MusicEntry extends CatalogCompatibilityIdentity {
   album: string;
   artist: string;
   collection: string;
   folder: string;
+  federation?: FederatedAvailabilitySummary;
   genres: string[];
   mediaKind: "audio";
   modifiedAt: string;
   name: string;
+  playable?: boolean;
   path: string;
   posterUrl: string;
   releaseYear: string;

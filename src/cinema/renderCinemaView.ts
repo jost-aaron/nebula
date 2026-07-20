@@ -36,6 +36,7 @@ import type { SubtitlePreference, SubtitleTracksResponse } from "../shared/subti
 import { buildItemRenditions, deleteRendition, listItemRenditions, listRenditionProfiles, setRenditionRetention } from "../api/renditionsApi";
 import { RENDITION_PROFILE_IDS, type MediaRendition, type PlaybackQualityPreference, type RenditionProfile, type RenditionProfileId } from "../shared/renditionTypes";
 import type { PlaybackPlanResponse } from "../shared/playbackPlanTypes";
+import type { FederatedAvailabilitySummary } from "../shared/federatedTypes";
 import { createBrowserUuid } from "../shared/browserUuid";
 import { createHlsPlayback, supportsHlsPlayback, type HlsPlaybackHandle } from "./hlsPlayback";
 
@@ -118,6 +119,31 @@ const qualityResultLabel = (preference: PlaybackQualityPreference, plan?: Playba
 };
 
 const estimateRuntime = (_entry: CinemaEntry) => "Runtime pending";
+
+const federationLabel = (federation: FederatedAvailabilitySummary) => {
+  if (federation.availability === "offline") return "Offline";
+  if (federation.availability === "stale") return "Availability stale";
+  return federation.nodeCount === 1 ? federation.sources[0]?.nodeName || "1 shard" : `${federation.nodeCount} shards`;
+};
+
+const renderFederatedAvailability = (entry: CinemaEntry) => {
+  if (!entry.federation) return "";
+  return `
+    <section class="cinema-shard-availability" aria-label="Available on">
+      <header><div><p class="eyebrow">Sources</p><strong>Available on</strong></div><span class="is-${entry.federation.availability}">${escapeHtml(federationLabel(entry.federation))}</span></header>
+      <div>
+        ${entry.federation.sources.map((source) => `
+          <article>
+            <i class="is-${source.availability}" aria-hidden="true"></i>
+            <span><strong>${escapeHtml(source.nodeName)}</strong><small>${source.local ? "This server" : "Remote shard"}${source.width && source.height ? ` · ${source.width}×${source.height}` : ""}</small></span>
+            <em>${source.capabilities.directPlay ? "Direct play" : source.capabilities.transcode ? "Transcode" : source.nodeState}</em>
+          </article>
+        `).join("")}
+      </div>
+      ${entry.playable === false ? `<p>Browseable from this coordinator. Secure remote playback routing arrives in the next shard phase.</p>` : ""}
+    </section>
+  `;
+};
 
 const categoryLabel = (category: CinemaCategory) =>
   categories.find((candidate) => candidate.id === category)?.label ?? "Movies";
@@ -304,8 +330,8 @@ const renderCinemaCards = (entries: CinemaEntry[], category: CinemaCategory, pla
           <span class="cinema-poster" data-cinema-poster="${escapeHtml(entry.path)}"${posterStyle(entry)}>
             ${entry.posterUrl ? "" : renderPosterFallback(entry)}
             <span class="cinema-poster-scrim"></span>
-            <span class="cinema-card-badge">${escapeHtml(entry.category === "tv" ? "Series" : "Movie")}</span>
-            <span class="cinema-card-play">${renderCinemaIcon("Play", "cinema-play-icon")}</span>
+            <span class="cinema-card-badge">${escapeHtml(entry.federation ? federationLabel(entry.federation) : entry.category === "tv" ? "Series" : "Movie")}</span>
+            <span class="cinema-card-play${entry.playable === false ? " unavailable" : ""}">${renderCinemaIcon(entry.playable === false ? "ServerOff" : "Play", "cinema-play-icon")}</span>
             ${state ? `<span class="cinema-card-progress"><i style="width:${Math.round(state.progress * 100)}%"></i></span>` : ""}
           </span>
           <span class="cinema-card-copy">
@@ -492,18 +518,18 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: C
         <p class="cinema-title-meta">${escapeHtml(metadataLine(entry) || `${entry.folder || "Content"} / ${formatSize(entry.size)}`)}</p>
         <p>${escapeHtml(entry.summary || "No synopsis has been added for this title yet.")}</p>
         <div class="cinema-actions">
-          <button type="button" data-cinema-action="play">${renderCinemaIcon("Play")} ${playback ? `Resume at ${formatTime(playback.positionSeconds)}` : "Play"}</button>
-          ${entry.id && entry.sourceId ? `<button type="button" data-cinema-action="played">${renderCinemaIcon("BadgeCheck")} Mark watched</button><button type="button" data-cinema-action="unplayed">Mark unwatched</button>` : ""}
-          ${renderWatchlistButton(entry)}
-          ${entry.id ? `<button type="button" data-cinema-action="save-playlist">${renderCinemaIcon("ListPlus")} Save to playlist</button>` : ""}
+          ${entry.playable === false ? `<button type="button" disabled>${renderCinemaIcon("ServerOff")} Remote playback unavailable</button>` : `<button type="button" data-cinema-action="play">${renderCinemaIcon("Play")} ${playback ? `Resume at ${formatTime(playback.positionSeconds)}` : "Play"}</button>`}
+          ${entry.playable !== false && entry.id && entry.sourceId ? `<button type="button" data-cinema-action="played">${renderCinemaIcon("BadgeCheck")} Mark watched</button><button type="button" data-cinema-action="unplayed">Mark unwatched</button>` : ""}
+          ${entry.playable !== false ? renderWatchlistButton(entry) : ""}
+          ${entry.playable !== false && entry.id ? `<button type="button" data-cinema-action="save-playlist">${renderCinemaIcon("ListPlus")} Save to playlist</button>` : ""}
           <button type="button" data-cinema-action="more">${renderCinemaIcon("MoreHorizontal")} More</button>
           ${canOptimize && entry.id && entry.sourceId ? `<button type="button" data-cinema-action="optimize">${renderCinemaIcon("Gauge")} Optimize</button>` : ""}
         </div>
-        <button class="cinema-edit-command" type="button" data-cinema-action="edit">${renderCinemaIcon("Pencil")} Edit Details</button>
-        <button class="cinema-edit-command" type="button" data-cinema-action="tmdb">${renderCinemaIcon("Database")} Match with TMDB</button>
-        ${entry.tmdbId ? `<button class="cinema-edit-command" type="button" data-cinema-action="tmdb-refresh">${renderCinemaIcon("RefreshCw")} Refresh TMDB Metadata</button>` : ""}
-        ${renderServerCard(currentServerInfo(), true)}
-        ${renderPlaybackSettings(entry, subtitles, preference)}
+        ${entry.playable !== false ? `<button class="cinema-edit-command" type="button" data-cinema-action="edit">${renderCinemaIcon("Pencil")} Edit Details</button><button class="cinema-edit-command" type="button" data-cinema-action="tmdb">${renderCinemaIcon("Database")} Match with TMDB</button>` : ""}
+        ${entry.playable !== false && entry.tmdbId ? `<button class="cinema-edit-command" type="button" data-cinema-action="tmdb-refresh">${renderCinemaIcon("RefreshCw")} Refresh TMDB Metadata</button>` : ""}
+        ${renderFederatedAvailability(entry)}
+        ${entry.playable !== false ? renderServerCard(currentServerInfo(), true) : ""}
+        ${entry.playable !== false ? renderPlaybackSettings(entry, subtitles, preference) : ""}
         <div class="cinema-meta-list">
           <span>Type <strong>Video</strong></span>
           ${entry.episode ? `<span>Episode <strong>S${entry.episode.seasonNumber} E${entry.episode.episodeNumber}</strong></span><span>Air date <strong>${escapeHtml(entry.episode.airDate || "Not set")}</strong></span>` : ""}
@@ -1128,7 +1154,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     activeCategory = entry.category;
     view = "title-detail";
     render();
-    void loadCatalogDetail(entry);
+    if (entry.playable !== false) void loadCatalogDetail(entry);
     if (entry.id && entry.sourceId) void listSubtitleTracks(entry.id, entry.sourceId).then((state) => { subtitleState.set(entry.id!, state); if (selected?.id === entry.id) render(); }).catch(() => {});
     if (!subtitlePreference) void getSubtitlePreference().then((value) => { subtitlePreference = value; if (selected?.id === entry.id) render(); }).catch(() => {});
   };
@@ -1668,7 +1694,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   };
 
   const requestPlayer = (fullscreen = false) => {
-    if (!selected) {
+    if (!selected || selected.playable === false || !selected.streamUrl) {
       return;
     }
 

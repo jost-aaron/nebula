@@ -90,6 +90,6 @@ test("signature substitution and node revocation fail closed", () => {
   shard.service.revokeNode(coordinator.service.identity().descriptor.nodeId);
   assert.throws(() => shard.service.verifyRequest(envelope, body), (error) => error.code === "untrusted_node");
   assert.equal(shard.service.listNodes().length, 0);
-  assert.equal(shard.repository.listNodes({ includeRevoked: true })[0].state, "revoked");
+  assert.equal(shard.repository.listNodes({ includeRevoked: true }).find((node) => node.nodeId === coordinator.service.identity().descriptor.nodeId).state, "revoked");
   coordinator.database.close(); shard.database.close();
 });

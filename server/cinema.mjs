@@ -6,6 +6,7 @@ import { defaultTitle, metadataForEntry, readMetadata, scanMediaLibrary, writeMe
 import { isVideoFile, mimeType } from "./storage.mjs";
 import { parseByteRange } from "./ranges.mjs";
 import { createCinemaTmdbRoutes } from "./cinemaTmdb.mjs";
+import { canBrowseFederatedLibrary, projectUnifiedLibrary } from "./cluster/index.mjs";
 
 const candidateWords = (value = "") =>
   value
@@ -82,7 +83,7 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
     const metadata = await readMetadata(storage.cinemaMetadataPath);
     const scanned = await scanMediaLibrary(storage, metadata, { mediaKind: "video" });
     const context = request.nebulaAuth;
-    const entries = libraryPermissions ? scanned.filter((entry) => libraryPermissions.canAccessPath(context, entry.path, "video")) : scanned;
+    let entries = libraryPermissions ? scanned.filter((entry) => libraryPermissions.canAccessPath(context, entry.path, "video")) : scanned;
 
     if (context?.user) {
       const legacyPaths = Object.entries(metadata).filter(([, value]) => Boolean(value?.watchlisted)).map(([contentPath]) => contentPath);
@@ -101,6 +102,9 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
         });
         entry.streamUrl = `/api/cinema/media?path=${encodeURIComponent(entry.path)}&ticket=${encodeURIComponent(ticket)}`;
       });
+    }
+    if (options.federation && canBrowseFederatedLibrary(context)) {
+      entries = projectUnifiedLibrary({ entries, federation: options.federation, mediaKind: "video" });
     }
     entries.sort((a, b) => (a.sortTitle || a.title).localeCompare(b.sortTitle || b.title));
     json(response, 200, { entries });
