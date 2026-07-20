@@ -3,6 +3,25 @@
 Verification combines TypeScript checking, the complete Node suite, the Docker
 Playwright suite, and targeted manual/iOS QA.
 
+## Multi-Origin HLS Research
+
+The detached Phase 6 experiment has focused contract, loader, and deterministic
+fixture checks:
+
+```sh
+docker compose run --rm dashboard node --test \
+  tests/server-cluster-multi-origin-hls.test.mjs \
+  tests/multi-origin-hls-loader.test.mjs \
+  tests/multi-origin-hls-benchmark.test.mjs
+docker compose run --rm dashboard node scripts/benchmark-multi-origin-hls.mjs
+```
+
+Coverage includes default-off behavior, exact rendition-map matching, scoped
+and expired grants, wrong origins, tampered/oversized/stalled responses, bounded
+retry, integrity verification, and duplicate-request coalescing. The benchmark
+is generated deterministic data, not real-tailnet evidence. See
+`docs/multi-origin-hls-experiment.md` before interpreting results.
+
 ## Required Check
 
 ```sh

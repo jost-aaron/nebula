@@ -9,7 +9,11 @@ delivery through signed shard grants, plus coordinator-owned personal playback
 state and remote subtitles. Phase 5 adds owner operations controls, aggregate
 observability, bounded session cleanup, rolling compatibility, backup coverage,
 and signing-key rotation. Real-tailnet acceptance and the optional Phase 6
-experiment remain outstanding as described below.
+experiment is now researched with a **defer** recommendation. Current manifests
+lack cryptographic segment maps and cross-host FFmpeg byte determinism is
+unproven. Detached, default-off contract/loader utilities and a generated-fixture
+benchmark are documented in `docs/multi-origin-hls-experiment.md`; they are not
+wired into production. Real-tailnet acceptance remains outstanding.
 
 Generated playback sessions now use hard, non-sliding deadlines at both the
 coordinator and shard. Periodic sweeps release scheduler claims and cancel

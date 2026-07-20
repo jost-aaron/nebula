@@ -2,6 +2,14 @@
 
 Use this file when starting a new Codex session on this project.
 
+## Phase 6 Multi-Origin HLS
+
+The research experiment is complete with a defer recommendation. Production
+continues to use the single-best-shard scheduler. Cluster manifests lack
+cryptographic playlist/segment maps and cross-host FFmpeg byte determinism is
+unproven. Detached contract, verified-loader, and benchmark utilities are
+described in `docs/multi-origin-hls-experiment.md`.
+
 ## Current Location
 
 ```text
