@@ -14,7 +14,7 @@ const HELP = Object.freeze({
   nebula_rendition_quota_bytes: "Configured rendition storage quota in bytes."
 });
 
-const COMPONENTS = new Set(["database", "content_root", "jobs_worker", "catalog", "content_disk", "cache_disk", "rendition_storage"]);
+const COMPONENTS = new Set(["database", "content_root", "jobs_worker", "catalog", "content_disk", "cache_disk", "rendition_storage", "cluster"]);
 const TYPES = Object.freeze({ nebula_rendition_evictions_total: "counter" });
 const family = (name, samples) => samples.length
   ? `# HELP ${name} ${HELP[name]}\n# TYPE ${name} ${TYPES[name] ?? "gauge"}\n${samples.map(({ labels = "", value }) => `${name}${labels} ${value}`).join("\n")}\n`
@@ -54,6 +54,15 @@ export const renderPrometheusMetrics = ({ readiness, uptimeSeconds }) => {
 
 const METRIC_BACKENDS = new Set(["software", "vaapi", "nvenc", "videotoolbox"]);
 const METRIC_OUTCOMES = new Set(["success", "failure", "fallback"]);
+const CLUSTER_METRICS = new Set([
+  "nebula_cluster_ready", "nebula_cluster_degraded", "nebula_cluster_not_ready",
+  "nebula_cluster_nodes_online", "nebula_cluster_nodes_draining", "nebula_cluster_nodes_offline", "nebula_cluster_nodes_revoked",
+  "nebula_cluster_manifests_fresh", "nebula_cluster_manifests_aging", "nebula_cluster_manifests_stale", "nebula_cluster_manifests_missing",
+  "nebula_cluster_scheduler_active_sessions", "nebula_cluster_scheduler_active_nodes", "nebula_cluster_scheduler_cooldowns",
+  "nebula_cluster_deliveries_queued", "nebula_cluster_deliveries_running", "nebula_cluster_deliveries_ready",
+  "nebula_cluster_deliveries_failed", "nebula_cluster_deliveries_cancelled", "nebula_cluster_deliveries_expired",
+  "nebula_cluster_clock_samples_accepted", "nebula_cluster_clock_samples_rejected"
+]);
 export const renderTranscodeAccelerationMetrics = (status = {}) => {
   const lines = ["# HELP nebula_transcode_active Active bounded transcode jobs.", "# TYPE nebula_transcode_active gauge"];
   lines.push(`nebula_transcode_active{backend="hardware"} ${Math.max(0, Number(status.active?.hardware) || 0)}`);
@@ -64,4 +73,14 @@ export const renderTranscodeAccelerationMetrics = (status = {}) => {
     lines.push(`nebula_transcode_outcomes_total{backend="${item.backend}",outcome="${item.outcome}"} ${Math.max(0, Number(item.count) || 0)}`);
   }
   return `${lines.join("\n")}\n`;
+};
+
+export const renderClusterOperationsMetrics = (snapshot = {}) => {
+  const samples = Array.isArray(snapshot.samples) ? snapshot.samples : [];
+  const lines = [];
+  for (const sample of samples) {
+    if (!CLUSTER_METRICS.has(sample?.name) || !Number.isSafeInteger(sample?.value) || sample.value < 0) continue;
+    lines.push(`# HELP ${sample.name} Bounded aggregate Nebula cluster metric.`, `# TYPE ${sample.name} gauge`, `${sample.name} ${sample.value}`);
+  }
+  return lines.length ? `${lines.join("\n")}\n` : "";
 };

@@ -58,6 +58,22 @@ export const createCatalogCheck = ({ snapshot, now = () => Date.now(), staleAfte
   }
 };
 
+export const createClusterCheck = ({ operations }) => async () => {
+  try {
+    const snapshot = operations.readiness();
+    const ready = snapshot.status !== "not-ready";
+    return result("cluster", ready, ready ? snapshot.status === "degraded" ? "cluster_degraded" : "ok" : "cluster_unavailable", {
+      activeDeliveries: snapshot.delivery.active,
+      activeSessions: snapshot.scheduler.activeSessions,
+      manifestsStale: snapshot.manifests.stale + snapshot.manifests.missing,
+      nodesAvailable: snapshot.nodes.states.online + snapshot.nodes.states.draining,
+      nodesOffline: snapshot.nodes.states.offline
+    });
+  } catch {
+    return result("cluster", false, "snapshot_failed");
+  }
+};
+
 export const createDiskCheck = ({ name, directory, minimumFreeBytes = 1024 ** 3, stat = statfs }) => async () => {
   try {
     const info = await stat(directory);

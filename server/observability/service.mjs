@@ -1,6 +1,7 @@
 const ALLOWED_REASONS = new Set([
   "ok", "unavailable", "query_failed", "inaccessible", "stopped", "stale", "snapshot_failed",
-  "scan_failed", "scan_stale", "low_space", "stat_failed", "check_failed"
+  "scan_failed", "scan_stale", "low_space", "stat_failed", "check_failed",
+  "cluster_degraded", "cluster_unavailable"
 ]);
 
 const finiteMeasurements = (measurements) => Object.fromEntries(Object.entries(measurements ?? {})
@@ -32,4 +33,3 @@ export const createObservabilityService = ({ checks = [], now = () => Date.now()
   const uptimeSeconds = () => Math.max(0, (now() - startedAt) / 1000);
   return { liveness, readiness, uptimeSeconds };
 };
-

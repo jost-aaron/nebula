@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createCatalogCheck,
+  createClusterCheck,
   createDatabaseCheck,
   createDiskCheck,
   createRenditionStorageCheck,
   createObservabilityRoutes,
   createObservabilityService,
   createWorkerCheck,
+  renderClusterOperationsMetrics,
   renderPrometheusMetrics
 } from "../server/observability/index.mjs";
 
@@ -83,6 +85,28 @@ test("rendition storage readiness fails only when pinned output makes recovery i
   assert.equal((await createRenditionStorageCheck({ status: async () => status(10, 40, 90) })()).ready, true);
   assert.equal((await createRenditionStorageCheck({ status: async () => status(10, 20, 90) })()).ready, false);
   assert.equal((await createRenditionStorageCheck({ status: async () => status(100, 0, 101) })()).ready, false);
+});
+
+test("cluster readiness and metrics remain aggregate-only in shared observability", async () => {
+  const readiness = {
+    delivery: { active: 2 }, manifests: { missing: 1, stale: 1 },
+    nodes: { states: { draining: 1, offline: 1, online: 2 } },
+    scheduler: { activeSessions: 3 }, status: "degraded"
+  };
+  const check = await createClusterCheck({ operations: { readiness: () => readiness } })();
+  assert.deepEqual(check, {
+    measurements: { activeDeliveries: 2, activeSessions: 3, manifestsStale: 2, nodesAvailable: 3, nodesOffline: 1 },
+    name: "cluster", ready: true, reason: "cluster_degraded"
+  });
+  const output = renderClusterOperationsMetrics({ samples: [
+    { name: "nebula_cluster_ready", value: 0 },
+    { name: "nebula_cluster_nodes_online", value: 2 },
+    { name: "nebula_cluster_node_secret", value: 1, labels: { nodeId: "node-secret" } },
+    { name: "invalid-metric", value: 9 }
+  ] });
+  assert.match(output, /nebula_cluster_ready 0/);
+  assert.match(output, /nebula_cluster_nodes_online 2/);
+  assert.doesNotMatch(output, /node-secret|labels|invalid-metric/);
 });
 
 test("routes keep liveness and opaque readiness public while protecting diagnostics and metrics", async () => {

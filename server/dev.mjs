@@ -37,11 +37,12 @@ import {
   clusterMigration, clusterOperationsMigration, clusterFederationMigration, createClusterIngressRoutes, createClusterManifestClient,
   createClusterManifestService, createClusterPairingClient, createClusterRepository, createClusterSyncService,
   createClusterGrantClient, createClusterGrantService, createClusterPlaybackScheduler, createClusterPlaybackService,
-  createClusterDeliveryClient, createClusterShardDeliveryService,
+  createClusterDeliveryClient, createClusterOperationsService, createClusterShardDeliveryService,
   createClusterTrustService, createFederatedCatalogRepository, syncLocalClusterManifest
 } from "./cluster/index.mjs";
 import {
   createCatalogCheck,
+  createClusterCheck,
   createDatabaseCheck,
   createDirectoryCheck,
   createDiskCheck,
@@ -73,10 +74,21 @@ const auditService = createAuditService({
 });
 const clusterEnabled = process.env.NEBULA_CLUSTER_ENABLED === "true";
 const clusterRepository = createClusterRepository(database);
-const clusterService = clusterEnabled ? createClusterTrustService({
+let clusterService = null;
+let clusterScheduler = null;
+let clusterShardDelivery = null;
+const clusterOperations = clusterEnabled ? createClusterOperationsService({
+  audit: auditService,
+  deliverySnapshot: () => clusterShardDelivery?.operationsSnapshot() ?? {},
+  manifestSnapshot: () => database.prepare("SELECT last_complete_at AS lastCompleteAt, last_sync_at AS lastSyncAt FROM cluster_manifest_cursors LIMIT 10000").all(),
+  nodesSnapshot: () => clusterRepository.listNodes({ includeRevoked: true }),
+  schedulerSnapshot: () => clusterScheduler?.operationsSnapshot() ?? {}
+}) : null;
+clusterService = clusterEnabled ? createClusterTrustService({
   capabilities: { directPlay: true, hls: true, remux: true, renditionProfiles: ["240p", "360p", "480p", "720p", "1080p"], transcode: true },
   endpoint: process.env.NEBULA_CLUSTER_ENDPOINT,
   name: process.env.NEBULA_CLUSTER_NODE_NAME ?? "Nebula",
+  operations: clusterOperations,
   repository: clusterRepository,
   role: process.env.NEBULA_CLUSTER_ROLE ?? "hybrid"
 }) : null;
@@ -97,7 +109,7 @@ const syncLocalProjection = clusterService ? () => syncLocalClusterManifest({
 const clusterSync = clusterService ? createClusterSyncService({
   client: createClusterManifestClient(), federation: federatedCatalog, trust: clusterService
 }) : null;
-const clusterScheduler = clusterService ? createClusterPlaybackScheduler({ federation: federatedCatalog, nodePolicy: clusterService.nodePolicy }) : null;
+clusterScheduler = clusterService ? createClusterPlaybackScheduler({ federation: federatedCatalog, nodePolicy: clusterService.nodePolicy }) : null;
 const clusterGrantClient = clusterService ? createClusterGrantClient() : null;
 const clusterDeliveryClient = clusterService ? createClusterDeliveryClient({ trust: clusterService }) : null;
 const fingerprintRepository = createFingerprintRepository(database);
@@ -213,7 +225,7 @@ const clusterDelivery = clusterService ? createDeliveryService({
   resolveSource: resolveClusterCatalogSource,
   transcodeService: clusterTranscodeService
 }) : null;
-const clusterShardDelivery = clusterService ? createClusterShardDeliveryService({
+clusterShardDelivery = clusterService ? createClusterShardDeliveryService({
   catalog: catalogRepository,
   delivery: clusterDelivery,
   localNodeId: clusterService.identity().descriptor.nodeId,
@@ -314,10 +326,12 @@ const observabilityService = createObservabilityService({
     { name: "catalog", run: createCatalogCheck({ snapshot: catalogReadinessSnapshot }) },
     { name: "content_disk", run: createDiskCheck({ directory: storage.contentRoot, name: "content_disk" }) },
     { name: "cache_disk", run: createDiskCheck({ directory: deliveryCacheRoot, name: "cache_disk" }) },
-    { name: "rendition_storage", run: createRenditionStorageCheck({ status: renditionPolicy.status }) }
+    { name: "rendition_storage", run: createRenditionStorageCheck({ status: renditionPolicy.status }) },
+    ...(clusterOperations ? [{ name: "cluster", run: createClusterCheck({ operations: clusterOperations }) }] : [])
   ]
 });
 const handleObservability = createObservabilityRoutes({
+  clusterMetrics: () => clusterOperations?.metrics() ?? {},
   isAdmin: (request, url) => {
     const context = authGuard.resolve(request, url);
     return context?.kind !== "media-ticket" && authGuard.hasCapability(context, "server.admin");
@@ -331,7 +345,7 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   catalog: { libraryPermissions, probeReader, repository: catalogRepository, scan: scanCatalog },
   ...(clusterService ? { cluster: {
     audit: auditService, federation: federatedCatalog, pairingClient: createClusterPairingClient(),
-    playback: clusterPlayback, scheduler: clusterScheduler, service: clusterService, sync: clusterSync
+    operations: clusterOperations, playback: clusterPlayback, scheduler: clusterScheduler, service: clusterService, sync: clusterSync
   } } : {}),
   jobs: jobsService,
   guestService,

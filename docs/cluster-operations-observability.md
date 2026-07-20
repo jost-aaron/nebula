@@ -1,9 +1,11 @@
 # Cluster Operations Observability
 
 Phase 5 introduces an aggregate-only cluster operations service in
-`server/cluster/observability.mjs`. It is deliberately not exposed through an
-HTTP route or Settings yet; the parent integration should compose it with the
-cluster trust, federation, scheduler, and delivery services.
+`server/cluster/observability.mjs`. Cluster deployments compose it with trust,
+manifest, scheduler, and delivery services. Its sanitized readiness snapshot is
+available to owners and service administrators at
+`/api/admin/cluster/operations`; its fixed-name metrics are appended to the
+existing protected `/metrics` endpoint.
 
 The readiness snapshot includes only fixed state counters and reason codes for
 paired-node availability, manifest freshness, scheduler sessions/cooldowns,
@@ -18,8 +20,8 @@ audits are emitted only on state transitions. Both use allowlisted event types
 and metadata. The service never records raw skew, request envelopes, or peer
 identity.
 
-Parent runtime integration should inject callbacks rather than expose internal
-repositories directly:
+Runtime integration injects callbacks rather than exposing internal repositories
+directly:
 
 ```js
 const operations = createClusterOperationsService({
@@ -31,6 +33,8 @@ const operations = createClusterOperationsService({
 });
 ```
 
-Pass `operations` to `createClusterTrustService` to collect safe clock-skew
-diagnostics. Any future owner-only route must return the already-sanitized
-snapshot and must not add dynamic labels or raw domain records.
+The shared readiness surface treats a degraded cluster as available while
+preserving its bounded reason code for administrators. A hard unavailable
+cluster fails readiness. Passing `operations` to `createClusterTrustService`
+collects safe clock-skew diagnostics. Do not add dynamic metric labels or raw
+domain records to either route.

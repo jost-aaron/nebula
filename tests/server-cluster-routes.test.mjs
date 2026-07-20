@@ -72,6 +72,19 @@ test("cluster admin routes expose load and delegate strict node control patches"
   assert.equal(JSON.parse(updated.body).node.controls.maintenanceDrain, true);
 });
 
+test("cluster admin operations expose only the injected sanitized aggregate snapshot", async () => {
+  const operations = {
+    metrics: () => ({ generatedAt: "2026-07-19T12:00:00.000Z", samples: [{ name: "nebula_cluster_ready", value: 1 }] }),
+    readiness: () => ({ checkedAt: "2026-07-19T12:00:00.000Z", reasons: [], status: "ready" })
+  };
+  const routes = createClusterAdminRoutes({ operations, pairingClient: {}, service: {} });
+  const result = response();
+  await routes(request("GET"), result, new URL("http://nebula/api/admin/cluster/operations"));
+  assert.equal(result.status, 200);
+  assert.deepEqual(JSON.parse(result.body), { metrics: operations.metrics(), readiness: operations.readiness() });
+  assert.doesNotMatch(result.body, /nodeId|endpoint|path|ticket|grant/);
+});
+
 test("manifest ingress and coordinator controls remain signed, bounded, and owner-routed", async () => {
   const service = {
     signRequest: ({ body }) => ({ nodeId: body.nodeId, signature: "signed" }),

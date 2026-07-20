@@ -129,7 +129,7 @@ export const createClusterIngressRoutes = (options) => {
   };
 };
 
-export const createClusterAdminRoutes = ({ service, pairingClient, federation = null, sync = null, scheduler = null, audit = null }) => async (request, response, url) => {
+export const createClusterAdminRoutes = ({ service, pairingClient, federation = null, sync = null, scheduler = null, operations = null, audit = null }) => async (request, response, url) => {
   if (!url.pathname.startsWith("/api/admin/cluster")) return false;
   if (request.method === "GET" && url.pathname === "/api/admin/cluster") {
     const identity = service.identity();
@@ -137,6 +137,10 @@ export const createClusterAdminRoutes = ({ service, pairingClient, federation = 
       ...node, load: scheduler?.nodeLoad(node.nodeId) ?? { activeStreams: 0, activeTranscodes: 0 },
       local: node.nodeId === identity.descriptor?.nodeId
     })) });
+    return true;
+  }
+  if (request.method === "GET" && url.pathname === "/api/admin/cluster/operations" && operations) {
+    json(response, 200, { metrics: operations.metrics(), readiness: operations.readiness() });
     return true;
   }
   if (request.method === "GET" && url.pathname === "/api/admin/cluster/items" && federation) {
