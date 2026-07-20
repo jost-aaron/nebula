@@ -9,4 +9,3 @@ test("generated benchmark is deterministic and labels its evidence limits", () =
   assert.ok(result.directAndRelay.totalMs < result.singleRelay.totalMs);
   assert.equal(result.twoDirect.requestDistribution.reduce((sum, value) => sum + value, 0), result.fixture.segments);
 });
-

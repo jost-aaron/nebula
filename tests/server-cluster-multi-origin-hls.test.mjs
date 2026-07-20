@@ -70,4 +70,5 @@ test("contract rejects wrong account, session, item, origin, expiry, and revocat
   assert.throws(() => createMultiOriginHlsContract(request([replica("node_alpha"), { ...base, ticketUrl: "https://wrong.example-tail.ts.net/x?ticket=x" }])), /ticket/);
   assert.throws(() => createMultiOriginHlsContract(request([replica("node_alpha"), { ...base, ticketUrl: "https://node_bravo.example-tail.ts.net/api/shard/v1/media/grant_fixture_01/hls/segment-00000.ts?ticket=x" }])), /ticket/);
   assert.throws(() => createMultiOriginHlsContract(request([replica("node_alpha"), { ...base, ticketUrl: `${base.ticketUrl}&extra=denied` }])), /ticket/);
+  assert.throws(() => createMultiOriginHlsContract(request([replica("node_alpha"), { ...base, ticketUrl: "not a URL" }])), /ticket/);
 });

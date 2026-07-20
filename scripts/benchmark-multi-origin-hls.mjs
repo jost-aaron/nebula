@@ -38,4 +38,3 @@ export const runMultiOriginBenchmark = () => {
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
   console.log(JSON.stringify(runMultiOriginBenchmark(), null, 2));
 }
-

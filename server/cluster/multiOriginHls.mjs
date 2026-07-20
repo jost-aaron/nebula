@@ -80,7 +80,9 @@ export const createMultiOriginHlsContract = ({
       throw error("multi_origin_identity", "Replica source or rendition identity is incomplete.");
     }
     const segments = validateSegments(replica.segments);
-    const ticketUrl = new URL(replica.ticketUrl);
+    let ticketUrl;
+    try { ticketUrl = new URL(replica.ticketUrl); }
+    catch { throw error("multi_origin_ticket_scope", "A replica ticket URL is not bound to its approved origin."); }
     if (ticketUrl.origin !== endpoint || ticketUrl.protocol !== "https:" || ticketUrl.username || ticketUrl.password
       || !/^\/api\/shard\/v1\/media\/[A-Za-z0-9_-]+\/hls\/master\.m3u8$/.test(ticketUrl.pathname)
       || [...ticketUrl.searchParams.keys()].length !== 1 || !ticketUrl.searchParams.get("ticket")) {
