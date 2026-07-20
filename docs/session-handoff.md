@@ -274,11 +274,12 @@ At handoff time:
   shell state, persistence, input gates, and gamepad lifecycle live in
   `src/shell/`.
 - Media sharding Phase 3 feeds the conservative coordinator projection into the
-  existing Cinema and Studio compatibility APIs. Owners see one logical item
-  for duplicate sources, shard-count/status badges, and an `Available on`
-  source list. Members and guests remain local-only until federated library
-  permissions are implemented.
-- Phase 4 now schedules owner playback per session across online sources using
+  existing Cinema and Studio compatibility APIs. Owners, service clients, and
+  authorized members see one logical item for duplicate sources,
+  shard-count/status badges, and an `Available on` source list. Member access is
+  resolved against the coordinator's shared media-library scope before source
+  details are loaded; guests remain local-only.
+- Phase 4 schedules owner and authorized-member playback per session across online sources using
   deterministic direct/remux/transcode preference metadata, a local bonus,
   active-session load, drain state, and failure cooldown. Remote original,
   remux, HLS/live transcode, prebuilt rendition reuse, and fixed Cinema quality
@@ -301,6 +302,11 @@ At handoff time:
   browser position. Federated personal playback history, resume, completion,
   and Continue Watching are coordinator-owned and account-isolated. Remote
   mutations remain local-source-only.
+- Member authorization is coordinator-owned and rechecked on session creation,
+  polling, failover, release, and every new grant. Permission changes release
+  the coordinator session and hide federated history/resume state. Shards never
+  receive roles, library IDs, or mutable permission claims; accepted bearer
+  tickets retain only the documented short expiry/restart revocation window.
 - Coordinator playback assignments and shard-generated deliveries have hard,
   non-sliding expirations with periodic cleanup. Cleanup is idempotent and
   releases scheduler capacity plus generated delivery work after explicit
@@ -333,5 +339,7 @@ At handoff time:
   detailed reasons and rotation controls remain owner/service-admin only.
 - Media-sharding Phases 0-5 are implementation-complete. The remaining MVP
   acceptance work is a disposable real-tailnet Direct/DERP multi-node pass.
-  Member/guest federation and distributed account policy projection remain
-  fail-closed; optional multi-origin HLS remains a post-MVP experiment.
+  Member federation is implemented for the current shared-content library;
+  guest federation remains fail-closed, and future multi-library federation
+  requires an explicit item-to-library projection. Optional multi-origin HLS
+  remains a post-MVP experiment.

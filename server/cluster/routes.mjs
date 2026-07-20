@@ -231,13 +231,17 @@ export const createClusterAdminRoutes = ({
   return false;
 };
 
-export const createClusterPlaybackRoutes = (playback) => async (request, response, url) => {
+export const createClusterPlaybackRoutes = (playback, { authorize = null } = {}) => async (request, response, url) => {
   if (!url.pathname.startsWith("/api/cluster/playback-sessions")) return false;
   const user = request.nebulaAuth?.user;
-  if (!user || user.role !== "owner") throw Object.assign(new Error("Federated playback currently requires an owner account."), { status: 403, code: "cluster_playback_denied", expose: true });
+  if (!user || !new Set(["owner", "member"]).has(user.role)) throw Object.assign(new Error("Federated playback requires an authorized account."), { status: 403, code: "cluster_playback_denied", expose: true });
   const context = { accountId: user.id, clientOrigin: request.headers.origin ?? null };
   if (request.method === "POST" && url.pathname === "/api/cluster/playback-sessions") {
-    json(response, 201, await playback.create(await readBody(request, { limit: 64 * 1024 }), context));
+    const body = await readBody(request, { limit: 64 * 1024 });
+    if (user.role === "member" && (!authorize || !await authorize(request.nebulaAuth, body?.federatedItemId))) {
+      throw Object.assign(new Error("Federated media was not found."), { status: 404, code: "cluster_item_not_found", expose: true });
+    }
+    json(response, 201, await playback.create(body, context));
     return true;
   }
   const match = /^\/api\/cluster\/playback-sessions\/([A-Za-z0-9_-]+)$/.exec(url.pathname);

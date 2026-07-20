@@ -112,7 +112,7 @@ export const createFederatedCatalogRepository = (database, { localNodeId = null,
     return { complete: value.complete, cursor: value.cursor, manifestRevision: value.manifestRevision, syncGeneration };
   });
 
-  const listItems = ({ mediaKind } = {}) => {
+  const listItems = ({ authorizeItem = null, mediaKind } = {}) => {
     const rows = database.prepare(`SELECT i.*, COUNT(s.id) AS source_count, COUNT(DISTINCT s.node_id) AS node_count
       FROM federated_items i JOIN federated_sources s ON s.item_id = i.id AND s.availability = 'available'
       WHERE i.merged_into_id IS NULL AND (? IS NULL OR i.media_kind = ?)
@@ -121,7 +121,7 @@ export const createFederatedCatalogRepository = (database, { localNodeId = null,
       fs.availability, fs.metadata_json, n.node_id, n.name, n.state, n.capabilities_json
       FROM federated_sources fs JOIN cluster_nodes n ON n.node_id = fs.node_id
       WHERE fs.item_id = ? AND fs.availability != 'tombstone' ORDER BY n.name, fs.id`);
-    return rows.map((row) => {
+    return rows.filter((row) => !authorizeItem || authorizeItem(row.id) === true).map((row) => {
       const sources = sourceQuery.all(row.id).map((source) => {
         const metadata = JSON.parse(source.metadata_json);
         const capabilities = JSON.parse(source.capabilities_json);
@@ -155,6 +155,9 @@ export const createFederatedCatalogRepository = (database, { localNodeId = null,
   };
   const listConflicts = () => database.prepare(`SELECT id, candidate_signature AS candidateSignature,
     left_item_id AS leftItemId, right_item_id AS rightItemId, state FROM federated_dedupe_conflicts ORDER BY created_at, id`).all();
+
+  const hasItem = (itemId) => Boolean(database.prepare(`SELECT 1 FROM federated_items
+    WHERE id = ? AND merged_into_id IS NULL`).get(itemId));
 
   const listPlaybackSources = (itemId) => database.prepare(`SELECT fs.id, fs.local_item_id, fs.local_source_id,
     fs.source_revision, fs.availability, fs.fingerprint_algorithm, fs.fingerprint_digest, fs.fingerprint_state,
@@ -229,5 +232,5 @@ export const createFederatedCatalogRepository = (database, { localNodeId = null,
     return { action, leftOrigin: storedLeft, rightOrigin: storedRight, targetItemId };
   });
 
-  return { applyManifestPage, listConflicts, listItems, listPlaybackSources, setOverride };
+  return { applyManifestPage, hasItem, listConflicts, listItems, listPlaybackSources, setOverride };
 };

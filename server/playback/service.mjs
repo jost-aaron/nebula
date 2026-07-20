@@ -24,6 +24,7 @@ export const createPlaybackService = ({
   compatibilityResolver = null,
   completionThreshold = 0.9,
   federatedIdentityValidator = null,
+  federatedVisibilityFilter = null,
   identityValidator = null,
   now = () => Date.now(),
   progressIntervalMs = 10_000,
@@ -42,6 +43,9 @@ export const createPlaybackService = ({
   }
   if (federatedIdentityValidator && typeof federatedIdentityValidator !== "function") {
     throw new TypeError("federatedIdentityValidator must be a function.");
+  }
+  if (federatedVisibilityFilter && typeof federatedVisibilityFilter !== "function") {
+    throw new TypeError("federatedVisibilityFilter must be a function.");
   }
 
   const resolveIdentity = async (request, principal) => {
@@ -120,7 +124,9 @@ export const createPlaybackService = ({
     const userId = requireUser(principal);
     if (!identity || typeof identity !== "object" || Array.isArray(identity)) throw badRequest("federatedIdentity is required.");
     if (typeof repository.getFederatedState !== "function") return null;
-    return repository.getFederatedState(userId, requireOpaqueId(identity.itemId, "federatedIdentity.itemId"));
+    const itemId = requireOpaqueId(identity.itemId, "federatedIdentity.itemId");
+    if (federatedVisibilityFilter && !federatedVisibilityFilter({ itemId, identityKind: "federated" }, principal)) return null;
+    return repository.getFederatedState(userId, itemId);
   };
   const getSession = (sessionId, principal) => {
     const userId = requireUser(principal);
@@ -133,7 +139,9 @@ export const createPlaybackService = ({
     const kind = String(left.identityKind).localeCompare(String(right.identityKind));
     return kind || String(left.itemId).localeCompare(String(right.itemId)) || String(left.sourceId).localeCompare(String(right.sourceId));
   };
-  const visibleLocal = (entry, principal) => entry.identityKind === "federated" || !visibilityFilter || visibilityFilter(entry, principal);
+  const visibleLocal = (entry, principal) => entry.identityKind === "federated"
+    ? !federatedVisibilityFilter || federatedVisibilityFilter(entry, principal)
+    : !visibilityFilter || visibilityFilter(entry, principal);
   const combinedEntries = (kind, userId, principal) => {
     const local = kind === "history" ? (repository.listHistory ?? repository.listContinueWatching)(userId, null) : repository.listContinueWatching(userId, null);
     const federatedMethod = kind === "history" ? repository.listFederatedHistory : repository.listFederatedContinueWatching;

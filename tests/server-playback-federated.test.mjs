@@ -13,11 +13,11 @@ const principal = (userId = "user-a") => ({ type: "user", userId });
 const localIdentity = () => ({ itemId: randomUUID(), sourceId: randomUUID() });
 const federatedIdentity = (suffix = "alpha") => ({ itemId: `fitem_${suffix}`, sourceId: `fsource_${suffix}` });
 
-const fixture = ({ now = () => Date.now(), validator = async () => true, visibilityFilter = null } = {}) => {
+const fixture = ({ federatedVisibilityFilter = null, now = () => Date.now(), validator = async () => true, visibilityFilter = null } = {}) => {
   const db = new DatabaseSync(":memory:");
   migratePlaybackSchema(db);
   const repository = createPlaybackRepository({ db });
-  const service = createPlaybackService({ federatedIdentityValidator: validator, now, repository, visibilityFilter });
+  const service = createPlaybackService({ federatedIdentityValidator: validator, federatedVisibilityFilter, now, repository, visibilityFilter });
   return { db, repository, service };
 };
 
@@ -134,6 +134,21 @@ test("federated sessions and state remain isolated by account", async (t) => {
   assert.deepEqual(service.listContinueWatching({}, principal("user-b")), []);
   await assert.rejects(() => federatedEvent(service, started, "progress", 40, principal("user-b")), { status: 404 });
   assert.equal(service.listContinueWatching({}, principal())[0].positionSeconds, 35);
+});
+
+test("federated history and resume state fail closed after library permission revocation", async (t) => {
+  let allowed = true;
+  const { db, service } = fixture({ federatedVisibilityFilter: () => allowed });
+  t.after(() => db.close());
+  const identity = federatedIdentity("permissioned");
+  const started = await startFederated(service, identity);
+  await federatedEvent(service, started, "pause", 35);
+  assert.equal(service.getFederatedState(identity, principal()).positionSeconds, 35);
+  assert.equal(service.listContinueWatching({}, principal()).length, 1);
+  allowed = false;
+  assert.equal(service.getFederatedState(identity, principal()), null);
+  assert.deepEqual(service.listContinueWatching({}, principal()), []);
+  assert.deepEqual(service.listHistory({}, principal()), []);
 });
 
 test("local and federated playback merge deterministically without weakening local visibility", async (t) => {

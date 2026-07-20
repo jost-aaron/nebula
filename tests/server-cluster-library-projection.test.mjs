@@ -71,5 +71,25 @@ test("standalone libraries pass through and federation browsing is role gated", 
   assert.equal(canBrowseFederatedLibrary({ kind: "account", user: { role: "owner" } }), true);
   assert.equal(canBrowseFederatedLibrary({ kind: "service" }), true);
   assert.equal(canBrowseFederatedLibrary({ kind: "account", user: { role: "member" } }), false);
+  assert.equal(canBrowseFederatedLibrary({ kind: "account", user: { role: "member" } }, () => true), true);
   assert.equal(canBrowseFederatedLibrary({ kind: "guest" }), false);
+});
+
+test("member projection authorizes logical items before loading source details", () => {
+  const requested = [];
+  const federation = {
+    listItems({ authorizeItem }) {
+      return [item({ id: "allowed_item_01" }), item({ id: "denied_item_01", title: "Secret title" })].filter((value) => {
+        requested.push(value.id);
+        return authorizeItem(value.id);
+      });
+    }
+  };
+  const projected = projectUnifiedLibrary({
+    authorizeItem: (itemId) => itemId === "allowed_item_01",
+    entries: [], federation, mediaKind: "video"
+  });
+  assert.deepEqual(requested, ["allowed_item_01", "denied_item_01"]);
+  assert.deepEqual(projected.map(({ id }) => id), ["allowed_item_01"]);
+  assert.doesNotMatch(JSON.stringify(projected), /Secret title|denied_item_01/);
 });

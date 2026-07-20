@@ -123,6 +123,19 @@ const libraryPermissions = createLibraryPermissionsService({ database });
 const mediaLists = createMediaListsService({ database, permissions: libraryPermissions });
 const probeReader = createProbeCatalogReader(database);
 const { root: catalogRoot } = bootstrapSharedContentRoot(catalogRepository, { contentRoot: storage.contentRoot });
+const canAccessFederatedItem = (context, itemId) => {
+  if (!clusterService || !federatedCatalog?.hasItem(itemId) || context?.kind === "guest") return false;
+  if (context?.kind === "service" || context?.user?.role === "owner") return true;
+  if (context?.user?.role !== "member") return false;
+  return libraryPermissions.canAccessLibrary(context, catalogRoot.library_id);
+};
+const canAccountAccessFederatedItem = (accountId, itemId) => {
+  const account = accountStore.listUsers().find((user) => user.id === accountId && !user.disabled);
+  if (!account || !federatedCatalog?.hasItem(itemId)) return false;
+  return account.role === "owner" || (account.role === "member" && libraryPermissions.canAccessLibrary(
+    { type: "user", userId: account.id }, catalogRoot.library_id
+  ));
+};
 const scanCatalog = async () => {
   const scan = await scanLocalRoot({ absoluteRoot: storage.contentRoot, repository: catalogRepository, rootId: catalogRoot.id });
   await importLegacyCinemaMetadata({ metadataPath: storage.cinemaMetadataPath, repository: catalogRepository, rootId: catalogRoot.id });
@@ -133,10 +146,11 @@ const playbackRepository = createPlaybackRepository({ db: database });
 const playbackService = createPlaybackService({
   federatedIdentityValidator: ({ itemId, sourceId }, principal) => {
     if (!clusterService || principal?.type !== "user") return false;
-    const account = accountStore.listUsers().find((user) => user.id === principal.userId);
-    return account?.role === "owner" && federatedCatalog.listPlaybackSources(itemId)
+    return canAccountAccessFederatedItem(principal.userId, itemId) && federatedCatalog.listPlaybackSources(itemId)
       .some((source) => source.federatedSourceId === sourceId && source.availability === "available");
   },
+  federatedVisibilityFilter: ({ itemId }, principal) => principal?.type === "user"
+    && canAccountAccessFederatedItem(principal.userId, itemId),
   identityValidator: ({ itemId, sourceId }, principal) => {
     const source = catalogRepository.getSource(sourceId);
     return source?.itemId === itemId && source.availability === "available" && libraryPermissions.canAccessItem(principal, itemId);
@@ -251,6 +265,7 @@ const clusterIngress = clusterService ? createClusterIngressRoutes({
   subtitles: subtitleService
 }) : null;
 const clusterPlayback = clusterService ? createClusterPlaybackService({
+  authorize: ({ accountId, federatedItemId }) => canAccountAccessFederatedItem(accountId, federatedItemId),
   client: clusterGrantClient,
   deliveryClient: clusterDeliveryClient,
   grants: clusterGrantService,
@@ -349,7 +364,11 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   backup: backupService,
   catalog: { libraryPermissions, probeReader, repository: catalogRepository, scan: scanCatalog },
   ...(clusterService ? { cluster: {
-    audit: auditService, federation: federatedCatalog, pairingClient: createClusterPairingClient(),
+    audit: auditService,
+    authorizePlayback: (context, itemId) => canAccessFederatedItem(context, itemId),
+    federation: federatedCatalog,
+    federationAuthorization: { canAccessItem: canAccessFederatedItem },
+    pairingClient: createClusterPairingClient(),
     keyRotation: clusterKeyRotation, operations: clusterOperations, playback: clusterPlayback,
     scheduler: clusterScheduler, service: clusterService, sync: clusterSync
   } } : {}),

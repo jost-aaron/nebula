@@ -11,7 +11,10 @@ test("remote playback activates one signed grant and returns a direct sanitized 
   const scheduler = { create: () => session(candidate), release: () => assert.fail("should not release") };
   const grants = { issue: (value) => { issued = value; return { envelope: { signed: true }, grant: { assetPrefix: "/api/shard/v1/media/grant_fixture_01/", expiresAt: "2026-07-19T12:10:00.000Z", grantId: "grant_fixture_01" } }; } };
   const client = { activate: async (value) => { activated = value; return { expiresAt: "2026-07-19T12:10:00.000Z", grantId: "grant_fixture_01", mediaTicket: "ticket_fixture_01" }; } };
-  const playback = createClusterPlaybackService({ client, grants, scheduler });
+  const playback = createClusterPlaybackService({
+    authorize: ({ accountId, federatedItemId }) => accountId === "account_fixture_01" && federatedItemId === request.federatedItemId,
+    client, grants, scheduler
+  });
   const result = await playback.create(request, { accountId: "account_fixture_01" });
   assert.equal(issued.accountId, "account_fixture_01");
   assert.equal(activated.endpoint, candidate.endpoint);
@@ -63,7 +66,10 @@ test("remote generated delivery is polled and activated with a delivery-bound HL
     return { grant: { assetPrefix: "/api/shard/v1/media/grant_fixture_01/" } };
   } };
   const client = { activate: async () => ({ expiresAt: "2026-07-19T12:10:00.000Z", mediaTicket: "ticket_fixture_01" }) };
-  const playback = createClusterPlaybackService({ client, deliveryClient, grants, scheduler });
+  const playback = createClusterPlaybackService({
+    authorize: ({ accountId, federatedItemId }) => accountId === "account_fixture_01" && federatedItemId === request.federatedItemId,
+    client, deliveryClient, grants, scheduler
+  });
   const created = await playback.create(request, { accountId: "account_fixture_01" });
   assert.equal(created.session.status, "queued");
   const ready = await playback.get(created.session.id, { accountId: "account_fixture_01" });
@@ -161,4 +167,83 @@ test("delivery creation finishing after coordinator expiry is cancelled without 
   assert.equal(shardCancels, 1);
   await playback.shutdown();
   assert.equal(shardCancels, 1);
+});
+
+test("changed member permissions release sessions and block polling, failover, release, and fresh grants", async () => {
+  const candidate = { decision: "direct-play", endpoint: "https://basement.tail024251.ts.net", exactReplicaKey: "sha256:fixture", federatedSourceId: "fsource_fixture_01", local: false, localSourceId: "source_fixture_01", mode: "original", nodeId: "node_fixture_01", sourceRevision: 3 };
+  let allowed = true;
+  let grantsIssued = 0;
+  let releases = 0;
+  const sessions = new Map();
+  let next = 0;
+  const scheduler = {
+    create: () => {
+      const value = session(candidate);
+      value.internal.id = value.session.id = `cluster_session_fixture_0${++next}`;
+      sessions.set(value.session.id, value);
+      return value;
+    },
+    failover: () => assert.fail("authorization must run before failover"),
+    get: (id) => sessions.get(id).session,
+    release: (id) => { releases += 1; sessions.delete(id); }
+  };
+  const playback = createClusterPlaybackService({
+    authorize: () => allowed,
+    client: { activate: async ({ grant }) => ({ expiresAt: grant.expiresAt, mediaTicket: "ticket_fixture_01" }) },
+    grants: { issue: () => {
+      grantsIssued += 1;
+      return { grant: { assetPrefix: "/api/shard/v1/media/grant_fixture_01/", expiresAt: "2026-07-19T12:10:00.000Z" } };
+    } },
+    scheduler
+  });
+
+  const first = await playback.create(request, { accountId: "account_fixture_01" });
+  assert.equal(grantsIssued, 1);
+  allowed = false;
+  await assert.rejects(playback.get(first.session.id, { accountId: "account_fixture_01" }), { code: "cluster_item_not_found" });
+  assert.equal(releases, 1);
+  await assert.rejects(playback.create(request, { accountId: "account_fixture_01" }), { code: "cluster_item_not_found" });
+  assert.equal(grantsIssued, 1);
+
+  allowed = true;
+  const second = await playback.create(request, { accountId: "account_fixture_01" });
+  allowed = false;
+  await assert.rejects(playback.failover(second.session.id, { accountId: "account_fixture_01" }, candidate.nodeId), { code: "cluster_item_not_found" });
+  assert.equal(releases, 2);
+
+  allowed = true;
+  const third = await playback.create(request, { accountId: "account_fixture_01" });
+  allowed = false;
+  await assert.rejects(playback.release(third.session.id, { accountId: "account_fixture_01" }), { code: "cluster_item_not_found" });
+  assert.equal(releases, 3);
+  await playback.shutdown();
+});
+
+test("authorized member failover preserves account and logical-item grant binding", async () => {
+  const first = { decision: "direct-play", endpoint: "https://first.tail024251.ts.net", exactReplicaKey: "sha256:fixture", federatedSourceId: "fsource_first_01", local: false, localSourceId: "source_first_01", mode: "original", nodeId: "node_first_01", sourceRevision: 3 };
+  const second = { ...first, endpoint: "https://second.tail024251.ts.net", federatedSourceId: "fsource_second_01", localSourceId: "source_second_01", nodeId: "node_second_01" };
+  const scheduled = session(first);
+  const issued = [];
+  const scheduler = {
+    create: () => scheduled,
+    failover: () => ({ ...scheduled, internal: { ...scheduled.internal, candidate: second }, session: { ...scheduled.session, candidate: { nodeId: second.nodeId } } }),
+    release: () => undefined
+  };
+  const playback = createClusterPlaybackService({
+    authorize: ({ accountId, federatedItemId }) => accountId === "account_fixture_01" && federatedItemId === request.federatedItemId,
+    client: { activate: async ({ grant }) => ({ expiresAt: grant.expiresAt, mediaTicket: "ticket_fixture_01" }) },
+    grants: { issue: (value) => {
+      issued.push(value);
+      return { grant: { assetPrefix: `/api/shard/v1/media/grant_fixture_0${issued.length}/`, expiresAt: "2026-07-19T12:10:00.000Z" } };
+    } },
+    scheduler
+  });
+  const created = await playback.create(request, { accountId: "account_fixture_01" });
+  const failedOver = await playback.failover(created.session.id, { accountId: "account_fixture_01" }, first.nodeId);
+  assert.equal(failedOver.session.candidate.nodeId, second.nodeId);
+  assert.deepEqual(issued.map(({ accountId, federatedItemId, candidate }) => ({ accountId, federatedItemId, nodeId: candidate.nodeId })), [
+    { accountId: "account_fixture_01", federatedItemId: request.federatedItemId, nodeId: first.nodeId },
+    { accountId: "account_fixture_01", federatedItemId: request.federatedItemId, nodeId: second.nodeId }
+  ]);
+  await playback.shutdown();
 });

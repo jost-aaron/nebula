@@ -27,15 +27,15 @@ export const createApiHandler = (storage, accountStore, authGuard, options = {})
     ...(options.renditionPolicy ? [createRenditionPolicyRoutes(options.renditionPolicy, options.audit)] : []),
     ...(options.tailscaleEnrollment ? [createTailscaleEnrollmentRoutes(options.tailscaleEnrollment)] : []),
     ...(options.cluster ? [createClusterAdminRoutes(options.cluster)] : []),
-    ...(options.cluster?.playback ? [createClusterPlaybackRoutes(options.cluster.playback)] : []),
+    ...(options.cluster?.playback ? [createClusterPlaybackRoutes(options.cluster.playback, { authorize: options.cluster.authorizePlayback })] : []),
     ...(options.catalog ? [createCatalogRoutes(options.catalog, options.audit)] : []),
     ...(options.mediaLists ? [createMediaListsRoutes(options.mediaLists, options.audit)] : []),
     ...(options.subtitles ? [createSubtitleRoutes(options.subtitles)] : []),
     createRenditionRoutes(options.renditions, options.audit),
     ...(options.playback ? [createPlaybackRoutes(options.playback, options.playbackPlanner, options.playbackDelivery)] : []),
     ...(options.jobs ? [createJobsRoutes(options.jobs, options.audit)] : []),
-    createCinemaRoutes(storage, accountStore, { ...options.cinema, federation: options.cluster?.federation, guestService: options.guestService, libraryPermissions: options.libraryPermissions }),
-    createMusicRoutes(storage, accountStore, { catalog: options.catalog, federation: options.cluster?.federation, guestService: options.guestService, libraryPermissions: options.libraryPermissions }),
+    createCinemaRoutes(storage, accountStore, { ...options.cinema, federation: options.cluster?.federation, federationAuthorization: options.cluster?.federationAuthorization, guestService: options.guestService, libraryPermissions: options.libraryPermissions }),
+    createMusicRoutes(storage, accountStore, { catalog: options.catalog, federation: options.cluster?.federation, federationAuthorization: options.cluster?.federationAuthorization, guestService: options.guestService, libraryPermissions: options.libraryPermissions }),
     createFilesRoutes(storage)
   ];
 

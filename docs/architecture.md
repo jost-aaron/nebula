@@ -291,6 +291,11 @@ flowchart TD
 
 - Keeps coordinator scheduling, federation, paired-node trust, signed grants,
   and fixed server-to-server delivery routes separate from local media APIs.
+- Maps each federated logical item to a coordinator-owned media-library scope.
+  Owners and service clients retain full access; members see source availability
+  only after their current coordinator library policy authorizes that item.
+  Guests never query the federated projection. Authorization is checked again
+  before scheduling, polling, failover, release, and signed-grant issuance.
 - A shard replans generated delivery from signed catalog IDs, source revision,
   client capabilities, and a server-owned profile. It never receives the
   coordinator account database or caller-selected paths and returns only a
@@ -300,7 +305,8 @@ flowchart TD
   shard-owned relative assets and rejects external or traversing references.
 - Coordinator playback persistence stores federated item/source identities;
   shard-local catalog IDs, endpoints, filesystem paths, grants, and tickets do
-  not enter account history.
+  not enter account history. Federated history and resume queries remain keyed
+  by coordinator account and are hidden immediately when library access changes.
 - `cluster_node_controls` persists bounded coordinator policy separately from
   signed node descriptors. Display aliases cannot mutate trust identity;
   maintenance drain and capacity affect only new scheduler admission, while

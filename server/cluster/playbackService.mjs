@@ -7,6 +7,7 @@ const TERMINAL_FAILURES = new Set(["cancelled", "expired", "failed"]);
 
 export const createClusterPlaybackService = ({
   scheduler, grants, client, deliveryClient = null, localDelivery = null,
+  authorize = () => true,
   now = () => Date.now(), sessionTtlMs = 30 * 60 * 1000,
   sweepIntervalMs = Math.min(sessionTtlMs, 60_000),
   setTimer = setInterval, clearTimer = clearInterval
@@ -17,6 +18,12 @@ export const createClusterPlaybackService = ({
   const readyRemoteSessions = new Map();
   const sessions = new Map();
   let closed = false;
+
+  const requireAuthorized = (accountId, federatedItemId) => {
+    if (authorize({ accountId, federatedItemId }) !== true) {
+      throw error(404, "cluster_item_not_found", "Federated media was not found.");
+    }
+  };
 
   const releaseLocalDelivery = async (sessionId, accountId) => {
     const deliveryId = ownedLocalDeliveries.get(sessionId);
@@ -89,6 +96,7 @@ export const createClusterPlaybackService = ({
   });
   const activateGrant = async (scheduled, context, delivery = null) => {
     const { accountId, clientOrigin = null } = context;
+    requireAuthorized(accountId, scheduled.internal.federatedItemId);
     const candidate = scheduled.internal.candidate;
     const signed = grants.issue({
       accountId,
@@ -200,17 +208,21 @@ export const createClusterPlaybackService = ({
   return {
     async create(request, context) {
       if (closed) throw error(503, "cluster_playback_closed", "Cluster playback is shutting down.");
+      requireAuthorized(context.accountId, request?.federatedItemId);
       const scheduled = scheduler.create(request, { accountId: context.accountId });
       const schedulerExpiry = Date.parse(scheduled.session.expiresAt ?? "");
       sessions.set(scheduled.session.id, {
         accountId: context.accountId,
         expiresAt: Number.isFinite(schedulerExpiry) ? schedulerExpiry : now() + sessionTtlMs,
+        federatedItemId: scheduled.internal.federatedItemId,
         releasePromise: null
       });
       return activate(scheduled, context);
     },
     async get(sessionId, context) {
-      await requireSession(sessionId, context.accountId);
+      const entry = await requireSession(sessionId, context.accountId);
+      try { requireAuthorized(context.accountId, entry.federatedItemId); }
+      catch (authorizationError) { await releaseSession(sessionId, context.accountId); throw authorizationError; }
       const publicSession = scheduler.get(sessionId, context);
       const ready = readyRemoteSessions.get(sessionId);
       if (ready) return ready;
@@ -231,15 +243,22 @@ export const createClusterPlaybackService = ({
       return activated;
     },
     async failover(sessionId, context, failedNodeId) {
-      await requireSession(sessionId, context.accountId);
+      const entry = await requireSession(sessionId, context.accountId);
+      try { requireAuthorized(context.accountId, entry.federatedItemId); }
+      catch (authorizationError) { await releaseSession(sessionId, context.accountId); throw authorizationError; }
       const replacement = scheduler.failover(sessionId, context, failedNodeId);
       await releaseOwnedDelivery(sessionId, context.accountId);
       return activate(replacement, context);
     },
     async release(sessionId, context) {
+      const entry = await requireSession(sessionId, context.accountId);
+      let authorizationError = null;
+      try { requireAuthorized(context.accountId, entry.federatedItemId); }
+      catch (error) { authorizationError = error; }
       if (!await releaseSession(sessionId, context.accountId)) {
         throw error(404, "cluster_playback_session_not_found", "Cluster playback session not found.");
       }
+      if (authorizationError) throw authorizationError;
     },
     async shutdown() {
       if (closed) return;

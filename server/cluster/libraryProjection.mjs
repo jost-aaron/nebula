@@ -14,12 +14,12 @@ const remoteEntry = (item) => {
   };
 };
 
-export const projectUnifiedLibrary = ({ entries, federation, mediaKind }) => {
+export const projectUnifiedLibrary = ({ authorizeItem = null, entries, federation, mediaKind }) => {
   if (!federation) return entries;
   const localBySource = new Map(entries.filter((entry) => entry.sourceId).map((entry) => [entry.sourceId, entry]));
   const localByItem = new Map(entries.filter((entry) => entry.id).map((entry) => [entry.id, entry]));
   const consumed = new Set();
-  const projected = federation.listItems({ mediaKind }).map((item) => {
+  const projected = federation.listItems({ authorizeItem, mediaKind }).map((item) => {
     const localSource = item.sources.find((source) => source.local && source.availability === "available");
     const local = localSource ? localBySource.get(localSource.localSourceId) ?? localByItem.get(localSource.localItemId) : null;
     if (local) consumed.add(local.path);
@@ -30,4 +30,6 @@ export const projectUnifiedLibrary = ({ entries, federation, mediaKind }) => {
   return projected;
 };
 
-export const canBrowseFederatedLibrary = (context) => context?.kind === "service" || context?.user?.role === "owner";
+export const canBrowseFederatedLibrary = (context, authorizeItem = null) => context?.kind === "service"
+  || context?.user?.role === "owner"
+  || (context?.user?.role === "member" && typeof authorizeItem === "function");

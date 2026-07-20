@@ -103,8 +103,11 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
         entry.streamUrl = `/api/cinema/media?path=${encodeURIComponent(entry.path)}&ticket=${encodeURIComponent(ticket)}`;
       });
     }
-    if (options.federation && canBrowseFederatedLibrary(context)) {
-      entries = projectUnifiedLibrary({ entries, federation: options.federation, mediaKind: "video" });
+    const authorizeFederatedItem = options.federationAuthorization
+      ? (itemId) => options.federationAuthorization.canAccessItem(context, itemId)
+      : null;
+    if (options.federation && canBrowseFederatedLibrary(context, authorizeFederatedItem)) {
+      entries = projectUnifiedLibrary({ authorizeItem: authorizeFederatedItem, entries, federation: options.federation, mediaKind: "video" });
     }
     entries.sort((a, b) => (a.sortTitle || a.title).localeCompare(b.sortTitle || b.title));
     json(response, 200, { entries });

@@ -49,6 +49,8 @@ test("grant acceptance rejects replay, target substitution, and stale source rev
   const signed = issuer.issue({ accountId: "account_fixture_01", candidate: { ...candidate, nodeId: shard.trust.identity().descriptor.nodeId }, deviceId: "device_fixture_01", federatedItemId: "fitem_fixture_01", sessionId: "session_fixture_01" });
   validator.accept(signed);
   assert.throws(() => validator.accept(signed), { code: "request_replayed" });
+  const substitutedAccount = { ...signed, grant: { ...signed.grant, accountId: "account_attacker_01" } };
+  assert.throws(() => validator.accept(substitutedAccount), { code: "body_mismatch" });
   const wrongTarget = issuer.issue({ accountId: "account_fixture_01", candidate: { ...candidate, nodeId: coordinator.trust.identity().descriptor.nodeId }, deviceId: "device_fixture_01", federatedItemId: "fitem_fixture_01", sessionId: "session_fixture_02" });
   assert.throws(() => validator.accept(wrongTarget), { code: "grant_scope_mismatch" });
   const staleIssuer = createClusterGrantService({ catalog, trust: coordinator.trust, now: () => 1_000, uuid: () => "00000000-0000-4000-8000-000000000002", random: (bytes) => Buffer.alloc(bytes, 6) });

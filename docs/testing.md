@@ -66,6 +66,22 @@ backoff, source-switch abort, session cancellation, and zero retained timers.
 These tests do not establish real Tailscale reachability or browser codec
 compatibility.
 
+Member-federation fixtures additionally verify allowed and denied Cinema and
+Studio projections, guest non-query behavior, authorization before source
+projection, direct and generated playback grants, exact-replica failover,
+permission revocation across create/get/failover/release, account substitution
+and replay rejection, and account-isolated history/resume filtering. Run them
+with:
+
+```sh
+docker compose run --rm dashboard node --test \
+  tests/server-cluster-member-federation.test.mjs \
+  tests/server-cluster-library-projection.test.mjs \
+  tests/server-cluster-playback-service.test.mjs \
+  tests/server-cluster-grants.test.mjs \
+  tests/server-playback-federated.test.mjs
+```
+
 Phase 5 key-rotation fixtures generate fresh Ed25519 identities and verify the
 exact owner/service-admin route boundary, old-key-signed preparation,
 new-key-signed commit, consecutive-version enforcement, nonce replay and key
@@ -164,10 +180,17 @@ in `deployment.md`, use an isolated tailnet/copied Nebula data and verify:
    different-byte fixture and confirm it stays separate with an open conflict.
    Sign in as the coordinator owner and confirm Cinema and Studio show one card
    per logical item, a multi-shard badge, and every source in `Available on`.
+   Configure one member for the shared media library and another with no media
+   libraries. Confirm the authorized member sees and can play the same logical
+   item while the denied member sees no federated metadata or availability.
+   Revoke the first member's access during an active session and confirm polling,
+   failover, release, new grants, history, and resume state fail closed while the
+   coordinator releases its session. The already accepted shard ticket remains
+   usable only until its short expiry or shard restart.
    Stop one shard and confirm stale/offline availability remains visible. A
    remote-only item with an online direct-play source must offer owner playback;
-   one without a compatible source remains browseable and disabled. Member and
-   guest sessions must remain local-only. Generated remote delivery should be
+   one without a compatible source remains browseable and disabled. Guest
+   sessions must remain local-only. Generated remote delivery should be
    exercised in the Phase 4 acceptance pass below.
 9. For Phase 4 acceptance, place byte-identical generated media on at least two
    shards and a different encode of the same logical title on a third. From the

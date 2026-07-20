@@ -7,7 +7,7 @@ import { parseByteRange } from "./ranges.mjs";
 import { projectRepositoryItems } from "./catalog/projections.mjs";
 import { canBrowseFederatedLibrary, projectUnifiedLibrary } from "./cluster/index.mjs";
 
-export const createMusicRoutes = (storage, accountStore, { catalog = null, federation = null, guestService = null, libraryPermissions = null } = {}) => {
+export const createMusicRoutes = (storage, accountStore, { catalog = null, federation = null, federationAuthorization = null, guestService = null, libraryPermissions = null } = {}) => {
   const catalogEntries = () => catalog
     ? projectRepositoryItems(catalog.repository, { availability: "available", mediaKind: "audio" })
     : [];
@@ -41,8 +41,11 @@ export const createMusicRoutes = (storage, accountStore, { catalog = null, feder
         entry.streamUrl = `/api/music/media?path=${encodeURIComponent(entry.path)}&ticket=${encodeURIComponent(ticket)}`;
       });
     }
-    if (federation && canBrowseFederatedLibrary(context)) {
-      entries = projectUnifiedLibrary({ entries, federation, mediaKind: "audio" });
+    const authorizeFederatedItem = federationAuthorization
+      ? (itemId) => federationAuthorization.canAccessItem(context, itemId)
+      : null;
+    if (federation && canBrowseFederatedLibrary(context, authorizeFederatedItem)) {
+      entries = projectUnifiedLibrary({ authorizeItem: authorizeFederatedItem, entries, federation, mediaKind: "audio" });
     }
     entries.sort((a, b) => (a.sortTitle || a.title).localeCompare(b.sortTitle || b.title));
     json(response, 200, { entries });

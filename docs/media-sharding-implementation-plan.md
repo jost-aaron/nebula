@@ -323,9 +323,15 @@ response shape. Tickets currently appear in the direct media URL query string.
 The browser document uses `Referrer-Policy: no-referrer`; operators must also
 keep request URLs out of proxy and access logs.
 
-This is presently an owner-only coordinator authorization path. The shard does
-not receive or query the coordinator account database; it trusts the scoped,
-valid coordinator signature and revalidates the local source/revision. The
+Owners, service clients, and authorized members may use this coordinator path.
+Each federated logical item maps to a coordinator-owned media-library scope;
+the coordinator applies the member's current policy before loading projected
+source details and again before scheduling, polling, failover, release, and
+grant issuance. Guests remain local-only. The shard does not receive roles,
+library IDs, mutable permission claims, or the coordinator account database; it
+trusts the short-lived scoped coordinator signature, whose grant binds the exact
+account, item, session, node, source, revision, profile, methods, and expiry,
+and revalidates the local source/revision. The
 opaque ticket is a bearer credential and is not rebound to the device on each
 range request. Paired-node revocation prevents new signed grant activation, but
 an already accepted in-memory ticket remains usable until its short grant expiry
@@ -522,8 +528,10 @@ rotation.
 For the current Phase 4 implementation, "short bounded revocation window" means
 the accepted grant's expiry or loss of its in-memory ticket state on shard
 restart; there is no distributed active-ticket revocation push yet. Cluster
-playback routes require an authenticated owner, and member/guest federation is
-deliberately disabled until coordinator permissions can be projected safely.
+playback routes require an authenticated owner or authorized member. A changed
+member policy invalidates and releases the coordinator session and prevents new
+grants immediately; an already accepted shard ticket remains bounded by its
+short expiry or shard restart. Guests remain deliberately local-only.
 
 ## Delivery Plan
 
@@ -548,9 +556,12 @@ deliberately disabled until coordinator permissions can be projected safely.
   verification, restart-safe progress, replay defense, and immediate old-key
   rejection after peer confirmation. Real-tailnet operator acceptance remains
   part of the overall Phase 5 exit criteria.
-- Federated browsing is currently limited to owners and service clients. Member
-  and guest requests remain local-only until library permissions can be applied
-  consistently across every shard.
+- Federated browsing and playback are available to owners, service clients, and
+  members authorized by the coordinator's current media-library policy. The
+  first release maps all federated items to the existing shared-content library
+  scope; future multi-library federation must add an explicit coordinator-owned
+  item-to-library projection before exposing those libraries. Guests remain
+  local-only and fail closed.
 - Phase 4 is implementation-complete pending operator acceptance: deterministic session-level scheduling, account-bound
   cluster playback sessions, signed delegated grants, fixed range-capable shard
   media ingress, direct client-to-shard original playback in Cinema and Studio,
@@ -560,8 +571,9 @@ deliberately disabled until coordinator permissions can be projected safely.
   generated fixtures. Cinema and Studio attempt failover after a remote media
   error.
 - Remote subtitle delivery is implemented through opaque, grant-bound sidecar
-  tracks and burn-in selection. Member/guest federation and distributed account
-  policy projection remain intentionally fail-closed. A real-tailnet multi-node
+  tracks and burn-in selection. Member federation uses coordinator-owned
+  library authorization without distributing account policy to shards; guest
+  federation remains intentionally fail-closed. A real-tailnet multi-node
   playback/failover pass has not been completed.
 
 ### Phase 0: contracts and threat model
