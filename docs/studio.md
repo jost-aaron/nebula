@@ -2,10 +2,19 @@
 
 When clustering is enabled on a coordinator, owners and service clients see a
 deduplicated music library with shard availability badges and source details.
-Tracks with a local source use the existing persistent audio player. Remote-only
-tracks can be inspected but are excluded from the queue and playback controls
-until delegated shard delivery is implemented. Member and guest libraries stay
-local-only.
+Tracks with a local source use the existing persistent audio player. An owner
+can select a remote-only track when an online shard advertises compatible
+direct play. Studio asks the coordinator for an account-bound cluster session,
+waits for the signed grant to activate, and gives its persistent `<audio>`
+element the direct shard URL. Member and guest libraries stay local-only.
+
+Remote Studio delivery currently means original/direct play only. On a remote
+media error, Studio requests an online exact replica, reopens the replacement
+grant URL, and seeks near its last browser position. Remote remux,
+HLS/transcode, prebuilt renditions, and format conversion are not implemented.
+Remote playback lifecycle/history/resume is also not yet
+persisted through the coordinator because the existing personal-state contract
+requires coordinator-local item/source IDs. Local Studio behavior is unchanged.
 
 Studio is the dedicated local music app.
 
@@ -58,6 +67,10 @@ It renders:
 - Server, source-file, format, and related-library information.
 - Friendly browser playback status and error messages for unsupported formats,
   including FLAC in browsers that cannot decode it.
+- Remote-shard connection and playback status in the same persistent player and
+  mini-player. Closing or replacing the track releases its cluster scheduler
+  session. A remote media failure currently stops with an error; Studio does not
+  yet invoke the exact-replica failover endpoint.
 
 The player layout follows the dark console-style reference under
 `docs/studio-design/` and uses the tracked Nebula Studio branding variants under
@@ -86,6 +99,10 @@ Studio groups music with these rules:
   state, including completed tracks.
 - `POST /api/playback/events` - record authenticated Studio playback lifecycle
   events using stable catalog item and source IDs.
+- `POST /api/cluster/playback-sessions` - schedule and activate owner-only
+  original/direct playback for a federated track.
+- `DELETE /api/cluster/playback-sessions/:id` - release a remote track's cluster
+  session when it is replaced or the Studio surface closes.
 
 The media endpoint supports HTTP byte ranges and returns `206 Partial Content`
 for one valid normal, open-ended, or suffix range. Invalid, multi-range,

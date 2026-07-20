@@ -1,6 +1,13 @@
 import { createElement, icons } from "lucide";
-import { getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken } from "../api/http";
-import { listMusicLibrary, listStudioPlaybackHistory, reportStudioPlayback } from "../api/musicApi";
+import { apiUrl, getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken } from "../api/http";
+import {
+  cancelClusterMusicDelivery,
+  createClusterMusicDelivery,
+  failoverClusterMusicDelivery,
+  listMusicLibrary,
+  listStudioPlaybackHistory,
+  reportStudioPlayback
+} from "../api/musicApi";
 import type { MusicEntry } from "../shared/musicTypes";
 import { addMediaListItem, createMediaList, listMediaLists } from "../api/mediaListsApi";
 import type { MediaList } from "../shared/mediaListTypes";
@@ -82,6 +89,22 @@ const currentServerInfo = (): StudioServerInfo => ({
   mode: getApiConnectionMode(),
   name: getApiConnectionMode() === "Same origin" ? "Nebula Local" : "Nebula Server",
   online: getApiConnectionMode() !== "Needs server URL"
+});
+
+const studioPlaybackCapabilities = (player: HTMLAudioElement, deviceId: string) => ({
+  audioCodecs: ["aac", "flac", "mp3", "opus", "vorbis"].filter((codec) => {
+    const mime = codec === "mp3" ? "audio/mpeg" : codec === "aac" ? "audio/aac" : `audio/${codec}`;
+    return player.canPlayType(mime) !== "";
+  }),
+  containers: ["aac", "flac", "m4a", "mp3", "ogg", "wav"],
+  deviceId,
+  maxAudioChannels: null,
+  maxBitrate: null,
+  maxHeight: null,
+  maxWidth: null,
+  subtitleFormats: [],
+  supportsHls: player.canPlayType("application/vnd.apple.mpegurl") !== "",
+  videoCodecs: []
 });
 
 const renderStudioIcon = (iconName: keyof typeof icons, className = "studio-ui-icon") => {
@@ -395,7 +418,7 @@ const renderFederatedSources = (entry: MusicEntry) => !entry.federation ? "" : `
   <section class="studio-shard-availability" aria-label="Available on">
     <header><div><p class="eyebrow">Sources</p><strong>Available on</strong></div><span class="is-${entry.federation.availability}">${escapeHtml(federationLabel(entry.federation))}</span></header>
     <div>${entry.federation.sources.map((source) => `<article><i class="is-${source.availability}" aria-hidden="true"></i><span><strong>${escapeHtml(source.nodeName)}</strong><small>${source.local ? "This server" : "Remote shard"}</small></span><em>${source.capabilities.directPlay ? "Direct play" : source.capabilities.transcode ? "Transcode" : source.nodeState}</em></article>`).join("")}</div>
-    ${entry.playable === false ? `<p>This track is visible across the cluster. Secure remote playback routing is not enabled yet.</p>` : ""}
+    ${entry.playable === false ? `<p>This track is visible across the cluster, but no compatible online source is currently available.</p>` : ""}
   </section>`;
 
 const renderSourceCards = (entry: MusicEntry, server: StudioServerInfo) => `
@@ -469,7 +492,7 @@ const renderNowPlaying = (entry: MusicEntry, entries: MusicEntry[]) => {
       <section class="studio-now">
         <div class="studio-artwork-stage">
           ${renderArtwork(entry, entry.title)}
-          <span class="studio-format-chip">${escapeHtml(entry.playable === false ? "Remote shard" : `${formatAudioFormat(entry).replace(" audio", "")} / Local file`)}</span>
+          <span class="studio-format-chip">${escapeHtml(entry.federation && !entry.sourceId ? "Remote shard" : `${formatAudioFormat(entry).replace(" audio", "")} / Local file`)}</span>
         </div>
         <div class="studio-track-detail">
           <p class="eyebrow">Now Playing</p>
@@ -479,7 +502,7 @@ const renderNowPlaying = (entry: MusicEntry, entries: MusicEntry[]) => {
           <div class="studio-waveform" aria-hidden="true">
             <canvas data-studio-visualizer data-studio-visualizer-mode="ambient"></canvas>
           </div>
-          ${entry.playable === false ? `<div class="studio-remote-playback-note">${renderStudioIcon("ServerOff")}<span><strong>Remote playback is not enabled yet</strong><small>This track is available on another shard and will become playable through the Phase 4 router.</small></span></div>` : renderTransportControls()}
+          ${entry.playable === false ? `<div class="studio-remote-playback-note">${renderStudioIcon("ServerOff")}<span><strong>No compatible shard is online</strong><small>This track remains in the unified library and will become playable when an eligible source reconnects.</small></span></div>` : renderTransportControls()}
           ${entry.playable !== false && entry.id ? `<button class="studio-playlist-command" type="button" data-studio-action="save-playlist">${renderStudioIcon("ListPlus")} Save to playlist</button>` : ""}
         </div>
       </section>
@@ -564,6 +587,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   let history = new Map<string, PlaybackHistoryEntry>();
   let pendingResume: { entry: MusicEntry; state: PlaybackHistoryEntry } | null = null;
   const personalPlayback = options.personalPlayback !== false;
+  const playbackDeviceId = createBrowserUuid();
 
   const visibleEntries = () =>
     query
@@ -623,6 +647,11 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     };
 
     let playbackSession: PlaybackSession | null = null;
+    let clusterDeliveryId: string | null = null;
+    let clusterDeliveryNodeId: string | null = null;
+    let failoverPending = false;
+    let playerRequestGeneration = 0;
+    let playerReady = Promise.resolve();
     let eventQueue = Promise.resolve();
     let statusMessage = "Ready to play.";
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -715,17 +744,53 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       }
     };
 
+    const releaseClusterDelivery = () => {
+      const id = clusterDeliveryId;
+      clusterDeliveryId = null;
+      clusterDeliveryNodeId = null;
+      if (id) void cancelClusterMusicDelivery(id).catch(() => undefined);
+    };
+
     setPlayerEntry = (entry: MusicEntry, force = false) => {
-      if (entry.playable === false || !entry.streamUrl) return;
+      if (entry.playable === false || (!entry.streamUrl && (!entry.id || !entry.federation))) return;
       if (!force && playingEntry?.path === entry.path) return;
+      const requestGeneration = ++playerRequestGeneration;
       stopSession();
+      releaseClusterDelivery();
       audioPlayer.pause();
+      audioPlayer.removeAttribute("src");
       playingEntry = entry;
       playbackSession = { ended: false, entry, lastProgressAt: 0, lifecycleStarted: false, sessionId: null };
       miniContent.innerHTML = renderMiniPlayer(entry);
-      audioPlayer.src = entry.streamUrl;
-      audioPlayer.load();
-      statusMessage = "Ready to play.";
+      const remote = !entry.sourceId && Boolean(entry.federation);
+      statusMessage = remote ? "Connecting to an available shard…" : "Ready to play.";
+      playerReady = remote
+        ? createClusterMusicDelivery({
+            capabilities: studioPlaybackCapabilities(audioPlayer, playbackDeviceId),
+            federatedItemId: entry.id!,
+            preferredProfileId: "original",
+            startPositionSeconds: null
+          }).then((created) => {
+            if (disposed || requestGeneration !== playerRequestGeneration || playingEntry?.path !== entry.path) {
+              void cancelClusterMusicDelivery(created.session.id).catch(() => undefined);
+              return;
+            }
+            clusterDeliveryId = created.session.id;
+            clusterDeliveryNodeId = created.session.candidate.nodeId;
+            audioPlayer.src = apiUrl(created.session.deliveryUrl);
+            audioPlayer.load();
+            statusMessage = "Ready from a remote shard.";
+            syncPlayerUi();
+          }).catch((error) => {
+            if (requestGeneration !== playerRequestGeneration) return;
+            statusMessage = error instanceof Error ? error.message : "Remote playback could not be started.";
+            syncPlayerUi();
+            throw error;
+          })
+        : Promise.resolve().then(() => {
+            audioPlayer.src = entry.streamUrl;
+            audioPlayer.load();
+          });
       syncPlayerUi();
     };
 
@@ -735,11 +800,11 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
         if (Number.isFinite(audioPlayer.duration) && positionSeconds < audioPlayer.duration) audioPlayer.currentTime = Math.max(0, positionSeconds);
         void audioPlayer.play().catch(() => setStatus("Ready to play. Select play again if this browser blocked playback."));
       };
-      if (positionSeconds > 0 && audioPlayer.readyState < 1) {
-        audioPlayer.addEventListener("loadedmetadata", beginPlayback, { once: true });
-      } else {
-        beginPlayback();
-      }
+      void playerReady.then(() => {
+        if (!audioPlayer.src) return;
+        if (positionSeconds > 0 && audioPlayer.readyState < 1) audioPlayer.addEventListener("loadedmetadata", beginPlayback, { once: true });
+        else beginPlayback();
+      }).catch(() => undefined);
     };
 
     async function activateAnalyser() {
@@ -779,7 +844,10 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       if (playbackSession && !playbackSession.lifecycleStarted) report(playbackSession, "start");
       syncPlayerUi();
     };
-    const onPlaying = () => { setStatus("Playing from the local Studio server."); syncPlayerUi(); };
+    const onPlaying = () => {
+      setStatus(clusterDeliveryId ? "Playing directly from a Nebula shard." : "Playing from the local Studio server.");
+      syncPlayerUi();
+    };
     const onPause = () => {
       setStatus("Paused.");
       if (playbackSession && !playbackSession.ended && playbackSession.lifecycleStarted) report(playbackSession, "pause");
@@ -798,7 +866,34 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       syncPlayerUi();
     };
     const onStalled = () => setStatus("Playback is waiting for more data from the server.");
-    const onError = () => setStatus("This audio file could not be played here. The browser may not support this format, especially some FLAC files.");
+    const onError = async () => {
+      if (!clusterDeliveryId || !clusterDeliveryNodeId || failoverPending) {
+        if (!failoverPending) setStatus("This audio file could not be played here. The browser may not support this format, especially some FLAC files.");
+        return;
+      }
+      failoverPending = true;
+      const deliveryId = clusterDeliveryId;
+      const position = Number.isFinite(audioPlayer.currentTime) ? audioPlayer.currentTime : 0;
+      setStatus("The active shard stopped responding. Finding an exact replica…");
+      try {
+        const replacement = await failoverClusterMusicDelivery(deliveryId, clusterDeliveryNodeId);
+        if (disposed || clusterDeliveryId !== replacement.session.id) return;
+        clusterDeliveryNodeId = replacement.session.candidate.nodeId;
+        audioPlayer.src = apiUrl(replacement.session.deliveryUrl);
+        audioPlayer.load();
+        const resume = () => {
+          if (Number.isFinite(audioPlayer.duration) && position < audioPlayer.duration) audioPlayer.currentTime = Math.max(0, position);
+          void audioPlayer.play().catch(() => setStatus("Replica ready. Press Play to resume."));
+        };
+        if (audioPlayer.readyState < 1) audioPlayer.addEventListener("loadedmetadata", resume, { once: true });
+        else resume();
+        setStatus(`Switched to ${replacement.session.candidate.nodeName ?? "an exact replica"}.`);
+      } catch {
+        setStatus("The active shard is unavailable and no exact replica could resume this track.");
+      } finally {
+        failoverPending = false;
+      }
+    };
 
     audioPlayer.addEventListener("durationchange", syncPlayerUi);
     audioPlayer.addEventListener("ended", onEnded);
@@ -931,7 +1026,9 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     function cleanup() {
       if (disposed) return;
       disposed = true;
+      playerRequestGeneration += 1;
       stopSession();
+      releaseClusterDelivery();
       audioPlayer.pause();
       window.cancelAnimationFrame(animationFrame);
       audioPlayer.removeEventListener("durationchange", syncPlayerUi);

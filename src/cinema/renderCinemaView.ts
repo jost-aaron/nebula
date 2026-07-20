@@ -3,8 +3,11 @@ import { apiUrl, getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken } fro
 import {
   getCinemaCatalogItem,
   cancelCinemaDelivery,
+  cancelClusterCinemaDelivery,
   completeCinemaDelivery,
   createCinemaDelivery,
+  createClusterCinemaDelivery,
+  failoverClusterCinemaDelivery,
   getCinemaDelivery,
   identifyCinemaFrames,
   listCinemaCatalog,
@@ -140,7 +143,7 @@ const renderFederatedAvailability = (entry: CinemaEntry) => {
           </article>
         `).join("")}
       </div>
-      ${entry.playable === false ? `<p>Browseable from this coordinator. Secure remote playback routing arrives in the next shard phase.</p>` : ""}
+      ${entry.sourceId ? "" : entry.playable === false ? `<p>This title is browseable, but no online shard currently supports direct playback.</p>` : `<p>Playback is authorized by this coordinator and streams directly from the selected shard.</p>`}
     </section>
   `;
 };
@@ -520,16 +523,16 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: C
         <div class="cinema-actions">
           ${entry.playable === false ? `<button type="button" disabled>${renderCinemaIcon("ServerOff")} Remote playback unavailable</button>` : `<button type="button" data-cinema-action="play">${renderCinemaIcon("Play")} ${playback ? `Resume at ${formatTime(playback.positionSeconds)}` : "Play"}</button>`}
           ${entry.playable !== false && entry.id && entry.sourceId ? `<button type="button" data-cinema-action="played">${renderCinemaIcon("BadgeCheck")} Mark watched</button><button type="button" data-cinema-action="unplayed">Mark unwatched</button>` : ""}
-          ${entry.playable !== false ? renderWatchlistButton(entry) : ""}
-          ${entry.playable !== false && entry.id ? `<button type="button" data-cinema-action="save-playlist">${renderCinemaIcon("ListPlus")} Save to playlist</button>` : ""}
+          ${entry.sourceId ? renderWatchlistButton(entry) : ""}
+          ${entry.sourceId && entry.id ? `<button type="button" data-cinema-action="save-playlist">${renderCinemaIcon("ListPlus")} Save to playlist</button>` : ""}
           <button type="button" data-cinema-action="more">${renderCinemaIcon("MoreHorizontal")} More</button>
           ${canOptimize && entry.id && entry.sourceId ? `<button type="button" data-cinema-action="optimize">${renderCinemaIcon("Gauge")} Optimize</button>` : ""}
         </div>
-        ${entry.playable !== false ? `<button class="cinema-edit-command" type="button" data-cinema-action="edit">${renderCinemaIcon("Pencil")} Edit Details</button><button class="cinema-edit-command" type="button" data-cinema-action="tmdb">${renderCinemaIcon("Database")} Match with TMDB</button>` : ""}
-        ${entry.playable !== false && entry.tmdbId ? `<button class="cinema-edit-command" type="button" data-cinema-action="tmdb-refresh">${renderCinemaIcon("RefreshCw")} Refresh TMDB Metadata</button>` : ""}
+        ${entry.sourceId ? `<button class="cinema-edit-command" type="button" data-cinema-action="edit">${renderCinemaIcon("Pencil")} Edit Details</button><button class="cinema-edit-command" type="button" data-cinema-action="tmdb">${renderCinemaIcon("Database")} Match with TMDB</button>` : ""}
+        ${entry.sourceId && entry.tmdbId ? `<button class="cinema-edit-command" type="button" data-cinema-action="tmdb-refresh">${renderCinemaIcon("RefreshCw")} Refresh TMDB Metadata</button>` : ""}
         ${renderFederatedAvailability(entry)}
-        ${entry.playable !== false ? renderServerCard(currentServerInfo(), true) : ""}
-        ${entry.playable !== false ? renderPlaybackSettings(entry, subtitles, preference) : ""}
+        ${entry.sourceId ? renderServerCard(currentServerInfo(), true) : ""}
+        ${entry.sourceId ? renderPlaybackSettings(entry, subtitles, preference) : ""}
         <div class="cinema-meta-list">
           <span>Type <strong>Video</strong></span>
           ${entry.episode ? `<span>Episode <strong>S${entry.episode.seasonNumber} E${entry.episode.episodeNumber}</strong></span><span>Air date <strong>${escapeHtml(entry.episode.airDate || "Not set")}</strong></span>` : ""}
@@ -1154,7 +1157,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     activeCategory = entry.category;
     view = "title-detail";
     render();
-    if (entry.playable !== false) void loadCatalogDetail(entry);
+    if (entry.sourceId) void loadCatalogDetail(entry);
     if (entry.id && entry.sourceId) void listSubtitleTracks(entry.id, entry.sourceId).then((state) => { subtitleState.set(entry.id!, state); if (selected?.id === entry.id) render(); }).catch(() => {});
     if (!subtitlePreference) void getSubtitlePreference().then((value) => { subtitlePreference = value; if (selected?.id === entry.id) render(); }).catch(() => {});
   };
@@ -1176,7 +1179,12 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       const transport = stage.querySelector<HTMLElement>("[data-cinema-controls]");
       let sessionId: string | null = null;
       let deliveryId: string | null = null;
+      let deliveryIsCluster = false;
+      let deliveryNodeId: string | null = null;
+      let failoverPending = false;
+      let failoverPlayback: () => Promise<void> = async () => undefined;
       let pendingDeliveryId: string | null = null;
+      let pendingDeliveryIsCluster = false;
       let hlsPlayback: HlsPlaybackHandle | null = null;
       let requestGeneration = 0;
       const generation = ++deliveryGeneration;
@@ -1383,7 +1391,11 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         renderPlaybackState();
         setStatus("Finished.");
         report("complete");
-        if (deliveryId) { void completeCinemaDelivery(deliveryId).catch(() => {}); deliveryId = null; }
+        if (deliveryId) {
+          if (deliveryIsCluster) void cancelClusterCinemaDelivery(deliveryId).catch(() => {});
+          else void completeCinemaDelivery(deliveryId).catch(() => {});
+          deliveryId = null;
+        }
       });
       player.addEventListener("timeupdate", () => {
         if (sessionId && Date.now() - lastProgressAt >= 10_000) {
@@ -1426,13 +1438,16 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         transportResizeObserver?.disconnect();
         hlsPlayback?.destroy();
         hlsPlayback = null;
-        if (deliveryId) void cancelCinemaDelivery(deliveryId).catch(() => {});
-        if (pendingDeliveryId && pendingDeliveryId !== deliveryId) void cancelCinemaDelivery(pendingDeliveryId).catch(() => {});
+        if (deliveryId) void (deliveryIsCluster ? cancelClusterCinemaDelivery(deliveryId) : cancelCinemaDelivery(deliveryId)).catch(() => {});
+        if (pendingDeliveryId && pendingDeliveryId !== deliveryId) void (pendingDeliveryIsCluster ? cancelClusterCinemaDelivery(pendingDeliveryId) : cancelCinemaDelivery(pendingDeliveryId)).catch(() => {});
       };
       stopActivePlayback = stopPlayback;
       window.addEventListener("pagehide", stopPlayback, { once: true });
       player.addEventListener("stalled", () => setStatus("Playback is waiting for more data from the server."));
-      player.addEventListener("error", () => setStatus("This video could not be played here."));
+      player.addEventListener("error", () => {
+        if (deliveryIsCluster && deliveryId && deliveryNodeId && !failoverPending) void failoverPlayback();
+        else if (!failoverPending) setStatus("This video could not be played here.");
+      });
       renderPlaybackState();
       syncFullscreenControl();
 
@@ -1445,6 +1460,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       };
       const useFallback = (position = startPosition) => {
         if (generation !== deliveryGeneration) return;
+        if (!playingEntry.streamUrl) { setStatus("No compatible remote delivery is available."); return; }
         hlsPlayback?.destroy();
         hlsPlayback = null;
         setStatus("Using local compatibility playback.");
@@ -1471,20 +1487,45 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         seekWhenReady(targetPosition);
         if (shouldPlay) void player.play().catch(() => setStatus("Ready. Press Play to start playback."));
       };
+      failoverPlayback = async () => {
+        if (!deliveryId || !deliveryNodeId || failoverPending) return;
+        failoverPending = true;
+        const failedNodeId = deliveryNodeId;
+        const position = Number.isFinite(player.currentTime) ? player.currentTime : 0;
+        setStatus("The active shard stopped responding. Finding an exact replica…");
+        try {
+          const replacement = await failoverClusterCinemaDelivery(deliveryId, failedNodeId);
+          if (generation !== deliveryGeneration || deliveryId !== replacement.session.id) return;
+          await attachDelivery(replacement, position, true);
+          deliveryNodeId = replacement.session.candidate.nodeId;
+          setStatus(`Switched to ${replacement.session.candidate.nodeName ?? "an exact replica"}.`);
+        } catch {
+          setStatus("The active shard is unavailable and no exact replica could resume this video.");
+        } finally {
+          failoverPending = false;
+        }
+      };
       const prepareDelivery = async (preference = qualityPreference, targetPosition = startPosition, switching = false) => {
-        if (!(player instanceof HTMLVideoElement) || !playingEntry.id || !playingEntry.sourceId || getApiConnectionMode() !== "Same origin") return useFallback();
+        if (!(player instanceof HTMLVideoElement) || !playingEntry.id) return useFallback();
+        const remote = !playingEntry.sourceId && Boolean(playingEntry.federation);
+        if (!remote && (!playingEntry.sourceId || getApiConnectionMode() !== "Same origin")) return useFallback();
         const localRequest = ++requestGeneration;
         const oldDeliveryId = deliveryId;
+        const oldDeliveryIsCluster = deliveryIsCluster;
         const shouldPlay = switching ? !player.paused : true;
         setStatus(switching ? `Preparing ${qualityResultLabel(preference)}…` : "Preparing compatible playback…");
         try {
-          const created = await createCinemaDelivery({ capabilities: deliveryCapabilities(player), itemId: playingEntry.id, quality: preference, sourceId: playingEntry.sourceId, startPositionSeconds: targetPosition });
+          const clusterCreated = remote
+            ? await createClusterCinemaDelivery({ capabilities: deliveryCapabilities(player), federatedItemId: playingEntry.id, preferredProfileId: qualityValue(preference), startPositionSeconds: targetPosition })
+            : null;
+          const created = clusterCreated ?? await createCinemaDelivery({ capabilities: deliveryCapabilities(player), itemId: playingEntry.id, quality: preference, sourceId: playingEntry.sourceId!, startPositionSeconds: targetPosition });
           pendingDeliveryId = created.session.id;
+          pendingDeliveryIsCluster = remote;
           let delivery = created.session;
-          while (["queued", "running"].includes(delivery.status)) {
+          while (!remote && ["queued", "running"].includes(delivery.status)) {
             await new Promise((resolve) => window.setTimeout(resolve, 350));
             if (generation !== deliveryGeneration || localRequest !== requestGeneration) {
-              void cancelCinemaDelivery(delivery.id).catch(() => {});
+              void (remote ? cancelClusterCinemaDelivery(delivery.id) : cancelCinemaDelivery(delivery.id)).catch(() => {});
               return false;
             }
             delivery = (await getCinemaDelivery(delivery.id)).session;
@@ -1492,12 +1533,15 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
           if (delivery.status !== "ready" || generation !== deliveryGeneration || localRequest !== requestGeneration) throw new Error("Delivery did not become ready.");
           await attachDelivery({ ...created, session: delivery }, targetPosition, shouldPlay);
           if (generation !== deliveryGeneration || localRequest !== requestGeneration) {
-            void cancelCinemaDelivery(delivery.id).catch(() => {});
+            void (remote ? cancelClusterCinemaDelivery(delivery.id) : cancelCinemaDelivery(delivery.id)).catch(() => {});
             return false;
           }
           deliveryId = delivery.id;
+          deliveryIsCluster = remote;
+          deliveryNodeId = clusterCreated?.session.candidate.nodeId ?? null;
           pendingDeliveryId = null;
-          if (oldDeliveryId && oldDeliveryId !== deliveryId) void cancelCinemaDelivery(oldDeliveryId).catch(() => {});
+          pendingDeliveryIsCluster = false;
+          if (oldDeliveryId && oldDeliveryId !== deliveryId) void (oldDeliveryIsCluster ? cancelClusterCinemaDelivery(oldDeliveryId) : cancelCinemaDelivery(oldDeliveryId)).catch(() => {});
           qualityPreference = preference;
           const qualitySelect = content.querySelector<HTMLSelectElement>("[data-cinema-player-quality]");
           const qualityResult = content.querySelector<HTMLElement>("[data-cinema-quality-result]");
@@ -1509,11 +1553,16 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
           setStatus(readyMessage);
           return true;
         } catch {
-          if (pendingDeliveryId) { void cancelCinemaDelivery(pendingDeliveryId).catch(() => {}); pendingDeliveryId = null; }
+          if (pendingDeliveryId) {
+            void (pendingDeliveryIsCluster ? cancelClusterCinemaDelivery(pendingDeliveryId) : cancelCinemaDelivery(pendingDeliveryId)).catch(() => {});
+            pendingDeliveryId = null;
+            pendingDeliveryIsCluster = false;
+          }
           const qualitySelect = content.querySelector<HTMLSelectElement>("[data-cinema-player-quality]");
           if (qualitySelect) { qualitySelect.value = qualityValue(qualityPreference); qualitySelect.disabled = false; }
           if (switching) setStatus("That quality is unavailable for this title or device.");
           else if (preference.mode === "profile") setStatus("That quality is unavailable. Choose Auto or Original.");
+          else if (remote) setStatus("Remote playback could not start. Try again or choose another source.");
           else useFallback(targetPosition);
           return false;
         }
@@ -1694,7 +1743,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   };
 
   const requestPlayer = (fullscreen = false) => {
-    if (!selected || selected.playable === false || !selected.streamUrl) {
+    if (!selected || selected.playable === false || (!selected.streamUrl && !selected.federation)) {
       return;
     }
 

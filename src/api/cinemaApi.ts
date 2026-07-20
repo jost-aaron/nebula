@@ -13,6 +13,7 @@ import type { CatalogItemResponse, MediaChapter } from "../shared/catalogTypes";
 import type { ContinueWatchingResponse, PlaybackEventRequest, PlaybackEventResponse } from "../shared/playbackTypes";
 import type { PlaybackWatchedRequest, PlaybackState } from "../shared/playbackTypes";
 import type { PlaybackDeliveryCreateRequest, PlaybackDeliveryCreateResponse, PlaybackDeliveryStatusResponse } from "../shared/playbackDeliveryTypes";
+import type { ClusterPlaybackCreateResponse } from "../shared/clusterTypes";
 
 export interface CinemaCatalogEntry {
   availability?: string;
@@ -71,6 +72,18 @@ export const cancelCinemaDelivery = (id: string) => apiFetch(`/api/playback/deli
 });
 export const completeCinemaDelivery = (id: string) => apiFetch(`/api/playback/delivery-sessions/${encodeURIComponent(id)}/complete`, { method: "POST" }).then((response) => {
   if (!response.ok && response.status !== 404) throw new Error(`Delivery completion failed: ${response.status}`);
+});
+
+export const createClusterCinemaDelivery = (body: { capabilities: PlaybackDeliveryCreateRequest["capabilities"]; federatedItemId: string; preferredProfileId: string; startPositionSeconds?: number | null }) =>
+  apiJson<ClusterPlaybackCreateResponse>("/api/cluster/playback-sessions", {
+    body: JSON.stringify(body), headers: { "content-type": "application/json" }, method: "POST"
+  });
+export const failoverClusterCinemaDelivery = (id: string, failedNodeId: string) =>
+  apiJson<ClusterPlaybackCreateResponse>(`/api/cluster/playback-sessions/${encodeURIComponent(id)}/failover`, {
+    body: JSON.stringify({ failedNodeId }), headers: { "content-type": "application/json" }, method: "POST"
+  });
+export const cancelClusterCinemaDelivery = (id: string) => apiFetch(`/api/cluster/playback-sessions/${encodeURIComponent(id)}`, { method: "DELETE" }).then((response) => {
+  if (!response.ok && response.status !== 404) throw new Error(`Cluster delivery cancellation failed: ${response.status}`);
 });
 
 export const identifyCinemaFrames = (body: CinemaIdentifyRequest) =>

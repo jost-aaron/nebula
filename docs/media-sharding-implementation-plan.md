@@ -2,8 +2,10 @@
 
 ## Status
 
-This document scopes the next major media-platform feature. It is an
-implementation handoff, not a statement that sharding is currently available.
+This document scopes the media-platform sharding feature and records its staged
+implementation status. Phases 0-3 are complete. Phase 4 currently implements
+coordinator-scheduled original/direct-play delivery through signed shard grants;
+the limitations in the Phase 4 status section remain part of the contract.
 
 The recommended first release uses one **coordinator** and one or more **media
 shards**. A normal single-server Nebula installation remains supported and acts
@@ -256,6 +258,23 @@ without considering measured throughput and startup latency.
 The scheduler returns an explainable decision so Settings and diagnostics can
 show why a shard was selected.
 
+### Current Phase 4 scheduler
+
+The current scheduler creates an account-bound, sticky in-memory playback
+session and chooses one online candidate deterministically. It excludes offline,
+draining, explicitly excluded, and cooldown nodes. Its implemented score favors
+a ready requested rendition, then direct play, remux, and live transcode; adds a
+small local-coordinator bonus; subtracts an active-session load penalty; and uses
+node ID as the final stable tie-breaker. The public response exposes the chosen
+node, mode, score, and reason codes without exposing the shard endpoint or local
+catalog IDs.
+
+Only the direct-play/original branch of that decision tree is currently
+activated for a remote shard. A remote candidate that would require a prebuilt
+rendition, remux, or live transcode fails closed with
+`remote_delivery_mode_pending`. The scoring representation for those modes is
+preparatory and must not be read as working remote delivery or policy admission.
+
 ### Delegated media grants
 
 The coordinator creates a short-lived signed grant scoped to:
@@ -272,6 +291,36 @@ must not be reusable for arbitrary files or API routes.
 
 Exact CORS origins must include the configured coordinator web origin and
 supported native origins. Do not use wildcard credentialed CORS.
+
+The current implementation signs the fixed grant-validation route with the
+existing paired-node Ed25519 request envelope. The grant binds the cluster,
+target node, account, browser device, federated item, shard-local source,
+content revision, requested profile, playback session, `GET`/`HEAD` methods,
+fixed asset prefix, nonce, issue time, and expiry. The shard rejects the wrong
+target, invalid time window, prefix changes, replayed signatures, untrusted or
+non-coordinator issuers, missing sources, and stale source revisions.
+
+After validation, the shard returns an opaque media ticket and retains only its
+hash in memory. The fixed media ingress resolves the bound catalog source on the
+server, enforces content-root containment, supports full and byte-range
+`GET`/`HEAD`, uses `private, no-store`, and emits CORS only for the exact signed
+playback-client origin. That origin must be the coordinator's Tailscale origin
+or an exact origin in Nebula's API CORS allowlist, preserving localhost and
+Capacitor playback without wildcard CORS. The coordinator's server-to-server activation uses the
+pinned `.ts.net` endpoint through the fixed userspace Tailscale proxy, rejects
+redirects, applies a timeout and response-size limit, and validates the exact
+response shape. Tickets currently appear in the direct media URL query string,
+so operators must continue to prevent URL logging and referrer leakage.
+
+This is presently an owner-only coordinator authorization path. The shard does
+not receive or query the coordinator account database; it trusts the scoped,
+valid coordinator signature and revalidates the local source/revision. The
+opaque ticket is a bearer credential and is not rebound to the device on each
+range request. Paired-node revocation prevents new signed grant activation, but
+an already accepted in-memory ticket remains usable until its short grant expiry
+or shard restart. CORS limits browser read access but is not an authorization
+control. Tighter active-grant revocation and request binding remain hardening
+work.
 
 ### Failover
 
@@ -293,6 +342,15 @@ Playback events, resume state, watch history, and policy admission remain
 coordinator-owned. Active playback may continue until its shard grant expires if
 the coordinator briefly becomes unavailable, but browsing and new sessions
 require the coordinator in the first release.
+
+The current failover API is account-bound and accepts only the node that owns
+the active scheduler session as the failed node. It refuses failover without a
+completed exact-replica fingerprint, excludes and cools down the failed node,
+and selects another online source only when its exact-replica key matches. An
+alternate encode or merely deduplicated logical work is never substituted.
+Cinema and Studio invoke this API after a remote media error, reopen the
+replacement direct URL, and seek to the browser's last current time. This is a
+best-effort resume, not seamless or tolerance-verified failover.
 
 ## Can One Playback Use Multiple Shards?
 
@@ -423,6 +481,12 @@ or caller-selected filesystem locations.
 - Cluster data, keys, and cursors live in `/app/data` and follow the existing
   backup encryption and restore policy.
 
+For the current Phase 4 implementation, "short bounded revocation window" means
+the accepted grant's expiry or loss of its in-memory ticket state on shard
+restart; there is no distributed active-ticket revocation push yet. Cluster
+playback routes require an authenticated owner, and member/guest federation is
+deliberately disabled until coordinator permissions can be projected safely.
+
 ## Delivery Plan
 
 ### Implementation status (2026-07-19)
@@ -439,13 +503,21 @@ or caller-selected filesystem locations.
 - Phase 3 implementation is complete: the coordinator keeps its own catalog in
   the federated projection, Cinema and Studio compatibility responses collapse
   duplicate shard sources into one logical item, and both apps show responsive
-  availability badges and source lists. Local sources remain playable; remote-
-  only entries are intentionally browse-only until Phase 4 issues scoped grants.
+  availability badges and source lists. Local sources remain playable. Phase 4
+  now permits eligible remote-only original/direct-play sources for owners.
 - Federated browsing is currently limited to owners and service clients. Member
   and guest requests remain local-only until library permissions can be applied
   consistently across every shard.
-- Phase 4 scheduling, delegated grants, direct client-to-shard delivery, and
-  exact-replica failover are next.
+- Phase 4 is in progress: deterministic session-level scheduling, account-bound
+  cluster playback sessions, signed delegated grants, fixed range-capable shard
+  media ingress, direct client-to-shard original playback in Cinema and Studio,
+  and the exact-replica failover API are implemented with generated fixtures.
+  Cinema and Studio attempt failover after a remote media error.
+- Remote remux, remote HLS/live transcode, remote prebuilt rendition delivery,
+  remote subtitle delivery, remote fixed-quality switching, federated personal
+  playback-state integration, member/guest federation, and production policy
+  admission are not implemented. A real-tailnet multi-node playback/failover
+  pass has not been completed.
 
 ### Phase 0: contracts and threat model
 
@@ -507,6 +579,15 @@ operator acceptance check; it does not block the standalone deployment.
 Exit: concurrent sessions distribute across shards, permissions remain
 isolated, and killing the active shard resumes an exact replica near the same
 position.
+
+Status: partially implemented. Generated-fixture tests cover deterministic
+balancing, sticky sessions, scheduler explanations, drain/cooldown handling,
+grant signature and replay defenses, source/revision binding, range media
+ingress, account isolation, and the exact-replica-only failover contract. The
+exit criterion is not met until remote generated delivery and personal-state
+integration are complete and an operator verifies real Direct and DERP paths,
+simultaneous sessions, shard loss, resume tolerance, browser CORS, and grant
+expiry/revocation behavior on an approved test tailnet.
 
 ### Phase 5: operations and hardening
 
@@ -572,6 +653,15 @@ for every worktree.
 Real-tailnet verification should cover both Direct and DERP-relayed paths,
 revoked tailnet access, an offline shard, and simultaneous streams. It must not
 require or commit Tailscale credentials.
+
+For Phase 4 specifically, the operator must also verify Cinema and Studio
+original/direct playback from a remote-only source, byte-range seeking, exact
+coordinator-origin CORS, grant expiry, an unavailable or revoked shard, load
+distribution across duplicate sources, and Cinema resume after terminating the
+selected shard. Record observed resume drift and confirm that a different
+fingerprint never becomes a failover candidate. Do not mark remux, HLS,
+transcoding, subtitles, or fixed remote quality as passed until those delivery
+paths are implemented.
 
 ## MVP Non-Goals
 

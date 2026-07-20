@@ -203,11 +203,19 @@ export const validateClusterSignedEnvelope = (input) => {
 
 export const validateClusterDelegatedMediaGrant = (input) => {
   const value = plainObject(input, "delegated media grant");
-  exactKeys(value, new Set(["accountId", "assetPrefix", "clusterId", "deviceId", "expiresAt", "federatedItemId", "grantId", "issuedAt", "localSourceId", "methods", "nodeId", "nonce", "profileId", "protocolVersion", "sessionId", "sourceRevision"]), "delegated media grant");
+  exactKeys(value, new Set(["accountId", "assetPrefix", "clientOrigin", "clusterId", "deviceId", "expiresAt", "federatedItemId", "grantId", "issuedAt", "localSourceId", "methods", "nodeId", "nonce", "profileId", "protocolVersion", "sessionId", "sourceRevision"]), "delegated media grant");
   protocolVersion(value.protocolVersion);
   for (const key of ["accountId", "clusterId", "deviceId", "federatedItemId", "grantId", "localSourceId", "nodeId", "sessionId"]) id(value[key], key);
   if (!Array.isArray(value.methods) || value.methods.length === 0 || value.methods.length > 2 || value.methods.some((entry) => !MEDIA_METHODS.has(entry))) fail("invalid_method", "methods may contain only GET and HEAD.");
   if (typeof value.assetPrefix !== "string" || !/^\/api\/shard\/v1\/media\/[A-Za-z0-9_-]+\/$/.test(value.assetPrefix)) fail("invalid_path", "assetPrefix must be a scoped shard media prefix.");
+  if (value.clientOrigin !== "capacitor://localhost") {
+    let clientOrigin;
+    try { clientOrigin = new URL(value.clientOrigin); } catch { fail("invalid_origin", "clientOrigin must be an exact supported origin."); }
+    if (!new Set(["http:", "https:"]).has(clientOrigin.protocol) || clientOrigin.username || clientOrigin.password
+      || clientOrigin.pathname !== "/" || clientOrigin.search || clientOrigin.hash || clientOrigin.origin !== value.clientOrigin) {
+      fail("invalid_origin", "clientOrigin must be an exact supported origin.");
+    }
+  }
   if (!PROFILE_IDS.has(value.profileId)) fail("invalid_profile", "profileId is unsupported.");
   integer(value.sourceRevision, "sourceRevision", { min: 1 });
   if (typeof value.nonce !== "string" || !TOKEN_PATTERN.test(value.nonce)) fail("invalid_nonce", "nonce is invalid.");

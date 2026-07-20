@@ -63,9 +63,10 @@ before implementing cluster identity, catalog federation, deduplication, or
 distributed playback.
 
 The cluster Phase 0 contracts and Phase 1 trust implementation are active in
-development. Phase 1 is opt-in through `NEBULA_CLUSTER_ENABLED=true` and covers
-identity, pairing, signed requests, replay defense, and revocation only. Unified
-catalog and playback work remain later phases.
+development. Cluster mode is opt-in through `NEBULA_CLUSTER_ENABLED=true`.
+Identity, pairing, signed requests, replay defense, revocation, catalog
+federation, and unified browsing are implemented. Phase 4 scheduled playback is
+in progress as described below.
 
 ## Must Follow
 
@@ -272,11 +273,36 @@ At handoff time:
 - App-surface rendering and feature-specific bindings remain in `src/main.ts`;
   shell state, persistence, input gates, and gamepad lifecycle live in
   `src/shell/`.
-- Media sharding Phase 3 now feeds the conservative coordinator projection into
-  the existing Cinema and Studio compatibility APIs. Owners see one logical
-  item for duplicate sources, shard-count/status badges, and an `Available on`
-  source list. Remote-only items are browseable but cannot invoke local playback
-  or mutation endpoints. Members and guests remain local-only until federated
-  library permissions are implemented. Scheduling, delegated media grants,
-  direct shard delivery, and failover are Phase 4 in
-  `docs/media-sharding-implementation-plan.md`.
+- Media sharding Phase 3 feeds the conservative coordinator projection into the
+  existing Cinema and Studio compatibility APIs. Owners see one logical item
+  for duplicate sources, shard-count/status badges, and an `Available on`
+  source list. Members and guests remain local-only until federated library
+  permissions are implemented.
+- Phase 4 now schedules owner playback per session across online sources using
+  deterministic direct/remux/transcode preference metadata, a local bonus,
+  active-session load, drain state, and failure cooldown. Only remote
+  original/direct play is activated today; remote remux, HLS/live transcode,
+  prebuilt rendition delivery, subtitles, and fixed-quality conversion fail
+  closed as pending modes.
+- A coordinator signs a short-lived, account/device/session/source/revision-
+  bound grant. The target shard validates the pinned paired-node signature and
+  replay nonce, resolves only the bound catalog source, and serves `GET`/`HEAD`
+  with range support through an opaque ticket. Server activation uses the fixed
+  userspace Tailscale proxy, exact `.ts.net` endpoint, no redirects, bounded
+  responses, and exact signed-client-origin CORS.
+- The accepted media ticket is currently a short-lived bearer credential stored
+  only as a hash on the shard. Revoking node trust blocks new grant activation,
+  but an already accepted ticket lasts until expiry or shard restart. CORS is
+  exact-origin defense in depth, not authentication; active-ticket revocation
+  and per-request device binding remain hardening work.
+- Cinema and Studio can play eligible remote-only original files directly from
+  the selected shard. Both players react to a media error by requesting another
+  online source with the identical strong fingerprint and seeking to the last
+  browser position. Federated personal playback history/resume is not wired
+  yet. Remote mutations remain local-source-only.
+- Phase 4 generated-fixture checks cover scheduler, grants, ingress, activation,
+  account isolation, and exact-replica failover contracts. Real-tailnet Direct
+  and DERP playback, simultaneous load distribution, browser CORS, grant expiry
+  and revocation, shard-loss resume tolerance, and URL/log leakage checks remain
+  operator verification. Do not claim remote generated delivery or production
+  tailnet readiness; see `docs/media-sharding-implementation-plan.md`.

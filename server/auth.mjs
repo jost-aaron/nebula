@@ -65,6 +65,7 @@ const capabilityForRoute = (request, url) => {
   if (path === "/api/subtitles/provider-status" && method === "PUT") return "server.admin";
   if (path.startsWith("/api/subtitles")) return "media.read";
   if (path.startsWith("/api/playback")) return "playback.persist";
+  if (path.startsWith("/api/cluster/playback-sessions")) return "playback.persist";
   if (path.startsWith("/api/jobs")) return "server.admin";
   if (path.startsWith("/api/renditions/items/")) return ["GET", "HEAD"].includes(method) ? "media.read" : "server.admin";
   if (path === "/api/cinema/watchlist") return "watchlist.write";

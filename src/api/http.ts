@@ -55,7 +55,7 @@ export const setApiBaseUrl = async (url: string) => {
   }
 };
 
-export const apiUrl = (path: string) => `${configuredApiBase()}${path}`;
+export const apiUrl = (path: string) => /^https?:\/\//i.test(path) ? path : `${configuredApiBase()}${path}`;
 
 export const getApiToken = () => window.localStorage.getItem(API_TOKEN_STORAGE_KEY) ?? "";
 const accountSessionServer = () => configuredApiBase() || window.location.origin;

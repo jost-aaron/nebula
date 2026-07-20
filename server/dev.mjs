@@ -6,7 +6,7 @@ import { createServer as createViteServer } from "vite";
 import { createExactViteHostGuard, createViteServerOptions } from "./viteConfig.mjs";
 import { createApiHandler } from "./api.mjs";
 import { createAuthGuard } from "./auth.mjs";
-import { applyApiCorsHeaders, handleApiPreflight } from "./cors.mjs";
+import { applyApiCorsHeaders, handleApiPreflight, isApiCorsOriginAllowed } from "./cors.mjs";
 import { createStorage } from "./storage.mjs";
 import { createAccountStore } from "./accountStore.mjs";
 import { createGuestService } from "./guest/service.mjs";
@@ -36,6 +36,7 @@ import { createTailscaleEnrollmentService } from "./tailscaleEnrollment.mjs";
 import {
   clusterMigration, clusterFederationMigration, createClusterIngressRoutes, createClusterManifestClient,
   createClusterManifestService, createClusterPairingClient, createClusterRepository, createClusterSyncService,
+  createClusterGrantClient, createClusterGrantService, createClusterPlaybackScheduler, createClusterPlaybackService,
   createClusterTrustService, createFederatedCatalogRepository, syncLocalClusterManifest
 } from "./cluster/index.mjs";
 import {
@@ -81,10 +82,6 @@ const catalogRepository = createCatalogRepository(database);
 const localClusterManifest = clusterService ? createClusterManifestService({
   database, nodeId: clusterService.identity().descriptor.nodeId
 }) : null;
-const clusterIngress = clusterService ? createClusterIngressRoutes({
-  manifest: localClusterManifest,
-  service: clusterService
-}) : null;
 const federatedCatalog = clusterService ? createFederatedCatalogRepository(database, {
   localNodeId: clusterService.identity().descriptor.nodeId
 }) : null;
@@ -95,6 +92,15 @@ const syncLocalProjection = clusterService ? () => syncLocalClusterManifest({
 }) : () => null;
 const clusterSync = clusterService ? createClusterSyncService({
   client: createClusterManifestClient(), federation: federatedCatalog, trust: clusterService
+}) : null;
+const clusterGrantService = clusterService ? createClusterGrantService({ catalog: catalogRepository, isClientOriginAllowed: isApiCorsOriginAllowed, trust: clusterService }) : null;
+const clusterScheduler = clusterService ? createClusterPlaybackScheduler({ federation: federatedCatalog }) : null;
+const clusterGrantClient = clusterService ? createClusterGrantClient() : null;
+const clusterIngress = clusterService ? createClusterIngressRoutes({
+  contentRoot: storage.contentRoot,
+  grants: clusterGrantService,
+  manifest: localClusterManifest,
+  service: clusterService
 }) : null;
 const fingerprintRepository = createFingerprintRepository(database);
 const fingerprintService = createFingerprintService({
@@ -164,6 +170,12 @@ const playbackDelivery = createDeliveryService({
   resolveSource: resolveCatalogSource,
   transcodeService
 });
+const clusterPlayback = clusterService ? createClusterPlaybackService({
+  client: clusterGrantClient,
+  grants: clusterGrantService,
+  localDelivery: playbackDelivery,
+  scheduler: clusterScheduler
+}) : null;
 const probeService = createProbeService({
   catalogWriter: createProbeCatalogWriter(database),
   contentRoot: storage.contentRoot,
@@ -255,7 +267,7 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   catalog: { libraryPermissions, probeReader, repository: catalogRepository, scan: scanCatalog },
   ...(clusterService ? { cluster: {
     audit: auditService, federation: federatedCatalog, pairingClient: createClusterPairingClient(),
-    service: clusterService, sync: clusterSync
+    playback: clusterPlayback, service: clusterService, sync: clusterSync
   } } : {}),
   jobs: jobsService,
   guestService,
@@ -341,6 +353,7 @@ const shutdown = async () => {
   await new Promise((resolve) => httpServer.close(resolve));
   await jobsWorker.stop();
   await playbackDelivery.shutdown();
+  clusterGrantService?.shutdown();
   playbackPolicy.shutdown();
   await Promise.allSettled([remuxService.shutdown(), transcodeService.shutdown(), vite.close()]);
   database.close();

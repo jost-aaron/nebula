@@ -23,7 +23,8 @@ export const projectUnifiedLibrary = ({ entries, federation, mediaKind }) => {
     const localSource = item.sources.find((source) => source.local && source.availability === "available");
     const local = localSource ? localBySource.get(localSource.localSourceId) ?? localByItem.get(localSource.localItemId) : null;
     if (local) consumed.add(local.path);
-    return { ...(local ?? remoteEntry(item)), federation: item, playable: Boolean(local) };
+    const remotePlayable = item.sources.some((source) => source.availability === "available" && source.nodeState === "online" && source.capabilities.directPlay);
+    return { ...(local ?? remoteEntry(item)), federation: item, playable: Boolean(local) || remotePlayable };
   });
   for (const entry of entries) if (!consumed.has(entry.path)) projected.push({ ...entry, playable: true });
   return projected;

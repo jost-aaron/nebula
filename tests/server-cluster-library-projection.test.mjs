@@ -55,11 +55,11 @@ test("unified projection deduplicates local media and retains every shard source
   assert.deepEqual(projected[0].federation.sources.map(({ nodeName }) => nodeName), ["Home", "Basement"]);
 });
 
-test("remote-only media is browseable without manufacturing a playable URL", () => {
+test("remote-only direct media is playable without manufacturing a stream URL", () => {
   const projected = projectUnifiedLibrary({ entries: [], federation: { listItems: () => [item()] }, mediaKind: "video" });
   assert.equal(projected.length, 1);
   assert.equal(projected[0].path, "federated:federated_item_1");
-  assert.equal(projected[0].playable, false);
+  assert.equal(projected[0].playable, true);
   assert.equal(projected[0].streamUrl, "");
   assert.equal(projected[0].sourceId, undefined);
   assert.doesNotMatch(JSON.stringify(projected), /https?:\/\/|\/private|digest|publicKey/i);

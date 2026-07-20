@@ -1,5 +1,6 @@
 import type { CatalogId, IsoDateTime, MediaItemKind, MediaSourceKind } from "./catalogTypes";
 import type { PlaybackClientCapabilities, PlaybackDecision } from "./playbackPlanTypes";
+import type { PlaybackDeliveryCreateResponse, PlaybackDeliverySession } from "./playbackDeliveryTypes";
 import type { RenditionProfileId } from "./renditionTypes";
 
 export const CLUSTER_PROTOCOL_VERSION = 1 as const;
@@ -100,6 +101,7 @@ export interface ClusterSignedRequestEnvelope {
 export interface ClusterDelegatedMediaGrant {
   accountId: string;
   assetPrefix: string;
+  clientOrigin: string;
   clusterId: string;
   deviceId: string;
   expiresAt: string;
@@ -118,7 +120,11 @@ export interface ClusterDelegatedMediaGrant {
 
 export interface ClusterPlaybackCandidate {
   decision: PlaybackDecision;
+  local?: boolean;
+  mode?: "live-transcode" | "original" | "prebuilt-rendition" | "remux";
+  nodeName?: string;
   nodeId: string;
+  reasons?: Array<{ code: string; score: number }>;
   score: number;
   sourceId: CatalogId;
 }
@@ -128,4 +134,14 @@ export interface ClusterPlaybackRequest {
   federatedItemId: string;
   preferredProfileId?: RenditionProfileId | "auto" | "original";
   startPositionSeconds?: number | null;
+}
+
+export interface ClusterPlaybackSession extends PlaybackDeliverySession {
+  candidate: ClusterPlaybackCandidate;
+  federatedItemId: string;
+  grantExpiresAt?: string;
+}
+
+export interface ClusterPlaybackCreateResponse extends Omit<PlaybackDeliveryCreateResponse, "session"> {
+  session: ClusterPlaybackSession;
 }

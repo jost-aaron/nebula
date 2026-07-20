@@ -155,6 +155,33 @@ export const createFederatedCatalogRepository = (database, { localNodeId = null,
   const listConflicts = () => database.prepare(`SELECT id, candidate_signature AS candidateSignature,
     left_item_id AS leftItemId, right_item_id AS rightItemId, state FROM federated_dedupe_conflicts ORDER BY created_at, id`).all();
 
+  const listPlaybackSources = (itemId) => database.prepare(`SELECT fs.id, fs.local_item_id, fs.local_source_id,
+    fs.source_revision, fs.availability, fs.fingerprint_algorithm, fs.fingerprint_digest, fs.fingerprint_state,
+    fs.byte_length, fs.metadata_json, n.node_id, n.name, n.endpoint, n.state, n.capabilities_json
+    FROM federated_sources fs JOIN cluster_nodes n ON n.node_id = fs.node_id
+    JOIN federated_items i ON i.id = fs.item_id
+    WHERE fs.item_id = ? AND i.merged_into_id IS NULL AND fs.availability = 'available'
+    ORDER BY n.name, fs.id`).all(itemId).map((source) => {
+      const metadata = JSON.parse(source.metadata_json);
+      const capabilities = JSON.parse(source.capabilities_json);
+      return {
+        availability: source.availability,
+        capabilities,
+        endpoint: source.endpoint,
+        exactReplicaKey: source.fingerprint_state === "ready"
+          ? `${source.fingerprint_algorithm}:${source.fingerprint_digest}:${source.byte_length}` : null,
+        federatedSourceId: source.id,
+        local: source.node_id === localNodeId,
+        localItemId: source.local_item_id,
+        localSourceId: source.local_source_id,
+        nodeId: source.node_id,
+        nodeName: source.name,
+        nodeState: source.state,
+        renditions: Array.isArray(metadata.renditions) ? metadata.renditions : [],
+        sourceRevision: source.source_revision
+      };
+    });
+
   const setOverride = ({ action, leftOrigin, rightOrigin }) => transaction(database, () => {
     if (!new Set(["merge", "split"]).has(action) || typeof leftOrigin !== "string" || typeof rightOrigin !== "string" || leftOrigin === rightOrigin) {
       throw Object.assign(new Error("A merge or split requires two distinct source origins."), { code: "invalid_dedupe_override", status: 400 });
@@ -200,5 +227,5 @@ export const createFederatedCatalogRepository = (database, { localNodeId = null,
     return { action, leftOrigin: storedLeft, rightOrigin: storedRight, targetItemId };
   });
 
-  return { applyManifestPage, listConflicts, listItems, setOverride };
+  return { applyManifestPage, listConflicts, listItems, listPlaybackSources, setOverride };
 };

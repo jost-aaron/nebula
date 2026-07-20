@@ -1,4 +1,9 @@
 import { json, readBody } from "../http.mjs";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { parseByteRange } from "../ranges.mjs";
+import { mimeType } from "../storage.mjs";
+import { resolveRemuxSourcePath } from "../remux/index.mjs";
 
 const sendError = (response, error) => json(response, error.status ?? 500, {
   ...(error.code ? { code: error.code } : {}),
@@ -8,6 +13,8 @@ const sendError = (response, error) => json(response, error.status ?? 500, {
 export const createClusterIngressRoutes = (options) => {
   const service = options?.service ?? options;
   const manifest = options?.manifest ?? null;
+  const grants = options?.grants ?? null;
+  const contentRoot = options?.contentRoot ?? null;
   return async (request, response, url) => {
   if (!url.pathname.startsWith("/api/shard/v1/")) return false;
   try {
@@ -31,6 +38,26 @@ export const createClusterIngressRoutes = (options) => {
       service.verifyRequest(body.envelope, payload, { method: request.method, path: url.pathname });
       const page = manifest.page(payload);
       json(response, 200, { envelope: service.signRequest({ body: page, method: "POST", path: url.pathname }), payload: page });
+      return true;
+    }
+    if (request.method === "POST" && url.pathname === "/api/shard/v1/playback/grants/validate" && grants) {
+      json(response, 201, grants.accept(await readBody(request, { limit: 64 * 1024 })));
+      return true;
+    }
+    const mediaMatch = /^\/api\/shard\/v1\/media\/([A-Za-z0-9_-]+)\/file$/.exec(url.pathname);
+    if (mediaMatch && grants && contentRoot && ["GET", "HEAD"].includes(request.method)) {
+      const resolved = grants.resolve({ grantId: mediaMatch[1], method: request.method, ticket: url.searchParams.get("ticket") });
+      const asset = await resolveRemuxSourcePath(contentRoot, resolved.source.path);
+      const details = await stat(asset);
+      const headers = { "accept-ranges": "bytes", "cache-control": "private, no-store", "content-type": mimeType(asset), "vary": "Origin" };
+      if (request.headers.origin === resolved.clientOrigin) headers["access-control-allow-origin"] = resolved.clientOrigin;
+      if (request.method === "HEAD") { response.writeHead(200, { ...headers, "content-length": details.size }); response.end(); return true; }
+      const range = request.headers.range;
+      if (!range) { response.writeHead(200, { ...headers, "content-length": details.size }); createReadStream(asset).pipe(response); return true; }
+      const parsed = parseByteRange(range, details.size);
+      if (!parsed.ok) { response.writeHead(416, { ...headers, "content-range": parsed.contentRange }); response.end(); return true; }
+      response.writeHead(206, { ...headers, "content-length": parsed.end - parsed.start + 1, "content-range": `bytes ${parsed.start}-${parsed.end}/${details.size}` });
+      createReadStream(asset, { start: parsed.start, end: parsed.end }).pipe(response);
       return true;
     }
     json(response, 404, { code: "shard_route_not_found", error: "Shard route not found." });
@@ -88,6 +115,27 @@ export const createClusterAdminRoutes = ({ service, pairingClient, federation = 
     service.revokeNode(nodeMatch[1]);
     audit?.recordBestEffort({ actor: { kind: "system" }, eventType: "cluster.node_revoked", outcome: "success", target: { type: "cluster-node", id: nodeMatch[1] } });
     response.writeHead(204); response.end();
+    return true;
+  }
+  return false;
+};
+
+export const createClusterPlaybackRoutes = (playback) => async (request, response, url) => {
+  if (!url.pathname.startsWith("/api/cluster/playback-sessions")) return false;
+  const user = request.nebulaAuth?.user;
+  if (!user || user.role !== "owner") throw Object.assign(new Error("Federated playback currently requires an owner account."), { status: 403, code: "cluster_playback_denied", expose: true });
+  const context = { accountId: user.id, clientOrigin: request.headers.origin ?? null };
+  if (request.method === "POST" && url.pathname === "/api/cluster/playback-sessions") {
+    json(response, 201, await playback.create(await readBody(request, { limit: 64 * 1024 }), context));
+    return true;
+  }
+  const match = /^\/api\/cluster\/playback-sessions\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
+  if (match && request.method === "GET") { json(response, 200, playback.get(match[1], context)); return true; }
+  if (match && request.method === "DELETE") { await playback.release(match[1], context); response.writeHead(204); response.end(); return true; }
+  const failover = /^\/api\/cluster\/playback-sessions\/([A-Za-z0-9_-]+)\/failover$/.exec(url.pathname);
+  if (failover && request.method === "POST") {
+    const body = await readBody(request, { limit: 8 * 1024 });
+    json(response, 200, await playback.failover(failover[1], context, body?.failedNodeId));
     return true;
   }
   return false;

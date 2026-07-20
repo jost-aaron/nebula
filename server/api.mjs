@@ -15,7 +15,7 @@ import { createAccelerationRoutes } from "./transcode/routes.mjs";
 import { createRenditionRoutes } from "./renditions/routes.mjs";
 import { createRenditionPolicyRoutes } from "./renditionPolicy/routes.mjs";
 import { createTailscaleEnrollmentRoutes } from "./tailscaleEnrollment.mjs";
-import { createClusterAdminRoutes } from "./cluster/index.mjs";
+import { createClusterAdminRoutes, createClusterPlaybackRoutes } from "./cluster/index.mjs";
 
 export const createApiHandler = (storage, accountStore, authGuard, options = {}) => {
   const routeHandlers = [
@@ -27,6 +27,7 @@ export const createApiHandler = (storage, accountStore, authGuard, options = {})
     ...(options.renditionPolicy ? [createRenditionPolicyRoutes(options.renditionPolicy, options.audit)] : []),
     ...(options.tailscaleEnrollment ? [createTailscaleEnrollmentRoutes(options.tailscaleEnrollment)] : []),
     ...(options.cluster ? [createClusterAdminRoutes(options.cluster)] : []),
+    ...(options.cluster?.playback ? [createClusterPlaybackRoutes(options.cluster.playback)] : []),
     ...(options.catalog ? [createCatalogRoutes(options.catalog, options.audit)] : []),
     ...(options.mediaLists ? [createMediaListsRoutes(options.mediaLists, options.audit)] : []),
     ...(options.subtitles ? [createSubtitleRoutes(options.subtitles)] : []),

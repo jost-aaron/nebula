@@ -11,10 +11,12 @@ const allowedOrigins = () => new Set([
   ...(process.env.NEBULA_CORS_ALLOWED_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean)
 ]);
 
+export const isApiCorsOriginAllowed = (origin) => typeof origin === "string" && allowedOrigins().has(origin);
+
 export const applyApiCorsHeaders = (request, response) => {
   const origin = request.headers.origin;
 
-  if (!origin || !allowedOrigins().has(origin)) {
+  if (!origin || !isApiCorsOriginAllowed(origin)) {
     return;
   }
 

@@ -37,7 +37,7 @@ classification; reject malformed, oversized, and symlinked snapshots; and
 confirm that endpoint addresses, node keys, and Tailscale user identities do
 not appear in owner API responses.
 
-Media-cluster Phase 1 through 3 tests cover strict protocol shapes, exact Tailscale HTTPS
+Media-cluster Phase 1 through 4 tests cover strict protocol shapes, exact Tailscale HTTPS
 origins, fixed userspace proxy configuration, Ed25519 identity persistence,
 hashed one-time pairing codes, signed body/method/path binding, persistent nonce
 replay rejection, clock windows, revocation, bounded responses, owner/shard
@@ -49,6 +49,16 @@ libraries, client-safe availability projections, and Cinema/Studio responsive
 availability UI contracts. They use generated keys, generated media fixtures,
 and isolated SQLite databases and do not require tailnet credentials.
 
+Phase 4 generated-fixture coverage additionally verifies deterministic
+session-level balancing, stickiness, explainable score reasons, draining and
+cooldown exclusion, account-bound session lookup/release, signed delegated
+grant validation, nonce replay rejection, target/source/revision/method binding,
+opaque ticket validation, bounded fixed-endpoint activation, range media
+responses, content-root containment, exact coordinator-origin CORS, remote
+direct-play activation, rejection of pending remote delivery modes, and
+exact-replica-only failover. These tests do not establish real Tailscale
+reachability or browser codec compatibility.
+
 Static/Compose checks that need no tailnet credentials:
 
 ```sh
@@ -58,6 +68,11 @@ docker compose run --rm dashboard node --test \
   tests/server-cluster-client.test.mjs \
   tests/server-cluster-manifest.test.mjs \
   tests/server-cluster-library-projection.test.mjs \
+  tests/server-cluster-scheduler.test.mjs \
+  tests/server-cluster-grants.test.mjs \
+  tests/server-cluster-grant-client.test.mjs \
+  tests/server-cluster-media-routes.test.mjs \
+  tests/server-cluster-playback-service.test.mjs \
   tests/server-cluster-protocol.test.mjs \
   tests/server-cluster-routes.test.mjs \
   tests/server-cluster-sync.test.mjs \
@@ -117,9 +132,27 @@ in `deployment.md`, use an isolated tailnet/copied Nebula data and verify:
    Sign in as the coordinator owner and confirm Cinema and Studio show one card
    per logical item, a multi-shard badge, and every source in `Available on`.
    Stop one shard and confirm stale/offline availability remains visible. A
-   remote-only item must be browseable without offering playback. Member and
-   guest sessions must remain local-only. Remote playback is a later-phase
-   acceptance criterion.
+   remote-only item with an online direct-play source must offer owner playback;
+   one without a compatible source remains browseable and disabled. Member and
+   guest sessions must remain local-only. Remote generated delivery remains a
+   later-phase capability.
+9. For Phase 4 acceptance, place byte-identical generated media on at least two
+   shards and a different encode of the same logical title on a third. From the
+   coordinator origin, verify remote-only Cinema and Studio original playback,
+   byte-range seeking, exact-origin CORS, short-lived grant behavior, and
+   distribution of separate sessions across healthy replicas. Terminate the
+   selected Cinema and Studio shards and confirm the coordinator chooses only the matching
+   exact fingerprint, resumes near the last browser position, and reports no
+   candidate when only the alternate encode remains. Record resume drift.
+10. Repeat Phase 4 playback over measured Tailscale Direct and DERP-relayed
+    paths. Verify an offline, draining, cooldown, or revoked node receives no new
+    session, grants and URLs do not appear in logs or rendered HTML, and the
+    deployment still rejects Funnel/public access. Remote remux, HLS/transcode,
+    subtitles, fixed-quality renditions, and remote
+    personal playback history are unimplemented and must not be marked passed.
+    Also confirm that revocation blocks new grant activation while an already
+    accepted bearer ticket remains bounded by its expiry or shard restart; an
+    immediate distributed active-ticket revocation mechanism does not exist yet.
 
 Harmless operator CLI smoke checks:
 
