@@ -81,6 +81,16 @@ export interface ClusterSourceFingerprint {
   state: ClusterFingerprintState;
 }
 
+export interface ClusterManifestSubtitle {
+  default: boolean;
+  forced: boolean;
+  format: "webvtt" | "srt";
+  id: string;
+  kind: "sidecar";
+  label: string;
+  language: string | null;
+}
+
 export interface ClusterManifestRendition {
   profileId: RenditionProfileId;
   revision: number;
@@ -102,6 +112,7 @@ export interface ClusterManifestSource {
   renditions: ClusterManifestRendition[];
   sizeBytes: number;
   sourceRevision: number;
+  subtitles: ClusterManifestSubtitle[];
   title: string;
   width: number | null;
   year: number | null;
@@ -147,6 +158,7 @@ export interface ClusterDelegatedMediaGrant {
   protocolVersion: ClusterProtocolVersion;
   sessionId: string;
   sourceRevision: number;
+  subtitleId: string | null;
 }
 
 export interface ClusterPlaybackCandidate {
@@ -165,6 +177,7 @@ export interface ClusterPlaybackRequest {
   federatedItemId: string;
   preferredProfileId?: RenditionProfileId | "auto" | "original";
   startPositionSeconds?: number | null;
+  subtitleId?: string | null;
 }
 
 export interface ClusterPlaybackSession extends PlaybackDeliverySession {

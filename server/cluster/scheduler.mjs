@@ -50,9 +50,12 @@ export const createClusterPlaybackScheduler = ({
       throw error(400, "invalid_cluster_playback_request", "A federated item and client capabilities are required.");
     }
     if (request.preferredProfileId && !PROFILE_IDS.has(request.preferredProfileId)) throw error(400, "invalid_profile", "The requested profile is unsupported.");
+    if (request.subtitleId !== null && request.subtitleId !== undefined && (typeof request.subtitleId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/.test(request.subtitleId))) throw error(400, "invalid_subtitle", "The requested subtitle is invalid.");
     return federation.listPlaybackSources(request.federatedItemId).flatMap((source) => {
       if (excludedNodeIds.has(source.nodeId) || source.nodeState !== "online" || (cooldowns.get(source.nodeId) ?? 0) > now()) return [];
       if (exactReplicaKey !== undefined && source.exactReplicaKey !== exactReplicaKey) return [];
+      const subtitle = request.subtitleId ? source.subtitles.find((track) => track.id === request.subtitleId) : null;
+      if (request.subtitleId && !subtitle) return [];
       const delivery = deliveryFor(source, request);
       if (!delivery) return [];
       const policy = nodePolicy(source.nodeId);
@@ -79,6 +82,7 @@ export const createClusterPlaybackScheduler = ({
         nodeName: policy?.name ?? source.nodeName,
         score,
         sourceRevision: source.sourceRevision,
+        subtitle,
         reasons: [
           { code: delivery.mode === "prebuilt-rendition" ? "PREBUILT_RENDITION" : delivery.decision === "direct-play" ? "DIRECT_PLAY" : delivery.decision === "remux" ? "REMUX" : "LIVE_TRANSCODE", score: delivery.baseScore },
           ...(priorityBonus ? [{ code: "OWNER_PRIORITY", score: priorityBonus }] : []),

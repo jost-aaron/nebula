@@ -80,7 +80,7 @@ export const createFederatedCatalogRepository = (database, { localNodeId = null,
       const id = prior?.id ?? `fsource_${uuid().replaceAll("-", "")}`;
       const metadata = JSON.stringify({
         bitrate: source.bitrate, durationSeconds: source.durationSeconds, externalIds: source.externalIds,
-        height: source.height, renditions: source.renditions, width: source.width
+        height: source.height, renditions: source.renditions, subtitles: source.subtitles, width: source.width
       });
       database.prepare(`INSERT INTO federated_sources
         (id, item_id, edition_id, node_id, local_item_id, local_source_id, source_revision, manifest_revision,
@@ -140,6 +140,7 @@ export const createFederatedCatalogRepository = (database, { localNodeId = null,
           nodeName: source.name,
           nodeState: source.state,
           renditions: Array.isArray(metadata.renditions) ? metadata.renditions : [],
+          subtitles: Array.isArray(metadata.subtitles) ? metadata.subtitles : [],
           sourceRevision: source.source_revision,
           width: metadata.width ?? null
         };
@@ -178,6 +179,7 @@ export const createFederatedCatalogRepository = (database, { localNodeId = null,
         nodeName: source.name,
         nodeState: source.state,
         renditions: Array.isArray(metadata.renditions) ? metadata.renditions : [],
+        subtitles: Array.isArray(metadata.subtitles) ? metadata.subtitles : [],
         sourceRevision: source.source_revision
       };
     });

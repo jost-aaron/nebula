@@ -36,6 +36,7 @@ const source = () => ({
   renditions: [{ profileId: "720p", revision: 1, state: "ready" }],
   sizeBytes: 10_000,
   sourceRevision: 2,
+  subtitles: [{ default: true, forced: false, format: "webvtt", id: "sub_fixture_01", kind: "sidecar", label: "English", language: "en" }],
   title: "Fixture",
   width: 1920,
   year: 2026
@@ -67,6 +68,8 @@ test("manifest contracts are path-free, revision-bound, and bounded", () => {
   const manifest = { complete: true, cursor: null, manifestRevision: 4, nodeId: node().nodeId, protocolVersion: 1, sources: [source()] };
   assert.equal(validateClusterManifestPage(manifest).sources[0].title, "Fixture");
   assert.throws(() => validateClusterManifestPage({ ...manifest, sources: [{ ...source(), contentPath: "Movies/Fixture.mkv" }] }), (error) => error.code === "unknown_field");
+  assert.throws(() => validateClusterManifestPage({ ...manifest, sources: [{ ...source(), subtitles: [{ ...source().subtitles[0], path: "/private/movie.vtt" }] }] }), (error) => error.code === "unknown_field");
+  assert.throws(() => validateClusterManifestPage({ ...manifest, sources: [{ ...source(), subtitles: Array.from({ length: 33 }, () => source().subtitles[0]) }] }), (error) => error.code === "manifest_limit");
   assert.throws(() => validateClusterManifestPage({ ...manifest, sources: [{ ...source(), fingerprint: { ...source().fingerprint, sourceRevision: 1 } }] }), (error) => error.code === "revision_mismatch");
   assert.throws(() => validateClusterManifestPage({ ...manifest, sources: Array.from({ length: CLUSTER_MANIFEST_PAGE_LIMIT + 1 }, source) }), (error) => error.code === "manifest_limit");
 });
@@ -91,11 +94,12 @@ test("delegated grants are source-scoped, read-only, and short lived", () => {
     deliveryId: null, deliveryProtocol: "file", deviceId: "device_fixture_01", expiresAt: "2026-07-19T12:15:00.000Z", federatedItemId: "federated_item_01",
     grantId: "grant_fixture_01", issuedAt: "2026-07-19T12:00:00.000Z", localSourceId: "source_fixture_01",
     methods: ["GET", "HEAD"], nodeId: node().nodeId, nonce: "nonce_fixture_01", profileId: "720p",
-    protocolVersion: 1, sessionId: "session_fixture_01", sourceRevision: 2
+    protocolVersion: 1, sessionId: "session_fixture_01", sourceRevision: 2, subtitleId: "sub_fixture_01"
   };
   assert.equal(validateClusterDelegatedMediaGrant(grant).profileId, "720p");
   assert.throws(() => validateClusterDelegatedMediaGrant({ ...grant, methods: ["DELETE"] }), (error) => error.code === "invalid_method");
   assert.throws(() => validateClusterDelegatedMediaGrant({ ...grant, assetPrefix: "/api/files/" }), (error) => error.code === "invalid_path");
   assert.throws(() => validateClusterDelegatedMediaGrant({ ...grant, clientOrigin: "https://example.com/path" }), (error) => error.code === "invalid_origin");
   assert.throws(() => validateClusterDelegatedMediaGrant({ ...grant, expiresAt: "2026-07-19T13:00:00.000Z" }), (error) => error.code === "invalid_expiry");
+  assert.throws(() => validateClusterDelegatedMediaGrant({ ...grant, subtitleId: "/private/movie.vtt" }), (error) => error.code === "invalid_id");
 });

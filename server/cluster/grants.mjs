@@ -27,7 +27,7 @@ export const createClusterGrantService = ({
   };
 
   return {
-    issue({ accountId, candidate, clientOrigin = null, delivery = null, deviceId, federatedItemId, profileId = "auto", sessionId }) {
+    issue({ accountId, candidate, clientOrigin = null, delivery = null, deviceId, federatedItemId, profileId = "auto", sessionId, subtitleId = null }) {
       const issuedAt = now();
       const grantId = `grant_${uuid().replaceAll("-", "")}`;
       const identity = trust.identity();
@@ -55,7 +55,8 @@ export const createClusterGrantService = ({
         profileId,
         protocolVersion: CLUSTER_PROTOCOL_VERSION,
         sessionId,
-        sourceRevision: candidate.sourceRevision
+        sourceRevision: candidate.sourceRevision,
+        subtitleId
       });
       return { envelope: trust.signRequest({ body: grant, method: "POST", path: GRANT_PATH }), grant };
     },

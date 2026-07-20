@@ -22,7 +22,7 @@ const metadataYear = (value) => {
   } catch { return null; }
 };
 
-export const createClusterManifestService = ({ database, nodeId } = {}) => {
+export const createClusterManifestService = ({ database, nodeId, listSubtitles = null } = {}) => {
   if (!database?.prepare) throw new TypeError("A SQLite database is required.");
   if (typeof nodeId !== "string") throw new TypeError("nodeId is required.");
   const externalIds = database.prepare(`SELECT provider, provider_item_id AS providerItemId, media_type AS mediaType
@@ -31,7 +31,7 @@ export const createClusterManifestService = ({ database, nodeId } = {}) => {
     FROM media_renditions WHERE source_id = ? AND state IN ('pending', 'ready', 'failed') ORDER BY profile_id`);
 
   return {
-    page({ cursor = null, limit = CLUSTER_MANIFEST_PAGE_LIMIT } = {}) {
+    async page({ cursor = null, limit = CLUSTER_MANIFEST_PAGE_LIMIT } = {}) {
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > CLUSTER_MANIFEST_PAGE_LIMIT) throw error(400, "manifest_limit", `Manifest page limit must be between 1 and ${CLUSTER_MANIFEST_PAGE_LIMIT}.`);
       const state = database.prepare("SELECT revision FROM cluster_local_manifest_state WHERE singleton = 1").get();
       const decoded = decodeCursor(cursor);
@@ -48,7 +48,7 @@ export const createClusterManifestService = ({ database, nodeId } = {}) => {
         WHERE s.id > ? ORDER BY s.id LIMIT ?`).all(after, limit + 1);
       const pageRows = rows.slice(0, limit);
       const complete = rows.length <= limit;
-      const sources = pageRows.map((row) => ({
+      const sources = await Promise.all(pageRows.map(async (row) => ({
         availability: row.availability === "available" ? "available" : "tombstone",
         bitrate: row.bitrate ?? null,
         durationSeconds: row.duration_seconds ?? null,
@@ -66,10 +66,13 @@ export const createClusterManifestService = ({ database, nodeId } = {}) => {
         renditions: renditions.all(row.id).map((entry) => ({ ...entry })),
         sizeBytes: row.size_bytes,
         sourceRevision: row.content_revision,
+        subtitles: row.media_kind === "video" && listSubtitles
+          ? await listSubtitles({ itemId: row.item_id, sourceId: row.id }, row.content_revision)
+          : [],
         title: row.title,
         width: row.width ?? null,
         year: metadataYear(row.metadata_json)
-      }));
+      })));
       return validateClusterManifestPage({
         complete,
         cursor: complete ? null : encodeCursor({ after: pageRows.at(-1).id, revision: state.revision }),

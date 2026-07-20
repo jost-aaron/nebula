@@ -38,10 +38,10 @@ const markerInfo = (mediaBase, subtitleBase) => {
 
 export const createSubtitleService = ({ database, contentRoot, resolveSource, probeReader, canAccessItem, now = () => new Date().toISOString() }) => {
   const ephemeral = new Map();
-  const principalKey = (principal) => principal?.type === "user" ? `user:${principal.userId}` : principal?.type === "guest" ? `guest:${principal.sessionId}` : null;
+  const principalKey = (principal) => principal?.type === "user" ? `user:${principal.userId}` : principal?.type === "guest" ? `guest:${principal.sessionId}` : principal?.type === "service" ? "service" : null;
   const requireAccess = (ids, principal) => {
     const authorizationPrincipal = principal?.type === "guest" ? { ...principal, kind: "guest" } : principal;
-    if (!principalKey(principal) || !canAccessItem(authorizationPrincipal, ids.itemId)) throw httpError(404, "Media item not found.", "item_not_found");
+    if (!principalKey(principal) || (principal?.type !== "service" && !canAccessItem(authorizationPrincipal, ids.itemId))) throw httpError(404, "Media item not found.", "item_not_found");
     const source = resolveSource(ids, authorizationPrincipal);
     if (!source) throw httpError(404, "Media source not found.", "source_not_found");
     return source;
@@ -91,6 +91,20 @@ export const createSubtitleService = ({ database, contentRoot, resolveSource, pr
   };
   return {
     discover,
+    async manifestTracks(ids, sourceRevision) {
+      const source = resolveSource(ids, { type: "service" });
+      if (!source || source.contentRevision !== sourceRevision) throw httpError(404, "Media source not found.", "source_not_found");
+      const tracks = await discover(ids, { type: "service" });
+      return tracks.filter((track) => track.kind === "sidecar").slice(0, 32).map(({ _path, _contentType, ...track }) => ({
+        default: track.default,
+        forced: track.forced,
+        format: track.format,
+        id: track.id,
+        kind: track.kind,
+        label: track.label.slice(0, 80),
+        language: track.language
+      }));
+    },
     getPreference,
     setPreference(input, principal) {
       if (principal?.type !== "user") throw httpError(403, "Guests cannot persist subtitle preferences.", "guest_non_persistent");

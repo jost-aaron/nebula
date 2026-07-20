@@ -74,7 +74,7 @@ export const completeCinemaDelivery = (id: string) => apiFetch(`/api/playback/de
   if (!response.ok && response.status !== 404) throw new Error(`Delivery completion failed: ${response.status}`);
 });
 
-export const createClusterCinemaDelivery = (body: { capabilities: PlaybackDeliveryCreateRequest["capabilities"]; federatedItemId: string; preferredProfileId: string; startPositionSeconds?: number | null }) =>
+export const createClusterCinemaDelivery = (body: { capabilities: PlaybackDeliveryCreateRequest["capabilities"]; federatedItemId: string; preferredProfileId: string; startPositionSeconds?: number | null; subtitleId?: string | null }) =>
   apiJson<ClusterPlaybackCreateResponse>("/api/cluster/playback-sessions", {
     body: JSON.stringify(body), headers: { "content-type": "application/json" }, method: "POST"
   });

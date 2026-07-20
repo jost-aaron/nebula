@@ -29,7 +29,7 @@ const source = ({ digest, externalIds = [], localItemId, localSourceId, title = 
 });
 const page = (nodeId, sources) => ({ complete: true, cursor: null, manifestRevision: 1, nodeId, protocolVersion: 1, sources });
 
-test("manifest pagination is bounded, path-free, and revision pinned", () => {
+test("manifest pagination is bounded, path-free, and revision pinned", async () => {
   const database = setup();
   const ids = ["scan_fixture_0001", "item_fixture_001", "source_fixture_001", "item_fixture_002", "source_fixture_002"];
   const catalog = createCatalogRepository(database, { now: () => now, uuid: () => ids.shift() });
@@ -40,14 +40,14 @@ test("manifest pagination is bounded, path-free, and revision pinned", () => {
     { fileKey: "1:2", itemType: "movie", mediaKind: "video", modifiedMs: 1, path: "Secret/B.mp4", size: 20, title: "B" }
   ] });
   const manifest = createClusterManifestService({ database, nodeId: nodeIds[0] });
-  const first = manifest.page({ limit: 1 });
+  const first = await manifest.page({ limit: 1 });
   assert.equal(first.complete, false);
   assert.equal(first.sources.length, 1);
   assert.doesNotMatch(JSON.stringify(first), /Secret|contentPath|not-exposed/);
-  const second = manifest.page({ cursor: first.cursor, limit: 1 });
+  const second = await manifest.page({ cursor: first.cursor, limit: 1 });
   assert.equal(second.complete, true);
   database.prepare("UPDATE media_items SET title = 'Changed' WHERE id = ?").run(first.sources[0].localItemId);
-  assert.throws(() => manifest.page({ cursor: first.cursor, limit: 1 }), (error) => error.code === "cursor_lost");
+  await assert.rejects(() => manifest.page({ cursor: first.cursor, limit: 1 }), (error) => error.code === "cursor_lost");
   database.close();
 });
 

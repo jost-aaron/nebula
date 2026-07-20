@@ -81,8 +81,10 @@ const clusterService = clusterEnabled ? createClusterTrustService({
   role: process.env.NEBULA_CLUSTER_ROLE ?? "hybrid"
 }) : null;
 const catalogRepository = createCatalogRepository(database);
+let clusterSubtitleManifest = async () => [];
 const localClusterManifest = clusterService ? createClusterManifestService({
-  database, nodeId: clusterService.identity().descriptor.nodeId
+  database, nodeId: clusterService.identity().descriptor.nodeId,
+  listSubtitles: (...args) => clusterSubtitleManifest(...args)
 }) : null;
 const federatedCatalog = clusterService ? createFederatedCatalogRepository(database, {
   localNodeId: clusterService.identity().descriptor.nodeId
@@ -111,7 +113,7 @@ const { root: catalogRoot } = bootstrapSharedContentRoot(catalogRepository, { co
 const scanCatalog = async () => {
   const scan = await scanLocalRoot({ absoluteRoot: storage.contentRoot, repository: catalogRepository, rootId: catalogRoot.id });
   await importLegacyCinemaMetadata({ metadataPath: storage.cinemaMetadataPath, repository: catalogRepository, rootId: catalogRoot.id });
-  syncLocalProjection();
+  await syncLocalProjection();
   return scan;
 };
 const playbackRepository = createPlaybackRepository({ db: database });
@@ -141,6 +143,7 @@ const subtitleService = createSubtitleService({
   database, contentRoot: storage.contentRoot, resolveSource: resolveCatalogSource, probeReader,
   canAccessItem: (principal, itemId) => libraryPermissions.canAccessItem(principal, itemId)
 });
+clusterSubtitleManifest = (ids, revision) => subtitleService.manifestTracks(ids, revision);
 const playbackPlanner = createPlaybackPlanner({ resolveMedia: async (ids, principal) => {
   const source = await resolveCatalogSource(ids, principal);
   if (!source) return null;
@@ -179,10 +182,11 @@ const resolveClusterCatalogSource = ({ itemId, sourceId }) => {
     || source.rootId !== catalogRoot.id || item.libraryId !== catalogRoot.library_id) return null;
   return source;
 };
-const clusterDeliveryPlanner = clusterService ? createPlaybackPlanner({ resolveMedia: async (ids) => {
+const clusterDeliveryPlanner = clusterService ? createPlaybackPlanner({ resolveMedia: async (ids, principal) => {
   const source = resolveClusterCatalogSource(ids);
   if (!source) return null;
-  return { item: catalogRepository.getItem(ids.itemId), probe: probeReader.get(ids.sourceId), source, subtitleSelection: null };
+  const subtitleSelection = await subtitleService.selection(ids, { type: "service" }, principal?.subtitleId ?? null);
+  return { item: catalogRepository.getItem(ids.itemId), probe: probeReader.get(ids.sourceId), source, subtitleSelection };
 } }) : null;
 const clusterRemuxService = clusterService ? createRemuxService({
   contentRoot: storage.contentRoot,
@@ -197,6 +201,7 @@ const clusterTranscodeService = clusterService ? createTranscodeService({
   resolveSource: resolveClusterCatalogSource,
   concurrency: 1,
   renditionStore,
+  resolveSubtitle: ({ itemId, sourceId, subtitleId }) => subtitleService.resolveBurnIn({ itemId, sourceId }, subtitleId, { type: "service" }),
   shouldPersistRendition: ({ origin }) => origin !== "interactive" || renditionPolicyRepository.get().cacheInteractive
 }) : null;
 if (clusterService) await Promise.all([clusterRemuxService.initialize(), clusterTranscodeService.initialize()]);
@@ -211,7 +216,8 @@ const clusterDelivery = clusterService ? createDeliveryService({
 const clusterShardDelivery = clusterService ? createClusterShardDeliveryService({
   catalog: catalogRepository,
   delivery: clusterDelivery,
-  localNodeId: clusterService.identity().descriptor.nodeId
+  localNodeId: clusterService.identity().descriptor.nodeId,
+  subtitles: subtitleService
 }) : null;
 const clusterGrantService = clusterService ? createClusterGrantService({
   catalog: catalogRepository,
@@ -224,7 +230,8 @@ const clusterIngress = clusterService ? createClusterIngressRoutes({
   grants: clusterGrantService,
   manifest: localClusterManifest,
   service: clusterService,
-  shardDelivery: clusterShardDelivery
+  shardDelivery: clusterShardDelivery,
+  subtitles: subtitleService
 }) : null;
 const clusterPlayback = clusterService ? createClusterPlaybackService({
   client: clusterGrantClient,
@@ -262,9 +269,9 @@ const jobsWorker = createJobsWorker({
       }
       return scan;
     },
-    probeSource: async ({ sourceId }) => { const result = await probeService.probeSource(sourceId); syncLocalProjection(); return result; },
-    fingerprintSource: async ({ sourceId }, context) => { const result = await fingerprintService.fingerprintSource(sourceId, context); syncLocalProjection(); return result; },
-    buildRendition: async (payload, context) => { const result = await renditionService.build(payload, context); syncLocalProjection(); return result; },
+    probeSource: async ({ sourceId }) => { const result = await probeService.probeSource(sourceId); await syncLocalProjection(); return result; },
+    fingerprintSource: async ({ sourceId }, context) => { const result = await fingerprintService.fingerprintSource(sourceId, context); await syncLocalProjection(); return result; },
+    buildRendition: async (payload, context) => { const result = await renditionService.build(payload, context); await syncLocalProjection(); return result; },
     refreshMetadata: async () => ({ skipped: "metadata orchestration pending" }),
     cacheArtwork: async () => ({ skipped: "artwork cache pending" }),
     cleanup: (payload, context) => payload?.scope === "renditions"

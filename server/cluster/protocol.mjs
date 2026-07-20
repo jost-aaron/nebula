@@ -14,6 +14,7 @@ const MEDIA_KINDS = new Set(["video", "audio"]);
 const FINGERPRINT_ALGORITHMS = new Set(["sha256", "blake3"]);
 const FINGERPRINT_STATES = new Set(["pending", "ready", "failed"]);
 const RENDITION_STATES = new Set(["pending", "ready", "failed"]);
+const SUBTITLE_FORMATS = new Set(["webvtt", "srt"]);
 const MANIFEST_AVAILABILITY = new Set(["available", "tombstone"]);
 const PROFILE_IDS = new Set(["auto", "original", "240p", "360p", "480p", "720p", "1080p"]);
 
@@ -150,10 +151,20 @@ const validateRendition = (input, index) => {
   integer(value.revision, `renditions[${index}].revision`, { min: 1 });
   if (!RENDITION_STATES.has(value.state)) fail("invalid_rendition", "rendition state is unsupported.");
 };
+const validateManifestSubtitle = (input, index) => {
+  const label = `subtitles[${index}]`;
+  const value = plainObject(input, label);
+  exactKeys(value, new Set(["default", "forced", "format", "id", "kind", "label", "language"]), label);
+  id(value.id, `${label}.id`);
+  if (value.kind !== "sidecar" || !SUBTITLE_FORMATS.has(value.format)) fail("invalid_subtitle", `${label} is not an eligible sidecar subtitle.`);
+  if (value.language !== null) requiredString(value.language, `${label}.language`, 32);
+  requiredString(value.label, `${label}.label`, 80);
+  if (typeof value.forced !== "boolean" || typeof value.default !== "boolean") fail("invalid_subtitle", `${label} flags are invalid.`);
+};
 const validateManifestSource = (input, index) => {
   const label = `sources[${index}]`;
   const value = plainObject(input, label);
-  exactKeys(value, new Set(["availability", "bitrate", "durationSeconds", "externalIds", "fingerprint", "height", "itemKind", "localItemId", "localSourceId", "mediaKind", "removedAt", "renditions", "sizeBytes", "sourceRevision", "title", "width", "year"]), label);
+  exactKeys(value, new Set(["availability", "bitrate", "durationSeconds", "externalIds", "fingerprint", "height", "itemKind", "localItemId", "localSourceId", "mediaKind", "removedAt", "renditions", "sizeBytes", "sourceRevision", "subtitles", "title", "width", "year"]), label);
   id(value.localItemId, `${label}.localItemId`);
   id(value.localSourceId, `${label}.localSourceId`);
   if (!ITEM_KINDS.has(value.itemKind)) fail("invalid_media", `${label}.itemKind is unsupported.`);
@@ -173,6 +184,10 @@ const validateManifestSource = (input, index) => {
   value.externalIds.forEach(validateExternalIdentity);
   if (!Array.isArray(value.renditions) || value.renditions.length > 16) fail("manifest_limit", `${label}.renditions exceeds its limit.`);
   value.renditions.forEach(validateRendition);
+  if (value.subtitles !== undefined) {
+    if (!Array.isArray(value.subtitles) || value.subtitles.length > 32) fail("manifest_limit", `${label}.subtitles exceeds its limit.`);
+    value.subtitles.forEach(validateManifestSubtitle);
+  }
   validateFingerprint(value.fingerprint, value.sourceRevision);
 };
 
@@ -205,10 +220,11 @@ export const validateClusterSignedEnvelope = (input) => {
 
 export const validateClusterDelegatedMediaGrant = (input) => {
   const value = plainObject(input, "delegated media grant");
-  exactKeys(value, new Set(["accountId", "assetPrefix", "clientOrigin", "clusterId", "deliveryId", "deliveryProtocol", "deviceId", "expiresAt", "federatedItemId", "grantId", "issuedAt", "localSourceId", "methods", "nodeId", "nonce", "profileId", "protocolVersion", "sessionId", "sourceRevision"]), "delegated media grant");
+  exactKeys(value, new Set(["accountId", "assetPrefix", "clientOrigin", "clusterId", "deliveryId", "deliveryProtocol", "deviceId", "expiresAt", "federatedItemId", "grantId", "issuedAt", "localSourceId", "methods", "nodeId", "nonce", "profileId", "protocolVersion", "sessionId", "sourceRevision", "subtitleId"]), "delegated media grant");
   protocolVersion(value.protocolVersion);
   for (const key of ["accountId", "clusterId", "deviceId", "federatedItemId", "grantId", "localSourceId", "nodeId", "sessionId"]) id(value[key], key);
   if (value.deliveryId !== null) id(value.deliveryId, "deliveryId");
+  if (value.subtitleId !== null && value.subtitleId !== undefined) id(value.subtitleId, "subtitleId");
   if (!new Set(["file", "hls"]).has(value.deliveryProtocol) || (value.deliveryId === null && value.deliveryProtocol !== "file")) fail("invalid_delivery", "The delegated delivery scope is invalid.");
   if (!Array.isArray(value.methods) || value.methods.length === 0 || value.methods.length > 2 || value.methods.some((entry) => !MEDIA_METHODS.has(entry))) fail("invalid_method", "methods may contain only GET and HEAD.");
   if (typeof value.assetPrefix !== "string" || !/^\/api\/shard\/v1\/media\/[A-Za-z0-9_-]+\/$/.test(value.assetPrefix)) fail("invalid_path", "assetPrefix must be a scoped shard media prefix.");

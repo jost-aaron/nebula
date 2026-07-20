@@ -17,6 +17,7 @@ export const createClusterIngressRoutes = (options) => {
   const grants = options?.grants ?? null;
   const shardDelivery = options?.shardDelivery ?? null;
   const contentRoot = options?.contentRoot ?? null;
+  const subtitles = options?.subtitles ?? null;
   return async (request, response, url) => {
   if (!url.pathname.startsWith("/api/shard/v1/")) return false;
   try {
@@ -38,7 +39,7 @@ export const createClusterIngressRoutes = (options) => {
         throw Object.assign(new Error("Manifest request is invalid."), { status: 400, code: "invalid_manifest_request", expose: true });
       }
       service.verifyRequest(body.envelope, payload, { method: request.method, path: url.pathname });
-      const page = manifest.page(payload);
+      const page = await manifest.page(payload);
       json(response, 200, { envelope: service.signRequest({ body: page, method: "POST", path: url.pathname }), payload: page });
       return true;
     }
@@ -61,13 +62,17 @@ export const createClusterIngressRoutes = (options) => {
       });
       return true;
     }
-    const mediaMatch = /^\/api\/shard\/v1\/media\/([A-Za-z0-9_-]+)\/(file|hls\/([^/]+))$/.exec(url.pathname);
+    const mediaMatch = /^\/api\/shard\/v1\/media\/([A-Za-z0-9_-]+)\/(file|hls\/([^/]+)|subtitle\/([A-Za-z0-9_-]+))$/.exec(url.pathname);
     if (mediaMatch && grants && contentRoot && ["GET", "HEAD"].includes(request.method)) {
       const resolved = grants.resolve({ grantId: mediaMatch[1], method: request.method, ticket: url.searchParams.get("ticket") });
       let asset;
       let explicitType = null;
       let playlist = false;
-      if (resolved.delivery) {
+      if (mediaMatch[4]) {
+        if (!subtitles || !resolved.grant.subtitleId || mediaMatch[4] !== resolved.grant.subtitleId) throw Object.assign(new Error("Subtitle asset not found."), { status: 404, code: "subtitle_not_found", expose: true });
+        const result = await subtitles.resolveAsset({ itemId: resolved.source.itemId, sourceId: resolved.source.id }, mediaMatch[4], { type: "service" });
+        asset = result.path; explicitType = result.contentType;
+      } else if (resolved.delivery) {
         if (!shardDelivery) throw Object.assign(new Error("Shard delivery is unavailable."), { status: 404, code: "delegated_media_not_found", expose: true });
         if (mediaMatch[2] === "file") {
           const result = await shardDelivery.resolveFile(resolved.delivery);

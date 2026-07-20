@@ -534,7 +534,7 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: C
         ${entry.sourceId && entry.tmdbId ? `<button class="cinema-edit-command" type="button" data-cinema-action="tmdb-refresh">${renderCinemaIcon("RefreshCw")} Refresh TMDB Metadata</button>` : ""}
         ${renderFederatedAvailability(entry)}
         ${entry.sourceId ? renderServerCard(currentServerInfo(), true) : ""}
-        ${entry.sourceId ? renderPlaybackSettings(entry, subtitles, preference) : ""}
+        ${entry.sourceId || entry.federation ? renderPlaybackSettings(entry, subtitles, preference) : ""}
         <div class="cinema-meta-list">
           <span>Type <strong>Video</strong></span>
           ${entry.episode ? `<span>Episode <strong>S${entry.episode.seasonNumber} E${entry.episode.episodeNumber}</strong></span><span>Air date <strong>${escapeHtml(entry.episode.airDate || "Not set")}</strong></span>` : ""}
@@ -924,7 +924,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     return {
       audioCodecs: mp4 ? ["aac"] : [], containers: mp4 ? ["mp4"] : [], deviceId,
       maxAudioChannels: null, maxBitrate: null, maxHeight: null, maxWidth: null,
-      subtitleFormats: [], supportsHls: hls, videoCodecs: mp4 ? ["h264"] : []
+      subtitleFormats: ["webvtt"], supportsHls: hls, videoCodecs: mp4 ? ["h264"] : []
     };
   };
 
@@ -947,6 +947,11 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       );
 
   const thumbnailCache = new Map<string, Promise<string | null>>();
+  const remoteSubtitleState = (entry: CinemaEntry): SubtitleTracksResponse => {
+    const tracks = entry.federation?.sources.flatMap((source) => source.subtitles ?? []) ?? [];
+    const unique = [...new Map(tracks.map((track) => [track.id, track])).values()];
+    return { reason: "SUBTITLES_OFF", selectedSubtitleId: null, tracks: unique };
+  };
 
   const captureVideoThumbnail = (entry: CinemaEntry, time: number, width: number, height: number) => {
     const cacheKey = `${entry.path}:${Math.round(time * 10) / 10}:${width}x${height}`;
@@ -1110,9 +1115,18 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     renderFooter();
     hydratePosters();
     const subtitleSelect = content.querySelector<HTMLSelectElement>("[data-cinema-subtitle-select]");
-    if (subtitleSelect && selected?.id && selected.sourceId) subtitleSelect.addEventListener("change", async () => {
+    if (subtitleSelect && selected?.id && (selected.sourceId || selected.federation)) subtitleSelect.addEventListener("change", async () => {
       subtitleSelect.disabled = true;
-      try { await selectSubtitleTrack(selected!.id!, selected!.sourceId!, subtitleSelect.value || null); subtitleState.set(selected!.id!, await listSubtitleTracks(selected!.id!, selected!.sourceId!)); render(); }
+      try {
+        if (selected!.sourceId) {
+          await selectSubtitleTrack(selected!.id!, selected!.sourceId, subtitleSelect.value || null);
+          subtitleState.set(selected!.id!, await listSubtitleTracks(selected!.id!, selected!.sourceId));
+        } else {
+          const state = subtitleState.get(selected!.id!);
+          if (state) subtitleState.set(selected!.id!, { ...state, selectedSubtitleId: subtitleSelect.value || null, reason: subtitleSelect.value ? "SUBTITLE_EXPLICIT" : "SUBTITLES_OFF" });
+        }
+        render();
+      }
       catch { subtitleSelect.title = "Subtitle selection is unavailable; video playback is unaffected."; subtitleSelect.disabled = false; }
     });
     content.querySelector<HTMLFormElement>("[data-cinema-subtitle-preferences]")?.addEventListener("submit", async (event) => {
@@ -1161,6 +1175,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     render();
     if (entry.sourceId) void loadCatalogDetail(entry);
     if (entry.id && entry.sourceId) void listSubtitleTracks(entry.id, entry.sourceId).then((state) => { subtitleState.set(entry.id!, state); if (selected?.id === entry.id) render(); }).catch(() => {});
+    else if (entry.id && entry.federation) subtitleState.set(entry.id, remoteSubtitleState(entry));
     if (!subtitlePreference) void getSubtitlePreference().then((value) => { subtitlePreference = value; if (selected?.id === entry.id) render(); }).catch(() => {});
   };
 
@@ -1189,6 +1204,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       let pendingDeliveryId: string | null = null;
       let pendingDeliveryIsCluster = false;
       let hlsPlayback: HlsPlaybackHandle | null = null;
+      let remoteSubtitleUrl: string | null = null;
       let requestGeneration = 0;
       const generation = ++deliveryGeneration;
       let ended = false;
@@ -1349,12 +1365,12 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         player.querySelectorAll("track").forEach((track) => track.remove());
         const state = playingEntry.id ? subtitleState.get(playingEntry.id) : undefined;
         const track = state?.tracks.find((candidate) => candidate.id === subtitleId);
-        if (!track || track.kind !== "sidecar" || !playingEntry.id || !playingEntry.sourceId) return;
+        if (!track || track.kind !== "sidecar" || !playingEntry.id || (!playingEntry.sourceId && !remoteSubtitleUrl)) return;
         const node = document.createElement("track");
         node.kind = "subtitles";
         node.label = track.label;
         node.srclang = track.language ?? "und";
-        node.src = subtitleAssetUrl(playingEntry.id, playingEntry.sourceId, track.id);
+        node.src = playingEntry.sourceId ? subtitleAssetUrl(playingEntry.id, playingEntry.sourceId, track.id) : remoteSubtitleUrl!;
         node.default = true;
         player.append(node);
         node.addEventListener("load", () => { if (node.track) node.track.mode = "showing"; });
@@ -1363,8 +1379,15 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       attachSubtitle(playerSubtitle?.value || null);
       playerSubtitle?.addEventListener("change", async () => {
         try {
-          await selectSubtitleTrack(playingEntry.id!, playingEntry.sourceId!, playerSubtitle.value || null);
-          attachSubtitle(playerSubtitle.value || null);
+          const subtitleId = playerSubtitle.value || null;
+          if (playingEntry.sourceId) {
+            await selectSubtitleTrack(playingEntry.id!, playingEntry.sourceId, subtitleId);
+            attachSubtitle(subtitleId);
+          } else {
+            const state = subtitleState.get(playingEntry.id!);
+            if (state) subtitleState.set(playingEntry.id!, { ...state, selectedSubtitleId: subtitleId, reason: subtitleId ? "SUBTITLE_EXPLICIT" : "SUBTITLES_OFF" });
+            await prepareDelivery(qualityPreference, player.currentTime, true);
+          }
           const subtitleLabel = content.querySelector<HTMLElement>("[data-cinema-subtitle-label]");
           if (subtitleLabel) subtitleLabel.textContent = playerSubtitle.selectedOptions[0]?.textContent || "Off";
           const subtitleMenu = content.querySelector<HTMLElement>("[data-cinema-subtitle-menu]");
@@ -1478,6 +1501,13 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         hlsPlayback?.destroy();
         hlsPlayback = null;
         const source = apiUrl(created.session.deliveryUrl);
+        remoteSubtitleUrl = null;
+        const selectedSubtitleId = playerSubtitle?.value || null;
+        if (!playingEntry.sourceId && selectedSubtitleId && created.plan.output.subtitle?.delivery === "sidecar") {
+          const scoped = new URL(source, window.location.href);
+          scoped.pathname = `${scoped.pathname.slice(0, scoped.pathname.lastIndexOf("/") + 1)}subtitle/${encodeURIComponent(selectedSubtitleId)}`;
+          remoteSubtitleUrl = scoped.href;
+        }
         if (created.plan.output.protocol === "hls") {
           hlsPlayback = createHlsPlayback({
             manifestUrl: source,
@@ -1489,6 +1519,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
           player.src = source;
           player.load();
         }
+        attachSubtitle(selectedSubtitleId);
         seekWhenReady(targetPosition);
         if (shouldPlay) void player.play().catch(() => setStatus("Ready. Press Play to start playback."));
       };
@@ -1528,7 +1559,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         setStatus(switching ? `Preparing ${qualityResultLabel(preference)}…` : "Preparing compatible playback…");
         try {
           const clusterCreated = remote
-            ? await createClusterCinemaDelivery({ capabilities: deliveryCapabilities(player), federatedItemId: playingEntry.id, preferredProfileId: qualityValue(preference), startPositionSeconds: targetPosition })
+            ? await createClusterCinemaDelivery({ capabilities: deliveryCapabilities(player), federatedItemId: playingEntry.id, preferredProfileId: qualityValue(preference), startPositionSeconds: targetPosition, subtitleId: playerSubtitle?.value || null })
             : null;
           const created = clusterCreated ?? await createCinemaDelivery({ capabilities: deliveryCapabilities(player), itemId: playingEntry.id, quality: preference, sourceId: playingEntry.sourceId!, startPositionSeconds: targetPosition });
           pendingDeliveryId = created.session.id;

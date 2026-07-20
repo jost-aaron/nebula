@@ -18,7 +18,19 @@ const source = (nodeId, overrides = {}) => ({
   nodeState: "online",
   renditions: [],
   sourceRevision: 1,
+  subtitles: [],
   ...overrides
+});
+
+test("scheduler selects only a source advertising the requested opaque subtitle", () => {
+  const subtitle = { default: true, forced: false, format: "webvtt", id: "sub_english_fixture", kind: "sidecar", label: "English", language: "en" };
+  const sources = [source("node_alpha"), source("node_bravo", { subtitles: [subtitle] })];
+  const scheduler = createClusterPlaybackScheduler({ federation: { listPlaybackSources: () => sources }, now: () => 1_000, uuid: () => "00000000-0000-4000-8000-000000000001" });
+  const selected = scheduler.create(request({ subtitleId: subtitle.id }), { accountId: "account_fixture_01" });
+  assert.equal(selected.session.candidate.nodeId, "node_bravo");
+  assert.equal(selected.internal.candidate.subtitle.id, subtitle.id);
+  assert.throws(() => scheduler.create(request({ subtitleId: "sub_missing_fixture" }), { accountId: "account_fixture_02" }), { code: "cluster_source_unavailable" });
+  assert.doesNotMatch(JSON.stringify(selected.session), /localSourceId|subtitle.*path/);
 });
 
 test("scheduler balances sessions, stays sticky, and explains its choice", () => {

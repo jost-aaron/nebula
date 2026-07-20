@@ -32,7 +32,7 @@ test("coordinator sync authenticates both directions and applies a bounded manif
   const manifest = createClusterManifestService({ database: shard.database, nodeId: shard.trust.identity().descriptor.nodeId });
   const client = { page: async ({ envelope, payload }) => {
     shard.trust.verifyRequest(envelope, payload, { method: "POST", path: "/api/shard/v1/manifest" });
-    const response = manifest.page(payload);
+    const response = await manifest.page(payload);
     return { envelope: shard.trust.signRequest({ body: response, method: "POST", path: "/api/shard/v1/manifest" }), payload: response };
   } };
   const federation = createFederatedCatalogRepository(coordinator.database);

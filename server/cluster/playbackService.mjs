@@ -61,7 +61,8 @@ export const createClusterPlaybackService = ({ scheduler, grants, client, delive
       deviceId: scheduled.internal.request.capabilities.deviceId,
       federatedItemId: scheduled.internal.federatedItemId,
       profileId: scheduled.internal.request.preferredProfileId ?? "auto",
-      sessionId: scheduled.internal.id
+      sessionId: scheduled.internal.id,
+      subtitleId: scheduled.internal.request.subtitleId ?? null
     });
     const activated = await client.activate({ endpoint: candidate.endpoint, ...signed });
     const protocol = delivery?.output?.protocol ?? "file";
@@ -109,7 +110,8 @@ export const createClusterPlaybackService = ({ scheduler, grants, client, delive
       localSourceId: candidate.localSourceId,
       profileId: scheduled.internal.request.preferredProfileId ?? "auto",
       sourceRevision: candidate.sourceRevision,
-      startPositionSeconds: scheduled.internal.request.startPositionSeconds ?? null
+      startPositionSeconds: scheduled.internal.request.startPositionSeconds ?? null,
+      subtitleId: scheduled.internal.request.subtitleId ?? null
     }));
     remoteDeliveries.set(scheduled.internal.id, { candidate, result, scheduled });
     if (result.status !== "ready") {

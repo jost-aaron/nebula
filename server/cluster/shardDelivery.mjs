@@ -9,20 +9,21 @@ const requireId = (value, label) => {
 const quality = (profileId) => profileId === "auto" ? { mode: "auto" }
   : profileId === "original" ? { mode: "original" } : { mode: "profile", profileId };
 
-export const createClusterShardDeliveryService = ({ catalog, delivery, localNodeId }) => {
+export const createClusterShardDeliveryService = ({ catalog, delivery, localNodeId, subtitles = null }) => {
   if (!catalog || !delivery || !localNodeId) throw new TypeError("Catalog, delivery, and local node identity are required.");
   const sessions = new Map();
-  const principalFor = (clusterSessionId) => ({ type: "user", userId: `cluster_${clusterSessionId}` });
+  const principalFor = (clusterSessionId, subtitleId) => ({ type: "user", userId: `cluster_${clusterSessionId}`, subtitleId: subtitleId ?? null });
   const validatePeer = (peer) => {
     if (!peer || !new Set(["coordinator", "hybrid"]).has(peer.role)) throw error(403, "shard_delivery_denied", "Only a paired coordinator can manage shard delivery.");
   };
   const validateRequest = (input) => {
-    if (!exactKeys(input, new Set(["accountId", "capabilities", "clusterSessionId", "federatedItemId", "localItemId", "localSourceId", "profileId", "sourceRevision", "startPositionSeconds"]))) {
+    if (!exactKeys(input, new Set(["accountId", "capabilities", "clusterSessionId", "federatedItemId", "localItemId", "localSourceId", "profileId", "sourceRevision", "startPositionSeconds", "subtitleId"]))) {
       throw error(400, "invalid_shard_delivery", "The shard delivery request is invalid.");
     }
     for (const key of ["accountId", "clusterSessionId", "federatedItemId", "localItemId", "localSourceId"]) requireId(input[key], key);
     if (!PROFILE_IDS.has(input.profileId) || !input.capabilities || typeof input.capabilities !== "object" || Array.isArray(input.capabilities)) throw error(400, "invalid_shard_delivery", "The shard delivery profile or capabilities are invalid.");
     if (!Number.isSafeInteger(input.sourceRevision) || input.sourceRevision < 1) throw error(400, "invalid_shard_delivery", "The shard source revision is invalid.");
+    if (input.subtitleId !== null && input.subtitleId !== undefined) requireId(input.subtitleId, "subtitleId");
     if (input.startPositionSeconds !== null && input.startPositionSeconds !== undefined
       && (!Number.isFinite(input.startPositionSeconds) || input.startPositionSeconds < 0)) throw error(400, "invalid_shard_delivery", "The playback position is invalid.");
     const source = catalog.getSource(input.localSourceId);
@@ -59,7 +60,7 @@ export const createClusterShardDeliveryService = ({ catalog, delivery, localNode
     async create(input, peer) {
       validatePeer(peer);
       validateRequest(input);
-      const principal = principalFor(input.clusterSessionId);
+      const principal = principalFor(input.clusterSessionId, input.subtitleId);
       const created = await delivery.create({
         capabilities: input.capabilities,
         itemId: input.localItemId,
@@ -72,12 +73,14 @@ export const createClusterShardDeliveryService = ({ catalog, delivery, localNode
         clusterSessionId: input.clusterSessionId,
         deliveryId: created.session.id,
         federatedItemId: input.federatedItemId,
+        localItemId: input.localItemId,
         localSourceId: input.localSourceId,
         peerNodeId: peer.nodeId,
         plan: created.plan,
         principal,
         profileId: input.profileId,
-        sourceRevision: input.sourceRevision
+        sourceRevision: input.sourceRevision,
+        subtitleId: input.subtitleId ?? null
       };
       sessions.set(entry.deliveryId, entry);
       return publicResult(entry);
@@ -98,7 +101,8 @@ export const createClusterShardDeliveryService = ({ catalog, delivery, localNode
       const entry = sessions.get(grant.deliveryId);
       if (!entry || entry.accountId !== grant.accountId || entry.clusterSessionId !== grant.sessionId
         || entry.federatedItemId !== grant.federatedItemId || entry.localSourceId !== grant.localSourceId
-        || entry.profileId !== grant.profileId || entry.sourceRevision !== grant.sourceRevision) {
+        || entry.profileId !== grant.profileId || entry.sourceRevision !== grant.sourceRevision
+        || entry.subtitleId !== (grant.subtitleId ?? null)) {
         throw error(404, "grant_delivery_unavailable", "The delegated delivery is unavailable.");
       }
       const current = publicResult(entry);

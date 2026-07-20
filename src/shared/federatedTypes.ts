@@ -20,6 +20,7 @@ export interface FederatedSourceAvailability {
   nodeState: FederatedNodeState;
   renditions: Array<{ profileId: RenditionProfileId; revision: number; state: "pending" | "ready" | "failed" }>;
   sourceRevision: number;
+  subtitles: Array<{ default: boolean; forced: boolean; format: "webvtt" | "srt"; id: string; kind: "sidecar"; label: string; language: string | null }>;
   width: number | null;
 }
 

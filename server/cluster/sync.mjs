@@ -78,11 +78,11 @@ export const createClusterSyncService = ({ client, federation, trust, maxCursorR
   };
 };
 
-export const syncLocalClusterManifest = ({ federation, manifest, nodeId, maxPages = 10_000 }) => {
+export const syncLocalClusterManifest = async ({ federation, manifest, nodeId, maxPages = 10_000 }) => {
   const syncGeneration = `sync_${randomUUID().replaceAll("-", "")}`;
   let cursor = null;
   for (let count = 0; count < maxPages; count += 1) {
-    const page = manifest.page({ cursor, limit: 500 });
+    const page = await manifest.page({ cursor, limit: 500 });
     const applied = federation.applyManifestPage({ nodeId, page, syncGeneration });
     if (applied.complete) return applied;
     if (!applied.cursor) throw error(500, "invalid_local_manifest_cursor", "The local manifest cursor is invalid.");
