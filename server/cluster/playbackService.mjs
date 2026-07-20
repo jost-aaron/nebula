@@ -4,9 +4,13 @@ const quality = (profileId) => profileId && profileId !== "auto"
   ? profileId === "original" ? { mode: "original" } : { mode: "profile", profileId }
   : { mode: "auto" };
 const TERMINAL_FAILURES = new Set(["cancelled", "expired", "failed"]);
+const finiteMin = (...values) => {
+  const finite = values.filter((value) => Number.isFinite(value));
+  return finite.length ? Math.min(...finite) : null;
+};
 
 export const createClusterPlaybackService = ({
-  scheduler, grants, client, deliveryClient = null, localDelivery = null,
+  scheduler, grants, client, deliveryClient = null, localDelivery = null, playbackPolicy = null,
   authorize = () => true,
   now = () => Date.now(), sessionTtlMs = 30 * 60 * 1000,
   sweepIntervalMs = Math.min(sessionTtlMs, 60_000),
@@ -14,6 +18,7 @@ export const createClusterPlaybackService = ({
 }) => {
   if (!scheduler || !grants || !client) throw new TypeError("Cluster scheduler, grant, and client services are required.");
   const ownedLocalDeliveries = new Map();
+  const policyLeases = new Map();
   const remoteDeliveries = new Map();
   const readyRemoteSessions = new Map();
   const sessions = new Map();
@@ -41,7 +46,13 @@ export const createClusterPlaybackService = ({
       }).catch(() => undefined);
     }
   };
+  const releasePolicyLease = (sessionId) => {
+    const lease = policyLeases.get(sessionId);
+    policyLeases.delete(sessionId);
+    lease?.release();
+  };
   const releaseOwnedDelivery = async (sessionId, accountId) => {
+    releasePolicyLease(sessionId);
     await Promise.all([releaseLocalDelivery(sessionId, accountId), releaseRemoteDelivery(sessionId)]);
   };
   const releaseSession = async (sessionId, accountId) => {
@@ -143,6 +154,47 @@ export const createClusterPlaybackService = ({
     }
     return result;
   };
+  const policyFacts = (scheduled, context, result) => ({
+    decision: result.decision,
+    fixedProfile: candidateUsesFixedProfile(scheduled.internal.candidate, result),
+    producedBitrate: result.output?.bitrate,
+    requestedBitrate: scheduled.internal.request.capabilities?.maxBitrate,
+    sessionId: scheduled.internal.id,
+    strictProducedBitrate: true,
+    userId: context.accountId
+  });
+  const admitGenerated = (scheduled, context, result) => {
+    if (!playbackPolicy) return;
+    const sessionId = scheduled.internal.id;
+    if (policyLeases.has(sessionId)) return;
+    const lease = playbackPolicy.admit(policyFacts(scheduled, context, result));
+    if (Number.isFinite(lease.maxProducedBitrate) && Number.isFinite(result.output?.bitrate)
+      && result.output.bitrate > lease.maxProducedBitrate) {
+      lease.release();
+      throw error(422, "produced_bitrate_limit_exceeded", "The shard delivery bitrate exceeds the configured playback limit.");
+    }
+    policyLeases.set(sessionId, lease);
+  };
+  const revalidateGenerated = (scheduled, context, result) => {
+    if (!playbackPolicy) return;
+    const validated = playbackPolicy.validate(policyFacts(scheduled, context, result));
+    if (Number.isFinite(validated.maxProducedBitrate) && Number.isFinite(result.output?.bitrate)
+      && result.output.bitrate > validated.maxProducedBitrate) {
+      throw error(422, "produced_bitrate_limit_exceeded", "The shard delivery bitrate exceeds the configured playback limit.");
+    }
+  };
+  const candidateUsesFixedProfile = (candidate, result) => candidate.mode === "prebuilt-rendition" || Boolean(result.output?.profileId);
+  const activateReadyGenerated = async (remote, scheduled, context, result) => {
+    if (!remote.activationPromise) {
+      remote.activationPromise = (async () => {
+        revalidateGenerated(scheduled, context, result);
+        const activated = await activateGrant(scheduled, context, result);
+        readyRemoteSessions.set(scheduled.internal.id, activated);
+        return activated;
+      })();
+    }
+    return remote.activationPromise;
+  };
   const activateGenerated = async (scheduled, context) => {
     if (!deliveryClient) throw error(503, "remote_delivery_unavailable", "Remote generated delivery is unavailable.");
     const candidate = scheduled.internal.candidate;
@@ -165,14 +217,15 @@ export const createClusterPlaybackService = ({
       }).catch(() => undefined);
       throw error(410, "cluster_playback_session_expired", "Cluster playback session expired while delivery was being prepared.");
     }
-    remoteDeliveries.set(scheduled.internal.id, { candidate, result, scheduled });
+    const remote = { activationPromise: null, candidate, result, scheduled };
+    remoteDeliveries.set(scheduled.internal.id, remote);
     if (result.status !== "ready") {
       if (TERMINAL_FAILURES.has(result.status)) throw error(502, "shard_delivery_failed", "The shard could not prepare playback delivery.");
+      admitGenerated(scheduled, context, result);
       return pendingRemoteResponse(scheduled, result);
     }
-    const activated = await activateGrant(scheduled, context, result);
-    readyRemoteSessions.set(scheduled.internal.id, activated);
-    return activated;
+    admitGenerated(scheduled, context, result);
+    return activateReadyGenerated(remote, scheduled, context, result);
   };
   const activate = async (scheduled, context) => {
     const { accountId } = context;
@@ -209,7 +262,17 @@ export const createClusterPlaybackService = ({
     async create(request, context) {
       if (closed) throw error(503, "cluster_playback_closed", "Cluster playback is shutting down.");
       requireAuthorized(context.accountId, request?.federatedItemId);
-      const scheduled = scheduler.create(request, { accountId: context.accountId });
+      const constraints = playbackPolicy?.constraints?.(context.accountId) ?? null;
+      const requestedCapabilities = request?.capabilities ?? {};
+      const maxBitrate = finiteMin(requestedCapabilities.maxBitrate, constraints?.maxBitrate);
+      const governedRequest = {
+        ...request,
+        capabilities: {
+          ...requestedCapabilities,
+          ...(maxBitrate === null ? {} : { maxBitrate })
+        }
+      };
+      const scheduled = scheduler.create(governedRequest, { accountId: context.accountId });
       const schedulerExpiry = Date.parse(scheduled.session.expiresAt ?? "");
       sessions.set(scheduled.session.id, {
         accountId: context.accountId,
@@ -238,9 +301,12 @@ export const createClusterPlaybackService = ({
         throw error(502, "shard_delivery_failed", "The shard could not prepare playback delivery.");
       }
       if (result.status !== "ready") return pendingRemoteResponse({ ...remote.scheduled, session: publicSession }, result);
-      const activated = await activateGrant({ ...remote.scheduled, session: publicSession }, context, result);
-      readyRemoteSessions.set(sessionId, activated);
-      return activated;
+      try {
+        return await activateReadyGenerated(remote, { ...remote.scheduled, session: publicSession }, context, result);
+      } catch (activationError) {
+        await releaseSession(sessionId, context.accountId);
+        throw activationError;
+      }
     },
     async failover(sessionId, context, failedNodeId) {
       const entry = await requireSession(sessionId, context.accountId);

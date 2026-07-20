@@ -36,16 +36,18 @@ export const createPlaybackPolicyService = ({ repository }) => {
       }
     };
   };
-  const admit = ({ decision, fixedProfile = false, producedBitrate, requestedBitrate, sessionId, userId }) => {
-    if (closed) throw denial(503, "playback_policy_closed", "Playback policy admission is shutting down.");
-    if (decision === "direct-play") return { maxProducedBitrate: null, release() {} };
-    if (!sessionId || leases.has(sessionId)) throw denial(409, "playback_policy_collision", "A unique playback policy lease could not be allocated.");
+  const enforce = ({ decision, fixedProfile = false, producedBitrate, requestedBitrate, strictProducedBitrate = false, userId }, { existing = false } = {}) => {
     const { effective, global } = effectiveFor(userId);
     const byUser = counts();
-    if (global.maxConcurrentStreams !== null && leases.size >= global.maxConcurrentStreams) {
+    const globalDenied = global.maxConcurrentStreams !== null
+      && (existing ? leases.size > global.maxConcurrentStreams : leases.size >= global.maxConcurrentStreams);
+    if (globalDenied) {
       throw denial(429, "global_stream_limit_reached", "The server concurrent stream limit has been reached.");
     }
-    if (effective.maxConcurrentStreams !== null && (byUser.get(userId) ?? 0) >= effective.maxConcurrentStreams) {
+    const userStreams = byUser.get(userId) ?? 0;
+    const userDenied = effective.maxConcurrentStreams !== null
+      && (existing ? userStreams > effective.maxConcurrentStreams : userStreams >= effective.maxConcurrentStreams);
+    if (userDenied) {
       throw denial(429, "user_stream_limit_reached", "Your concurrent stream limit has been reached.");
     }
     if (effective.maxBitrate !== null && Number.isFinite(requestedBitrate) && requestedBitrate > effective.maxBitrate) {
@@ -57,6 +59,17 @@ export const createPlaybackPolicyService = ({ repository }) => {
     if (decision === "transcode" && fixedProfile && effective.maxBitrate !== null && Number.isFinite(producedBitrate) && producedBitrate > effective.maxBitrate) {
       throw denial(422, "rendition_bitrate_limit_exceeded", "The rendition profile exceeds the configured playback limit.");
     }
+    if (decision === "transcode" && strictProducedBitrate && effective.maxBitrate !== null
+      && Number.isFinite(producedBitrate) && producedBitrate > effective.maxBitrate) {
+      throw denial(422, "produced_bitrate_limit_exceeded", "The produced bitrate exceeds the configured playback limit.");
+    }
+    return effective;
+  };
+  const admit = ({ decision, fixedProfile = false, producedBitrate, requestedBitrate, sessionId, strictProducedBitrate = false, userId }) => {
+    if (closed) throw denial(503, "playback_policy_closed", "Playback policy admission is shutting down.");
+    if (decision === "direct-play") return { maxProducedBitrate: null, release() {} };
+    if (!sessionId || leases.has(sessionId)) throw denial(409, "playback_policy_collision", "A unique playback policy lease could not be allocated.");
+    const effective = enforce({ decision, fixedProfile, producedBitrate, requestedBitrate, strictProducedBitrate, userId });
     const lease = { decision, sessionId, startedAt: new Date().toISOString(), userId };
     leases.set(sessionId, lease);
     let released = false;
@@ -91,6 +104,15 @@ export const createPlaybackPolicyService = ({ repository }) => {
       const saved = repository.setUser(userId, validatePolicy(policy));
       if (!saved) throw denial(404, "user_not_found", "Account not found.");
       return saved;
+    },
+    validate({ decision, fixedProfile = false, producedBitrate, requestedBitrate, sessionId, strictProducedBitrate = false, userId }) {
+      if (closed) throw denial(503, "playback_policy_closed", "Playback policy admission is shutting down.");
+      const lease = leases.get(sessionId);
+      if (!lease || lease.userId !== userId || lease.decision !== decision) {
+        throw denial(409, "playback_policy_lease_invalid", "The playback policy lease is no longer valid.");
+      }
+      const effective = enforce({ decision, fixedProfile, producedBitrate, requestedBitrate, strictProducedBitrate, userId }, { existing: true });
+      return { maxProducedBitrate: effective.maxBitrate };
     },
     shutdown() { closed = true; leases.clear(); },
     status

@@ -270,6 +270,7 @@ const clusterPlayback = clusterService ? createClusterPlaybackService({
   deliveryClient: clusterDeliveryClient,
   grants: clusterGrantService,
   localDelivery: playbackDelivery,
+  playbackPolicy,
   scheduler: clusterScheduler
 }) : null;
 const probeService = createProbeService({

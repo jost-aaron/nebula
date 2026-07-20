@@ -29,15 +29,26 @@ tokens, or playback history.
 
 ## Admission and cleanup
 
-`server/playbackPolicy/` runs after the trusted planner selects a remux or
-transcode plan and before worker creation. Its in-memory reservation is
-synchronous, so concurrent requests cannot both consume the same final slot.
-Configuration persists, but leases are process-local: restart begins with zero
-active leases instead of resurrecting stale accounting.
+`server/playbackPolicy/` governs both local and federated server-produced
+delivery. Local delivery admits after its trusted planner selects a remux or
+transcode plan and before worker creation. Federated delivery first clamps the
+client bitrate capability to the account's current effective limit before the
+coordinator scheduler and remote shard see the request. A remote generated
+result then receives one coordinator-owned lease, shared with the local lease
+pool. The coordinator revalidates that same lease against current policy and
+the shard's final output immediately before issuing the first media grant.
+
+Local cluster candidates continue through the existing local delivery service
+and do not receive a second coordinator lease. Remote queued generation holds
+its lease while pending, so queued work cannot bypass global or per-account
+concurrency. The in-memory reservation is synchronous, so concurrent local and
+remote requests cannot both consume the same final slot. Configuration
+persists, but leases are process-local: restart begins with zero active leases
+instead of resurrecting stale accounting.
 
 Leases release idempotently when Cinema reports playback completion, the client
-cancels, worker creation or execution fails, delivery expires, or the server
-shuts down.
+cancels, worker creation or execution fails, delivery expires, a remote result
+becomes terminal, a cluster session fails over, or the server shuts down.
 
 Cinema reports a natural end with
 `POST /api/playback/delivery-sessions/:id/complete`; explicit stop and surface
@@ -53,7 +64,10 @@ Stable denial codes are:
 Software HLS uses the admitted ceiling for bounded FFmpeg video/audio targets,
 reserves five percent for MPEG-TS/HLS overhead, and advertises the ceiling as
 HLS master bandwidth. Remux output cannot be bitrate-shaped, so admission is
-denied when its probed source bitrate exceeds the effective cap.
+denied when its probed source bitrate exceeds the effective cap. Remote remux,
+fixed/prebuilt rendition, and live-transcode results are also checked against
+the coordinator's current effective limit; a shard result above that limit is
+rejected before grant activation.
 
 ## Direct-play limitation
 
@@ -67,5 +81,7 @@ heartbeat/session protocol or connection-aware delivery layer.
 ## Verification
 
 Policy tests cover migration/defaults, persistence, atomic global and per-user
-admission, requested and produced bitrate behavior, idempotent release, restart
-accounting, owner/service authorization, member denial, and responsive Settings.
+admission, combined local/remote accounting, scheduler capability clamping,
+requested and produced bitrate behavior, pending-policy revalidation,
+idempotent release across cluster terminal paths, restart accounting,
+owner/service authorization, member denial, and responsive Settings.

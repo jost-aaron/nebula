@@ -82,6 +82,23 @@ docker compose run --rm dashboard node --test \
   tests/server-playback-federated.test.mjs
 ```
 
+Distributed playback-policy fixtures verify that account bitrate constraints
+reach both scheduling and shard delivery without mutating the client request;
+remote direct and local candidates are not double-counted; queued remux,
+transcode, and prebuilt delivery each hold exactly one coordinator lease; local
+and remote generated sessions share global/per-account limits; final output and
+changed pending policy fail closed before grant activation; and release is
+idempotent across normal cancellation, terminal status, failure, expiry,
+failover, and shutdown. Run them with:
+
+```sh
+docker compose run --rm dashboard node --test \
+  tests/server-cluster-playback-policy.test.mjs \
+  tests/server-cluster-playback-service.test.mjs \
+  tests/server-playback-policy.test.mjs \
+  tests/server-cluster-member-federation.test.mjs
+```
+
 Phase 5 key-rotation fixtures generate fresh Ed25519 identities and verify the
 exact owner/service-admin route boundary, old-key-signed preparation,
 new-key-signed commit, consecutive-version enforcement, nonce replay and key
@@ -616,10 +633,11 @@ and direct/remux byte-range delivery. Browser smoke checks should exercise
 Cinema on desktop and at 390x844 while retaining the ticket fallback.
 
 Wave 4 playback-policy tests cover unlimited defaults, migration/persistence,
-global and per-user admission races, requested/remux-produced/HLS bitrate
-enforcement, terminal cleanup, restart accounting, owner/service-admin access,
-member denial, and the responsive Settings / Playback panel. Direct byte-range
-playback is explicitly excluded; see `docs/playback-policies.md`.
+global and per-user admission races across local and federated generation,
+requested/remux-produced/HLS bitrate enforcement, pending remote revalidation,
+terminal cleanup, restart accounting, owner/service-admin access, member denial,
+and the responsive Settings / Playback panel. Direct byte-range playback is
+explicitly excluded; see `docs/playback-policies.md`.
 
 Hardware-transcode coverage normalizes malformed probes, exercises mode and
 fallback outcomes, bounds public reasons/metrics, and verifies fixed FFmpeg

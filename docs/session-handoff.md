@@ -313,6 +313,13 @@ At handoff time:
   cancellation, failure, expiry, or shutdown. Cinema and Studio use a finite,
   abortable preparation deadline with bounded exponential polling backoff and
   cancel on source changes, request supersession, app teardown, or timeout.
+- Playback policy is coordinator-wide across local and remote generated
+  delivery. The coordinator copies and clamps capabilities before scheduling,
+  remote queued/generated work holds one shared policy lease, and current
+  limits plus final shard output are revalidated before the first grant. Local
+  candidates keep the local delivery engine's lease and are not double-counted;
+  direct file delivery remains exempt. Release covers normal cancellation,
+  terminal status, activation failure, expiry, failover, and shutdown.
 - Phase 4 generated-fixture checks cover scheduler, grants, ingress, activation,
   signed generated-delivery lifecycle, ticketed HLS playlist and segment
   delivery, federated playback state, account isolation, and exact-replica
@@ -340,6 +347,7 @@ At handoff time:
 - Media-sharding Phases 0-5 are implementation-complete. The remaining MVP
   acceptance work is a disposable real-tailnet Direct/DERP multi-node pass.
   Member federation is implemented for the current shared-content library;
-  guest federation remains fail-closed, and future multi-library federation
-  requires an explicit item-to-library projection. Optional multi-origin HLS
-  remains a post-MVP experiment.
+  guest federation remains fail-closed, distributed generated-playback policy
+  is enforced at the coordinator, and future multi-library federation requires
+  an explicit item-to-library projection. Optional multi-origin HLS remains a
+  post-MVP experiment.

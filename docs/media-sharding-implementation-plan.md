@@ -360,6 +360,16 @@ coordinator-owned. Active playback may continue until its shard grant expires if
 the coordinator briefly becomes unavailable, but browsing and new sessions
 require the coordinator in the first release.
 
+Coordinator playback policy now covers local and remote generated delivery as
+one accounting pool. Before scheduling, the coordinator clamps the copied
+client bitrate capability to the account's effective ceiling and forwards that
+bounded capability to the selected shard. A remote remux, live transcode, or
+prebuilt rendition holds exactly one coordinator lease, including while queued,
+and the lease is revalidated against current policy and final shard output
+before the first grant is activated. Local candidates retain the existing
+local-delivery lease and are not double-counted. Remote and local direct byte
+ranges retain the documented direct-play exemption.
+
 The current failover API is account-bound and accepts only the node that owns
 the active scheduler session as the failed node. It refuses failover without a
 completed exact-replica fingerprint, excludes and cools down the failed node,
@@ -575,6 +585,11 @@ short expiry or shard restart. Guests remain deliberately local-only.
   library authorization without distributing account policy to shards; guest
   federation remains intentionally fail-closed. A real-tailnet multi-node
   playback/failover pass has not been completed.
+- Distributed playback-policy enforcement is implemented: local and remote
+  generated sessions share global and per-account concurrency, account bitrate
+  limits constrain remote planning, final shard output is revalidated before
+  grant activation, and leases are released on every coordinator terminal and
+  failover path. Direct file playback remains explicitly exempt.
 
 ### Phase 0: contracts and threat model
 
