@@ -34,6 +34,7 @@ const peerRotation = (row) => row ? ({
 export const createClusterRepository = (database, { now = () => new Date().toISOString() } = {}) => {
   if (!database?.prepare) throw new TypeError("A SQLite database is required.");
   const hasOperations = Boolean(database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'cluster_node_controls'").get());
+  const hasKeyRotation = Boolean(database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'cluster_node_key_rotations'").get());
   const nodeSelect = hasOperations ? `SELECT cluster_nodes.*, cluster_node_controls.node_id AS controls_node_id,
     cluster_node_controls.display_name, cluster_node_controls.priority,
     cluster_node_controls.max_concurrent_streams, cluster_node_controls.max_concurrent_transcodes,
@@ -165,6 +166,7 @@ export const createClusterRepository = (database, { now = () => new Date().toISO
       return peerRotation(database.prepare("SELECT * FROM cluster_node_key_rotations WHERE node_id = ? AND rotation_id = ?").get(nodeId, rotationId));
     },
     getPreparedNodeKeyRotation(nodeId) {
+      if (!hasKeyRotation) return null;
       return peerRotation(database.prepare("SELECT * FROM cluster_node_key_rotations WHERE node_id = ? AND state = 'prepared' ORDER BY prepared_at DESC LIMIT 1").get(nodeId));
     },
     commitNodeKeyRotation(nodeId, rotationId) {
