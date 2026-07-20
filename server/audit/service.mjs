@@ -8,7 +8,8 @@ export const AUDIT_EVENT_TYPES = Object.freeze([
   "rendition.build_requested", "rendition.retention_changed", "rendition.deleted",
   "rendition.policy_changed", "rendition.cleanup_requested", "rendition.cleanup_completed",
   "backup.created", "backup.inspected", "media_list.playlist_created", "media_list.collection_created",
-  "cluster.pairing_code_created", "cluster.node_paired", "cluster.node_revoked"
+  "cluster.pairing_code_created", "cluster.node_paired", "cluster.node_revoked",
+  "cluster.readiness_changed", "cluster.clock_skew_detected"
 ]);
 
 export const AUDIT_OUTCOMES = Object.freeze(["success", "failure", "denied"]);
@@ -20,7 +21,7 @@ const ACTOR_KINDS = new Set(AUDIT_ACTOR_KINDS);
 const METADATA_KEYS = new Set([
   "clientType", "disabled", "jobType", "setting", "transport", "created", "requestedBy", "retention", "reason"
 ]);
-const METADATA_VALUES = new Set(["browser", "native", "cookie", "bearer", "tmdb", "manual", "service", "startup", "scheduled", "quota-pressure", "scan", "probe", "metadata", "artwork", "cleanup", "cache", "pinned", "rendition"]);
+const METADATA_VALUES = new Set(["browser", "native", "cookie", "bearer", "tmdb", "manual", "service", "startup", "scheduled", "quota-pressure", "scan", "probe", "metadata", "artwork", "cleanup", "cache", "pinned", "rendition", "cluster-ready", "cluster-degraded", "cluster-not-ready", "clock-skew"]);
 const bounded = (value, max) => value === null || value === undefined ? null : String(value).slice(0, max);
 const iso = (value) => new Date(value).toISOString();
 const safeTargetId = (value) => {

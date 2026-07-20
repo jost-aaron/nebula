@@ -142,3 +142,23 @@ test("best-effort recording cannot surface storage failures", async (t) => {
   database.close();
   assert.equal(audit.recordBestEffort({ actor: { kind: "system" }, eventType: "job.enqueued", outcome: "success" }), false);
 });
+
+test("cluster operations audit events retain only allowlisted aggregate reasons", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "nebula-audit-cluster-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const database = await openNebulaDatabase(path.join(root, "audit.sqlite"));
+  t.after(() => database.close());
+  applyDomainMigrations(database, [auditMigration]);
+  const audit = createAuditService({ db: database });
+  audit.record({
+    actor: { kind: "system" }, eventType: "cluster.readiness_changed", outcome: "failure",
+    metadata: { endpoint: "https://secret.ts.net", nodeId: "node-secret", path: "/private/media.mp4", reason: "cluster-degraded" }
+  });
+  audit.record({
+    actor: { kind: "system" }, eventType: "cluster.clock_skew_detected", outcome: "failure",
+    metadata: { grant: "grant-secret", reason: "clock-skew", skewMs: 999_999 }
+  });
+  assert.deepEqual(audit.list({ eventType: "cluster.readiness_changed" }).events[0].metadata, { reason: "cluster-degraded" });
+  assert.deepEqual(audit.list({ eventType: "cluster.clock_skew_detected" }).events[0].metadata, { reason: "clock-skew" });
+  assert.doesNotMatch(JSON.stringify(database.prepare("SELECT metadata_json FROM audit_events").all()), /secret|private|skewMs|999999/);
+});

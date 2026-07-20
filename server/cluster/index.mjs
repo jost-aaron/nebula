@@ -15,5 +15,6 @@ export { createClusterGrantClient } from "./grantClient.mjs";
 export { createClusterPlaybackService } from "./playbackService.mjs";
 export { createClusterDeliveryClient } from "./deliveryClient.mjs";
 export { createClusterShardDeliveryService } from "./shardDelivery.mjs";
+export { createClusterOperationsService } from "./observability.mjs";
 export { createClusterPlaybackRoutes } from "./routes.mjs";
 export * from "./protocol.mjs";

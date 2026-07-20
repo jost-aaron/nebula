@@ -11,7 +11,8 @@ const sameText = (left, right) => {
 export const createClusterTrustService = ({
   repository, now = () => Date.now(), uuid = randomUUID, random = (bytes) => randomBytes(bytes),
   pairingTtlMs = 10 * 60 * 1000, requestWindowMs = 2 * 60 * 1000,
-  name = "Nebula", role = "hybrid", endpoint, capabilities = { directPlay: true, hls: true, remux: true, renditionProfiles: [], transcode: true }
+  name = "Nebula", role = "hybrid", endpoint, operations = null,
+  capabilities = { directPlay: true, hls: true, remux: true, renditionProfiles: [], transcode: true }
 }) => {
   if (!repository) throw new TypeError("A cluster repository is required.");
   let identity = repository.getIdentity();
@@ -77,9 +78,11 @@ export const createClusterTrustService = ({
       const node = repository.getNode(envelope.nodeId);
       if (!node || node.state === "revoked") throw error(401, "untrusted_node", "The cluster request is not trusted.");
       const skew = Math.abs(now() - Date.parse(envelope.timestamp));
-      if (!Number.isFinite(skew) || skew > requestWindowMs) throw error(401, "request_expired", "The cluster request timestamp is outside the accepted window.");
+      const acceptedClock = Number.isFinite(skew) && skew <= requestWindowMs;
       if (!sameText(envelope.bodyDigest, digestJsonBody(body))) throw error(401, "body_mismatch", "The cluster request body digest does not match.");
       if (!verifyClusterEnvelopeSignature(envelope, node.publicKey)) throw error(401, "bad_signature", "The cluster request signature is invalid.");
+      operations?.recordClockSkew?.({ accepted: acceptedClock, skewMs: Number.isFinite(skew) ? skew : requestWindowMs + 1 });
+      if (!acceptedClock) throw error(401, "request_expired", "The cluster request timestamp is outside the accepted window.");
       const expiresAt = new Date(Date.parse(envelope.timestamp) + requestWindowMs).toISOString();
       if (!repository.consumeNonce(node.nodeId, envelope.nonce, expiresAt)) throw error(409, "request_replayed", "The cluster request nonce has already been used.");
       return node;

@@ -7,18 +7,18 @@ import { clusterMigration, createClusterRepository, createClusterTrustService } 
 const fixedNow = Date.parse("2026-07-19T12:00:00.000Z");
 const capabilities = { directPlay: true, hls: true, remux: true, renditionProfiles: ["480p", "720p"], transcode: true };
 
-const fixture = ({ endpoint, name, role }) => {
+const fixture = ({ endpoint, name, operations = null, role }) => {
   const database = new DatabaseSync(":memory:");
   database.exec("PRAGMA foreign_keys = ON");
   applyDomainMigrations(database, [clusterMigration]);
   const repository = createClusterRepository(database, { now: () => new Date(fixedNow).toISOString() });
-  const service = createClusterTrustService({ capabilities, endpoint, name, now: () => fixedNow, repository, role });
+  const service = createClusterTrustService({ capabilities, endpoint, name, now: () => fixedNow, operations, repository, role });
   return { database, repository, service };
 };
 
-const pair = () => {
+const pair = ({ shardOperations = null } = {}) => {
   const coordinator = fixture({ endpoint: "https://nebula-home.example-tail.ts.net/", name: "Home", role: "hybrid" });
-  const shard = fixture({ endpoint: "https://nebula-basement.example-tail.ts.net/", name: "Basement", role: "shard" });
+  const shard = fixture({ endpoint: "https://nebula-basement.example-tail.ts.net/", name: "Basement", operations: shardOperations, role: "shard" });
   const code = shard.service.createPairingCode();
   const homeIdentity = coordinator.service.identity();
   const accepted = shard.service.acceptPairing({ clusterId: homeIdentity.clusterId, pairingCode: code.pairingCode, requester: homeIdentity.descriptor });
@@ -66,7 +66,8 @@ test("one-time pairing joins the coordinator cluster and stores only a code hash
 });
 
 test("paired nodes authenticate signed bodies once within the clock window", () => {
-  const { coordinator, shard } = pair();
+  const clockSamples = [];
+  const { coordinator, shard } = pair({ shardOperations: { recordClockSkew: (sample) => clockSamples.push(sample) } });
   const body = { probe: "health" };
   const envelope = coordinator.service.signRequest({ body, method: "POST", path: "/api/shard/v1/health" });
   assert.equal(shard.service.verifyRequest(envelope, body).name, "Home");
@@ -76,6 +77,7 @@ test("paired nodes authenticate signed bodies once within the clock window", () 
   assert.throws(() => shard.service.verifyRequest(tampered, { probe: "secrets" }), (error) => error.code === "body_mismatch");
   const expired = coordinator.service.signRequest({ body, method: "POST", path: "/api/shard/v1/health", nonce: "nonce_expired_001", timestamp: "2026-07-19T11:00:00.000Z" });
   assert.throws(() => shard.service.verifyRequest(expired, body), (error) => error.code === "request_expired");
+  assert.deepEqual(clockSamples, [{ accepted: true, skewMs: 0 }, { accepted: true, skewMs: 0 }, { accepted: false, skewMs: 3_600_000 }]);
   const wrongRoute = coordinator.service.signRequest({ body, method: "POST", path: "/api/shard/v1/health", nonce: "nonce_wrongroute_01" });
   assert.throws(() => shard.service.verifyRequest(wrongRoute, body, { method: "POST", path: "/api/shard/v1/manifest" }), (error) => error.code === "path_mismatch");
   coordinator.database.close(); shard.database.close();

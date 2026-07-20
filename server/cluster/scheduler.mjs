@@ -23,6 +23,17 @@ export const createClusterPlaybackScheduler = ({
   const cooldowns = new Map();
 
   const activeCount = (nodeId) => activeByNode.get(nodeId) ?? 0;
+  const operationsSnapshot = () => {
+    const currentTime = now();
+    for (const [nodeId, expiresAt] of cooldowns) if (expiresAt <= currentTime) cooldowns.delete(nodeId);
+    const remaining = [...cooldowns.values()].map((expiresAt) => Math.max(0, expiresAt - currentTime));
+    return {
+      activeNodes: [...activeByNode.values()].filter((value) => value > 0).length,
+      activeSessions: sessions.size,
+      cooldownMaxRemainingMs: remaining.length ? Math.max(...remaining) : 0,
+      cooldowns: remaining.length
+    };
+  };
   const releaseCandidate = (candidate) => activeByNode.set(candidate.nodeId, Math.max(0, activeCount(candidate.nodeId) - 1));
   const claimCandidate = (candidate) => activeByNode.set(candidate.nodeId, activeCount(candidate.nodeId) + 1);
   const candidatesFor = (request, excludedNodeIds = new Set(), exactReplicaKey = undefined) => {
@@ -103,6 +114,7 @@ export const createClusterPlaybackScheduler = ({
       const session = find(sessionId, accountId);
       releaseCandidate(session.candidate); sessions.delete(session.id);
     },
+    operationsSnapshot,
     snapshot: () => ({ activeByNode: Object.fromEntries(activeByNode), sessionCount: sessions.size })
   };
 };

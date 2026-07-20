@@ -45,6 +45,7 @@ export const createClusterShardDeliveryService = ({ catalog, delivery, localNode
       session = { status: "failed" };
     }
     if (!STATUSES.has(session.status)) throw error(502, "invalid_delivery_status", "Shard delivery returned an invalid status.");
+    entry.lastStatus = session.status;
     return {
       decision: entry.plan.decision,
       deliveryId: entry.deliveryId,
@@ -106,6 +107,14 @@ export const createClusterShardDeliveryService = ({ catalog, delivery, localNode
     },
     resolveFile(entry) { return delivery.resolveFile(entry.deliveryId, entry.principal); },
     resolveHlsAsset(entry, asset) { return delivery.resolveHlsAsset(entry.deliveryId, asset, entry.principal); },
+    operationsSnapshot() {
+      const states = Object.fromEntries([...STATUSES].map((status) => [status, 0]));
+      for (const entry of sessions.values()) {
+        try { publicResult(entry); } catch { entry.lastStatus = "failed"; }
+        states[entry.lastStatus ?? "failed"] += 1;
+      }
+      return { active: states.queued + states.running + states.ready, states };
+    },
     async shutdown() {
       await Promise.allSettled([...sessions.values()].map((entry) => delivery.cancel(entry.deliveryId, entry.principal)));
       sessions.clear();

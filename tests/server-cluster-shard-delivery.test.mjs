@@ -30,11 +30,13 @@ test("shard delivery binds generated output to the coordinator session and grant
   const service = createClusterShardDeliveryService({ catalog: { getSource: () => source }, delivery, localNodeId: "node_shard_01" });
   const created = await service.create(input, peer);
   assert.equal(created.status, "ready");
+  assert.deepEqual(service.operationsSnapshot(), { active: 1, states: { cancelled: 0, expired: 0, failed: 0, queued: 0, ready: 1, running: 0 } });
   const grant = { accountId: input.accountId, deliveryId: created.deliveryId, deliveryProtocol: "hls", federatedItemId: input.federatedItemId, localSourceId: input.localSourceId, profileId: input.profileId, sessionId: input.clusterSessionId, sourceRevision: input.sourceRevision };
   const authorized = service.authorizeGrant(grant);
   assert.equal(await service.resolveHlsAsset(authorized, "master.m3u8"), "/tmp/master.m3u8");
   await service.cancel({ clusterSessionId: input.clusterSessionId, deliveryId: created.deliveryId }, peer);
   assert.equal(cancelled, created.deliveryId);
+  assert.deepEqual(service.operationsSnapshot(), { active: 0, states: { cancelled: 0, expired: 0, failed: 0, queued: 0, ready: 0, running: 0 } });
 });
 
 test("shard delivery rejects stale sources and another coordinator's session", async () => {
