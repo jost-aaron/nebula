@@ -7,6 +7,13 @@ const sameText = (left, right) => {
   const a = Buffer.from(left); const b = Buffer.from(right);
   return a.length === b.length && timingSafeEqual(a, b);
 };
+const CONTROL_KEYS = new Set(["maintenanceDrain", "maxConcurrentStreams", "maxConcurrentTranscodes", "name", "priority"]);
+const safeName = /^[\p{L}\p{N}][\p{L}\p{N} ._'()-]{0,63}$/u;
+const boundedInteger = (value, { min, max, nullable = false }, field) => {
+  if (nullable && value === null) return null;
+  if (!Number.isInteger(value) || value < min || value > max) throw error(400, "invalid_node_controls", `${field} must be an integer between ${min} and ${max}${nullable ? ", or null" : ""}.`);
+  return value;
+};
 
 export const createClusterTrustService = ({
   repository, now = () => Date.now(), uuid = randomUUID, random = (bytes) => randomBytes(bytes),
@@ -41,7 +48,32 @@ export const createClusterTrustService = ({
 
   return {
     identity: () => ({ clusterId: identity.clusterId, descriptor: descriptor(), keyVersion: identity.keyVersion }),
-    listNodes: () => repository.listNodes().filter((node) => node.nodeId !== identity.nodeId),
+    listNodes: ({ includeLocal = false } = {}) => repository.listNodes().filter((node) => includeLocal || node.nodeId !== identity.nodeId),
+    nodePolicy(nodeId) {
+      const node = repository.getNode(nodeId);
+      return node ? { controls: node.controls, name: node.name, state: node.state } : null;
+    },
+    updateNodeControls(nodeId, input) {
+      if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).length === 0
+        || Object.keys(input).some((key) => !CONTROL_KEYS.has(key))) throw error(400, "invalid_node_controls", "Cluster node controls contain unknown or missing fields.");
+      const node = repository.getNode(nodeId);
+      if (!node || node.state === "revoked") throw error(404, "node_not_found", "An active cluster node was not found.");
+      const current = node.controls;
+      let displayName = node.name === node.advertisedName ? null : node.name;
+      if (Object.hasOwn(input, "name")) {
+        if (typeof input.name !== "string" || !safeName.test(input.name.trim())) throw error(400, "unsafe_node_name", "The node name must be 1-64 safe display characters.");
+        displayName = input.name.trim() === node.advertisedName ? null : input.name.trim();
+      }
+      return repository.updateNodeControls(nodeId, {
+        displayName,
+        maintenanceDrain: Object.hasOwn(input, "maintenanceDrain")
+          ? (typeof input.maintenanceDrain === "boolean" ? input.maintenanceDrain : (() => { throw error(400, "invalid_node_controls", "maintenanceDrain must be boolean."); })())
+          : current.maintenanceDrain,
+        maxConcurrentStreams: Object.hasOwn(input, "maxConcurrentStreams") ? boundedInteger(input.maxConcurrentStreams, { min: 1, max: 100, nullable: true }, "maxConcurrentStreams") : current.maxConcurrentStreams,
+        maxConcurrentTranscodes: Object.hasOwn(input, "maxConcurrentTranscodes") ? boundedInteger(input.maxConcurrentTranscodes, { min: 0, max: 32, nullable: true }, "maxConcurrentTranscodes") : current.maxConcurrentTranscodes,
+        priority: Object.hasOwn(input, "priority") ? boundedInteger(input.priority, { min: -100, max: 100 }, "priority") : current.priority
+      });
+    },
     createPairingCode() {
       const pairingCode = random(24).toString("base64url");
       const expiresAt = new Date(now() + pairingTtlMs).toISOString();

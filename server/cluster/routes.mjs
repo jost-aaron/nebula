@@ -124,10 +124,14 @@ export const createClusterIngressRoutes = (options) => {
   };
 };
 
-export const createClusterAdminRoutes = ({ service, pairingClient, federation = null, sync = null, audit = null }) => async (request, response, url) => {
+export const createClusterAdminRoutes = ({ service, pairingClient, federation = null, sync = null, scheduler = null, audit = null }) => async (request, response, url) => {
   if (!url.pathname.startsWith("/api/admin/cluster")) return false;
   if (request.method === "GET" && url.pathname === "/api/admin/cluster") {
-    json(response, 200, { identity: service.identity(), nodes: service.listNodes() });
+    const identity = service.identity();
+    json(response, 200, { identity, nodes: service.listNodes({ includeLocal: true }).map((node) => ({
+      ...node, load: scheduler?.nodeLoad(node.nodeId) ?? { activeStreams: 0, activeTranscodes: 0 },
+      local: node.nodeId === identity.descriptor?.nodeId
+    })) });
     return true;
   }
   if (request.method === "GET" && url.pathname === "/api/admin/cluster/items" && federation) {
@@ -164,6 +168,12 @@ export const createClusterAdminRoutes = ({ service, pairingClient, federation = 
     const result = await sync.syncNode(syncMatch[1]);
     audit?.recordBestEffort({ actor: { kind: "system" }, eventType: "cluster.manifest_synced", outcome: "success", target: { type: "cluster-node", id: syncMatch[1] }, metadata: { manifestRevision: result.manifestRevision } });
     json(response, 200, result);
+    return true;
+  }
+  if (request.method === "PATCH" && nodeMatch) {
+    const node = service.updateNodeControls(nodeMatch[1], await readBody(request, { limit: 16 * 1024 }));
+    audit?.recordBestEffort({ actor: { kind: "system" }, eventType: "cluster.node_controls_updated", outcome: "success", target: { type: "cluster-node", id: node.nodeId } });
+    json(response, 200, { node });
     return true;
   }
   if (request.method === "DELETE" && nodeMatch) {

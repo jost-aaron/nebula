@@ -67,3 +67,32 @@ test("failover refuses alternate encodes and account boundaries fail closed", ()
   assert.throws(() => scheduler.get(created.session.id, { accountId: "account_fixture_02" }), { code: "cluster_playback_session_not_found" });
   assert.throws(() => scheduler.failover(created.session.id, { accountId: "account_fixture_01" }, "node_alpha"), { code: "failover_unavailable" });
 });
+
+test("owner priority and stream capacity deterministically shape admission", () => {
+  const sources = [source("node_alpha"), source("node_bravo")];
+  const policies = {
+    node_alpha: { controls: { maintenanceDrain: false, maxConcurrentStreams: 1, maxConcurrentTranscodes: null, priority: 20 }, name: "Priority", state: "online" },
+    node_bravo: { controls: { maintenanceDrain: false, maxConcurrentStreams: null, maxConcurrentTranscodes: null, priority: 0 }, name: "Overflow", state: "online" }
+  };
+  const scheduler = createClusterPlaybackScheduler({ federation: { listPlaybackSources: () => sources }, nodePolicy: (nodeId) => policies[nodeId], now: () => 1_000 });
+  const first = scheduler.create(request(), { accountId: "account_fixture_01" });
+  const second = scheduler.create(request(), { accountId: "account_fixture_02" });
+  assert.equal(first.session.candidate.nodeName, "Priority");
+  assert.deepEqual(first.session.candidate.reasons[1], { code: "OWNER_PRIORITY", score: 5 });
+  assert.equal(second.session.candidate.nodeId, "node_bravo");
+});
+
+test("maintenance drain and live-transcode capacity exclude nodes without weakening fallback", () => {
+  const sources = [
+    source("node_alpha", { capabilities: { directPlay: false, hls: true, remux: false, renditionProfiles: [], transcode: true } }),
+    source("node_bravo", { capabilities: { directPlay: false, hls: true, remux: false, renditionProfiles: [], transcode: true } })
+  ];
+  const policies = {
+    node_alpha: { controls: { maintenanceDrain: true, maxConcurrentStreams: null, maxConcurrentTranscodes: null, priority: 100 }, name: "Drained", state: "online" },
+    node_bravo: { controls: { maintenanceDrain: false, maxConcurrentStreams: null, maxConcurrentTranscodes: 1, priority: 0 }, name: "Ready", state: "online" }
+  };
+  const scheduler = createClusterPlaybackScheduler({ federation: { listPlaybackSources: () => sources }, nodePolicy: (nodeId) => policies[nodeId], now: () => 1_000 });
+  const first = scheduler.create(request({ preferredProfileId: "480p" }), { accountId: "account_fixture_01" });
+  assert.equal(first.session.candidate.nodeId, "node_bravo");
+  assert.throws(() => scheduler.create(request({ preferredProfileId: "480p" }), { accountId: "account_fixture_02" }), { code: "cluster_source_unavailable" });
+});

@@ -1,5 +1,6 @@
 export { clusterMigration, CLUSTER_SCHEMA_VERSION } from "./schema.mjs";
 export { CLUSTER_PROTOCOL_SUPPORT, classifyClusterProtocolVersion, isClusterProtocolCompatible } from "./compatibility.mjs";
+export { clusterOperationsMigration, CLUSTER_OPERATIONS_SCHEMA_VERSION } from "./operationsSchema.mjs";
 export { clusterFederationMigration, CLUSTER_FEDERATION_SCHEMA_VERSION } from "./federationSchema.mjs";
 export { createClusterRepository } from "./repository.mjs";
 export { createClusterTrustService } from "./service.mjs";

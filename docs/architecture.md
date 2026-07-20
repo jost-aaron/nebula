@@ -301,6 +301,10 @@ flowchart TD
 - Coordinator playback persistence stores federated item/source identities;
   shard-local catalog IDs, endpoints, filesystem paths, grants, and tickets do
   not enter account history.
+- `cluster_node_controls` persists bounded coordinator policy separately from
+  signed node descriptors. Display aliases cannot mutate trust identity;
+  maintenance drain and capacity affect only new scheduler admission, while
+  exact-replica filtering remains mandatory before failover ranking.
 
 `server/renditions/`
 

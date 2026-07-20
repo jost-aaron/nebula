@@ -291,9 +291,14 @@ and revocation state are stored in `/app/data/nebula.sqlite` and included in
 Nebula database backups. Raw pairing codes are returned once, expire after ten
 minutes, and are never persisted. Protect backups accordingly.
 
-Until the Cluster Settings UI ships, exercise pairing and manifest sync only
-through an approved test harness or API client. The owner-only coordinator
-routes are under `/api/admin/cluster`; `POST
+The owner-only Settings / Cluster surface shows every coordinator and shard and
+controls display name, scheduler priority (`-100..100`), concurrent stream
+capacity (`1-100` or unlimited), live-transcode capacity (`0-32` or unlimited),
+and maintenance drain. Drain stops new assignments but deliberately allows
+active sessions to finish. Display names are coordinator-only aliases and never
+change the node ID, signed descriptor, endpoint, or key. The owner-only
+coordinator routes are under `/api/admin/cluster`; `PATCH
+/api/admin/cluster/nodes/:nodeId` updates these strict controls, `POST
 /api/admin/cluster/nodes/:nodeId/sync` performs an explicit full reconcile and
 `GET /api/admin/cluster/items` exposes the path-free projection. Shard pairing,
 health, and manifest ingress are restricted to the fixed `/api/shard/v1`

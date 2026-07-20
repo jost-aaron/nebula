@@ -4,14 +4,29 @@ const transaction = (database, action) => {
   try { const result = action(); database.exec("COMMIT"); return result; }
   catch (error) { database.exec("ROLLBACK"); throw error; }
 };
+const defaultControls = Object.freeze({ maintenanceDrain: false, maxConcurrentStreams: null, maxConcurrentTranscodes: null, priority: 0, updatedAt: null });
 const publicNode = (row) => row ? ({
   capabilities: parseJson(row.capabilities_json, {}), endpoint: row.endpoint, keyVersion: row.key_version,
-  name: row.name, nodeId: row.node_id, publicKey: row.public_key, role: row.role, state: row.state,
+  advertisedName: row.name, controls: row.controls_node_id ? {
+    maintenanceDrain: row.maintenance_drain === 1,
+    maxConcurrentStreams: row.max_concurrent_streams,
+    maxConcurrentTranscodes: row.max_concurrent_transcodes,
+    priority: row.priority,
+    updatedAt: row.controls_updated_at
+  } : defaultControls,
+  name: row.display_name ?? row.name, nodeId: row.node_id, publicKey: row.public_key, role: row.role, state: row.state,
   clusterId: row.cluster_id, pairedAt: row.paired_at, lastSeenAt: row.last_seen_at, revokedAt: row.revoked_at
 }) : null;
 
 export const createClusterRepository = (database, { now = () => new Date().toISOString() } = {}) => {
   if (!database?.prepare) throw new TypeError("A SQLite database is required.");
+  const hasOperations = Boolean(database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'cluster_node_controls'").get());
+  const nodeSelect = hasOperations ? `SELECT cluster_nodes.*, cluster_node_controls.node_id AS controls_node_id,
+    cluster_node_controls.display_name, cluster_node_controls.priority,
+    cluster_node_controls.max_concurrent_streams, cluster_node_controls.max_concurrent_transcodes,
+    cluster_node_controls.maintenance_drain, cluster_node_controls.updated_at AS controls_updated_at
+    FROM cluster_nodes LEFT JOIN cluster_node_controls USING (node_id)`
+    : `SELECT cluster_nodes.*, NULL AS controls_node_id, NULL AS display_name FROM cluster_nodes`;
   return {
     getIdentity() {
       const row = database.prepare("SELECT * FROM cluster_identity WHERE singleton = 1").get();
@@ -33,11 +48,11 @@ export const createClusterRepository = (database, { now = () => new Date().toISO
       database.prepare("UPDATE cluster_identity SET cluster_id = ?, updated_at = ? WHERE singleton = 1").run(clusterId, now());
       return this.getIdentity();
     },
-    getNode(nodeId) { return publicNode(database.prepare("SELECT * FROM cluster_nodes WHERE node_id = ?").get(nodeId)); },
+    getNode(nodeId) { return publicNode(database.prepare(`${nodeSelect} WHERE cluster_nodes.node_id = ?`).get(nodeId)); },
     listNodes({ includeRevoked = false } = {}) {
       const rows = includeRevoked
-        ? database.prepare("SELECT * FROM cluster_nodes ORDER BY name COLLATE NOCASE, node_id").all()
-        : database.prepare("SELECT * FROM cluster_nodes WHERE state != 'revoked' ORDER BY name COLLATE NOCASE, node_id").all();
+        ? database.prepare(`${nodeSelect} ORDER BY COALESCE(display_name, name) COLLATE NOCASE, cluster_nodes.node_id`).all()
+        : database.prepare(`${nodeSelect} WHERE state != 'revoked' ORDER BY COALESCE(display_name, name) COLLATE NOCASE, cluster_nodes.node_id`).all();
       return rows.map(publicNode);
     },
     upsertNode(descriptor, clusterId) {
@@ -57,6 +72,20 @@ export const createClusterRepository = (database, { now = () => new Date().toISO
       const result = database.prepare("UPDATE cluster_nodes SET state = 'revoked', revoked_at = ?, updated_at = ? WHERE node_id = ? AND state != 'revoked'").run(timestamp, timestamp, nodeId);
       database.prepare("DELETE FROM cluster_request_nonces WHERE node_id = ?").run(nodeId);
       return result.changes > 0;
+    },
+    updateNodeControls(nodeId, controls) {
+      if (!hasOperations) throw new Error("Cluster operations migration is required.");
+      const timestamp = now();
+      database.prepare(`INSERT INTO cluster_node_controls
+        (node_id, display_name, priority, max_concurrent_streams, max_concurrent_transcodes, maintenance_drain, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(node_id) DO UPDATE SET display_name = excluded.display_name, priority = excluded.priority,
+          max_concurrent_streams = excluded.max_concurrent_streams,
+          max_concurrent_transcodes = excluded.max_concurrent_transcodes,
+          maintenance_drain = excluded.maintenance_drain, updated_at = excluded.updated_at`)
+        .run(nodeId, controls.displayName, controls.priority, controls.maxConcurrentStreams,
+          controls.maxConcurrentTranscodes, controls.maintenanceDrain ? 1 : 0, timestamp);
+      return this.getNode(nodeId);
     },
     createPairingCode(codeHash, expiresAt) {
       const timestamp = now();

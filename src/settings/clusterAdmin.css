@@ -1,0 +1,33 @@
+.cluster-admin { display: grid; gap: 16px; }
+.cluster-admin h3, .cluster-admin h4, .cluster-admin p { margin: 0; }
+.cluster-admin-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.cluster-admin-heading > div { display: grid; gap: 5px; }
+.cluster-admin-heading p:last-child, .cluster-admin-message, .cluster-admin-loading, .cluster-admin-unavailable { color: #8da4a3; }
+.cluster-admin button, .cluster-admin input { min-height: 44px; border: 1px solid rgba(148,220,215,.18); border-radius: 10px; padding: 0 12px; color: #eef9f7; background: rgba(255,255,255,.045); font: inherit; }
+.cluster-admin button { cursor: pointer; }
+.cluster-admin button:focus-visible, .cluster-admin input:focus { border-color: #65ddd1; outline: 0; box-shadow: 0 0 0 3px rgba(101,221,209,.14); }
+.cluster-admin-summary { display: grid; grid-template-columns: 2fr repeat(2,1fr); gap: 10px; }
+.cluster-admin-summary > span { min-width: 0; display: grid; gap: 5px; padding: 14px; border-radius: 12px; background: rgba(0,0,0,.2); }
+.cluster-admin-summary small { color: #78908f; }
+.cluster-admin-summary strong { overflow: hidden; text-overflow: ellipsis; }
+.cluster-node-list { display: grid; gap: 12px; }
+.cluster-node-card { display: grid; gap: 16px; padding: 17px; border: 1px solid rgba(146,219,213,.13); border-radius: 14px; background: rgba(0,0,0,.2); }
+.cluster-node-card.is-draining { border-color: rgba(222,174,91,.38); background: rgba(83,54,17,.15); }
+.cluster-node-card header, .cluster-node-card footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.cluster-node-card header > div:first-child { min-width: 0; display: grid; gap: 3px; }
+.cluster-node-card h4 { font-size: 1.15rem; }
+.cluster-node-card header p, .cluster-node-card footer p { color: #819695; font-size: .82rem; overflow-wrap: anywhere; }
+.cluster-node-state { width: max-content; display: inline-flex; align-items: center; gap: 6px; color: #80d9b4; font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; }
+.cluster-node-state i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; }
+.is-draining .cluster-node-state { color: #e5b45f; }
+.cluster-node-load { display: flex; gap: 8px; }
+.cluster-node-load span { min-width: 72px; display: grid; padding: 9px; border-radius: 9px; background: rgba(255,255,255,.035); text-align: center; }
+.cluster-node-load small { color: #738988; font-size: .68rem; }
+.cluster-node-fields { display: grid; grid-template-columns: minmax(180px,1.4fr) repeat(3,minmax(120px,1fr)); gap: 10px; }
+.cluster-node-fields label { min-width: 0; display: grid; gap: 6px; color: #91a6a5; font-size: .76rem; }
+.cluster-node-fields input { width: 100%; min-width: 0; }
+.cluster-node-card footer > div { display: flex; gap: 8px; flex: 0 0 auto; }
+.cluster-drain-button { color: #f0c67a !important; }
+.cluster-admin-message { min-height: 20px; font-size: .84rem; }
+@media (max-width: 900px) { .cluster-node-fields { grid-template-columns: repeat(2,minmax(0,1fr)); } .cluster-node-card footer { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 560px) { .cluster-admin-heading, .cluster-node-card header { align-items: stretch; flex-direction: column; } .cluster-admin-heading > button { width: 100%; } .cluster-admin-summary, .cluster-node-fields { grid-template-columns: minmax(0,1fr); } .cluster-node-load { width: 100%; } .cluster-node-load span { flex: 1; } .cluster-node-card footer > div { width: 100%; flex-direction: column; } .cluster-node-card footer button { width: 100%; } }

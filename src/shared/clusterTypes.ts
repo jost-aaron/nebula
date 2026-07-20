@@ -10,6 +10,35 @@ export type ClusterNodeState = "online" | "stale" | "offline" | "draining" | "re
 export type ClusterFingerprintAlgorithm = "sha256" | "blake3";
 export type ClusterFingerprintState = "pending" | "ready" | "failed";
 
+export interface ClusterNodeControls {
+  maintenanceDrain: boolean;
+  maxConcurrentStreams: number | null;
+  maxConcurrentTranscodes: number | null;
+  priority: number;
+  updatedAt: IsoDateTime | null;
+}
+
+export interface ClusterAdminNode {
+  advertisedName: string;
+  capabilities: ClusterNodeCapabilities;
+  controls: ClusterNodeControls;
+  endpoint: string;
+  lastSeenAt: IsoDateTime | null;
+  load: { activeStreams: number; activeTranscodes: number };
+  local: boolean;
+  name: string;
+  nodeId: string;
+  pairedAt: IsoDateTime;
+  revokedAt: IsoDateTime | null;
+  role: ClusterNodeRole;
+  state: ClusterNodeState;
+}
+
+export interface ClusterAdminSnapshot {
+  identity: { clusterId: string; descriptor: ClusterNodeDescriptor; keyVersion: number };
+  nodes: ClusterAdminNode[];
+}
+
 export interface ClusterNodeCapabilities {
   directPlay: boolean;
   hls: boolean;

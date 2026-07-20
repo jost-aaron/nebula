@@ -71,6 +71,7 @@ docker compose run --rm dashboard node --test \
   tests/server-cluster-manifest.test.mjs \
   tests/server-cluster-library-projection.test.mjs \
   tests/server-cluster-scheduler.test.mjs \
+  tests/server-cluster-operations.test.mjs \
   tests/server-cluster-grants.test.mjs \
   tests/server-cluster-grant-client.test.mjs \
   tests/server-cluster-media-routes.test.mjs \
@@ -79,6 +80,7 @@ docker compose run --rm dashboard node --test \
   tests/server-cluster-routes.test.mjs \
   tests/server-cluster-sync.test.mjs \
   tests/server-cluster-trust.test.mjs \
+  tests/cluster-admin-ui.test.mjs \
   tests/shard-unified-ui.test.mjs \
   tests/server-catalog-fingerprints.test.mjs \
   tests/nebula-server-cli.test.mjs \
@@ -185,6 +187,13 @@ These fixtures use temporary databases and generated manifests only. Success
 and failure paths both remove their temporary roots; no `content/` media,
 tailnet credentials, persisted test keys, or rendered secret-bearing Compose
 configuration is required.
+12. In Settings / Cluster, assign opposing priorities and verify deterministic
+    selection, then saturate stream and live-transcode limits and confirm new
+    sessions use another eligible node or fail closed. Drain a node while a
+    stream is active: the stream must continue, new sessions must avoid it, and
+    undrain must restore admission. Rename a node and confirm only the displayed
+    alias changes; node ID, endpoint, public key, and signed traffic remain
+    unchanged. Repeat at approximately 390x844 and verify no horizontal overflow.
 
 Harmless operator CLI smoke checks:
 

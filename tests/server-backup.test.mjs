@@ -15,7 +15,8 @@ import { playbackPolicyMigration } from "../server/playbackPolicy/index.mjs";
 import { auditMigration } from "../server/audit/schema.mjs";
 import { renditionsMigration } from "../server/renditions/index.mjs";
 import {
-  clusterFederationMigration, clusterMigration, createClusterRepository, createClusterTrustService
+  clusterFederationMigration, clusterMigration, clusterOperationsMigration,
+  createClusterRepository, createClusterTrustService
 } from "../server/cluster/index.mjs";
 
 const fixture = async (t) => {
@@ -25,7 +26,7 @@ const fixture = async (t) => {
   const databasePath = path.join(dataRoot, "nebula.sqlite");
   const database = await openNebulaDatabase(databasePath);
   migrateAccountSchema(database);
-  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, playbackPolicyMigration, auditMigration, renditionsMigration, clusterMigration, clusterFederationMigration]);
+  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, playbackPolicyMigration, auditMigration, renditionsMigration, clusterMigration, clusterOperationsMigration, clusterFederationMigration]);
   t.after(() => database.close());
   return { backupRoot: path.join(root, "backups"), dataRoot, database, databasePath, root };
 };
@@ -53,6 +54,13 @@ test("online backup captures WAL state and restores every persisted domain", asy
   scope.database.prepare(`INSERT INTO audit_events
     (id, event_type, actor_kind, principal_id, actor_role, target_type, target_id, occurred_at, outcome, metadata_json)
     VALUES ('audit', 'job.enqueued', 'account', 'owner', 'owner', 'job', 'job', ?, 'success', '{"jobType":"probe"}')`).run(now);
+  scope.database.prepare(`INSERT INTO cluster_nodes
+    (node_id, cluster_id, name, role, endpoint, public_key, capabilities_json, state, key_version, paired_at, last_seen_at, updated_at)
+    VALUES ('node-backup', 'cluster-backup', 'Backup shard', 'shard', 'https://backup.example-tail.ts.net/', 'public-key', '{}', 'online', 1, ?, ?, ?)`)
+    .run(now, now, now);
+  scope.database.prepare(`INSERT INTO cluster_node_controls
+    (node_id, display_name, priority, max_concurrent_streams, max_concurrent_transcodes, maintenance_drain, updated_at)
+    VALUES ('node-backup', 'Archive rack', 25, 4, 1, 1, ?)`).run(now);
 
   const service = createBackupService({ ...scope, now: () => new Date(now) });
   const manifest = await service.create({ backupId: "wave4" });
@@ -69,6 +77,10 @@ test("online backup captures WAL state and restores every persisted domain", asy
   assert.equal(db.prepare("SELECT state FROM background_jobs WHERE id = 'job'").get().state, "queued");
   assert.equal(db.prepare("SELECT format_name FROM media_probe_results WHERE source_id = 'source'").get().format_name, "mp4");
   assert.equal(db.prepare("SELECT event_type FROM audit_events WHERE id = 'audit'").get().event_type, "job.enqueued");
+  assert.deepEqual({ ...db.prepare("SELECT display_name, priority, max_concurrent_streams, max_concurrent_transcodes, maintenance_drain FROM cluster_node_controls WHERE node_id = 'node-backup'").get() }, {
+    display_name: "Archive rack", maintenance_drain: 1, max_concurrent_streams: 4,
+    max_concurrent_transcodes: 1, priority: 25
+  });
   assert.deepEqual({ ...db.prepare("SELECT profile_id, state, retention FROM media_renditions WHERE id = 'rendition'").get() }, {
     profile_id: "720p",
     retention: "pinned",

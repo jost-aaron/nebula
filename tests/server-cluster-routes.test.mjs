@@ -55,6 +55,23 @@ test("cluster admin routes create codes, pair, list, and revoke through injected
   assert.equal(removed.status, 204);
 });
 
+test("cluster admin routes expose load and delegate strict node control patches", async () => {
+  const controls = { maintenanceDrain: false, maxConcurrentStreams: null, maxConcurrentTranscodes: null, priority: 0, updatedAt: null };
+  const node = { controls, name: "Basement", nodeId: "node_shard_001" };
+  const service = {
+    identity: () => ({ clusterId: "cluster_fixture_01", descriptor: { nodeId: "node_home_001" } }),
+    listNodes: () => [node],
+    updateNodeControls: (nodeId, update) => ({ ...node, controls: { ...controls, ...update }, nodeId })
+  };
+  const routes = createClusterAdminRoutes({ pairingClient: {}, scheduler: { nodeLoad: () => ({ activeStreams: 2, activeTranscodes: 1 }) }, service });
+  const listed = response();
+  await routes(request("GET"), listed, new URL("http://nebula/api/admin/cluster"));
+  assert.deepEqual(JSON.parse(listed.body).nodes[0].load, { activeStreams: 2, activeTranscodes: 1 });
+  const updated = response();
+  await routes(request("PATCH", { maintenanceDrain: true, priority: 20 }), updated, new URL("http://nebula/api/admin/cluster/nodes/node_shard_001"));
+  assert.equal(JSON.parse(updated.body).node.controls.maintenanceDrain, true);
+});
+
 test("manifest ingress and coordinator controls remain signed, bounded, and owner-routed", async () => {
   const service = {
     signRequest: ({ body }) => ({ nodeId: body.nodeId, signature: "signed" }),

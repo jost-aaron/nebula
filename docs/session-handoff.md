@@ -310,3 +310,9 @@ At handoff time:
   and revocation, shard-loss resume tolerance, and URL/log leakage checks remain
   operator verification. Do not claim production tailnet readiness; see
   `docs/media-sharding-implementation-plan.md`.
+- Phase 5 now has owner-only Settings / Cluster controls for persistent display
+  aliases, `-100..100` scheduling priority, bounded stream/live-transcode
+  capacity, and maintenance drain/undrain. These controls are separate from
+  signed identity, survive descriptor refresh and backup/restore, and affect
+  only new scheduler admission. Readiness/metrics hardening, key rotation,
+  mixed-version rolling tests, and real-tailnet acceptance remain open.

@@ -10,6 +10,7 @@ import { renderActivityAdmin } from "../activity-admin/renderActivityAdmin";
 import { renderTranscodeAccelerationAdmin } from "./transcodeAccelerationAdmin";
 import { renderRenditionStorageAdmin } from "./renditionStorageAdmin";
 import { renderTailscaleAdmin } from "./tailscaleAdmin";
+import { renderClusterAdmin } from "./clusterAdmin";
 
 const formatNumber = (value: number, digits = 1) => (Number.isFinite(value) ? value.toFixed(digits) : "0.0");
 
@@ -105,6 +106,7 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
               <button type="button" data-diagnostic-tab="rendition-storage">Storage</button>
               <button type="button" data-diagnostic-tab="activity">Activity</button>
               <button type="button" data-diagnostic-tab="remote-access">Remote Access</button>
+              <button type="button" data-diagnostic-tab="cluster">Cluster</button>
             </div>
           ` : ""}
           <div class="settings-nav-group">
@@ -152,6 +154,7 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
           ${showJobsAdmin ? renderRenditionStorageAdmin() : ""}
           ${showJobsAdmin ? renderActivityAdmin() : ""}
           ${showJobsAdmin ? renderTailscaleAdmin() : ""}
+          ${showJobsAdmin ? renderClusterAdmin() : ""}
           ${renderSection(
         "Renderer",
         [

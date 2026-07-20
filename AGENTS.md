@@ -164,9 +164,10 @@ Mouse behavior:
   browser-assisted enrollment under Settings / Remote Access. Preserve the
   fixed-file control/status bridge; never mount Tailscale or Docker sockets into
   the dashboard or enable Funnel.
-- Media sharding Phases 0-2 are backend-complete behind
-  `NEBULA_CLUSTER_ENABLED`; Cinema and Studio do not use the federated
-  projection yet. Unified browsing is the next sharding phase.
+- Media sharding Phases 0-4 are implemented behind `NEBULA_CLUSTER_ENABLED`.
+  Phase 5 has persistent owner controls for shard display aliases, scheduling
+  priority, stream/live-transcode capacity, and maintenance drain. Readiness,
+  key rotation, mixed-version rolling tests, and real-tailnet acceptance remain.
 - `Arcade` and `Party` are still planned placeholders.
 
 ## Content And Media

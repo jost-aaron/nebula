@@ -6,8 +6,9 @@ This document scopes the media-platform sharding feature and records its staged
 implementation status. Phases 0-3 are complete. Phase 4 now implements
 coordinator-scheduled original, remuxed, live-HLS, and persistent-rendition
 delivery through signed shard grants, plus coordinator-owned personal playback
-state. The remaining operator and subtitle limitations in the Phase 4 status
-section remain part of the contract.
+state. Phase 5 owner priority, capacity, safe display-name, and maintenance-drain
+controls are implemented; the remaining operations, real-tailnet, and subtitle
+limitations below remain part of the contract.
 
 The recommended first release uses one **coordinator** and one or more **media
 shards**. A normal single-server Nebula installation remains supported and acts
@@ -264,18 +265,16 @@ show why a shard was selected.
 
 The current scheduler creates an account-bound, sticky in-memory playback
 session and chooses one online candidate deterministically. It excludes offline,
-draining, explicitly excluded, and cooldown nodes. Its implemented score favors
+maintenance-drained, capacity-saturated, explicitly excluded, revoked, and
+cooldown nodes. Its implemented score favors
 a ready requested rendition, then direct play, remux, and live transcode; adds a
-small local-coordinator bonus; subtracts an active-session load penalty; and uses
-node ID as the final stable tie-breaker. The public response exposes the chosen
+bounded owner-priority bonus and small local-coordinator bonus; subtracts an
+active-session load penalty; and uses node ID as the final stable tie-breaker.
+Stream capacity is `1-100` or unlimited, live-transcode capacity is `0-32` or
+unlimited, and priority is `-100..100`. Exact fingerprint filtering still occurs
+before policy ranking during failover. The public response exposes the chosen
 node, mode, score, and reason codes without exposing the shard endpoint or local
 catalog IDs.
-
-Only the direct-play/original branch of that decision tree is currently
-activated for a remote shard. A remote candidate that would require a prebuilt
-rendition, remux, or live transcode fails closed with
-`remote_delivery_mode_pending`. The scoring representation for those modes is
-preparatory and must not be read as working remote delivery or policy admission.
 
 ### Delegated media grants
 
@@ -597,6 +596,12 @@ loss, resume tolerance, browser CORS, and grant expiry/revocation behavior on
 an approved test tailnet.
 
 ### Phase 5: operations and hardening
+
+Status: in progress. Persistent owner scheduling priority, stream and live-
+transcode capacity, maintenance drain/undrain, and safe coordinator display-name
+overrides are complete. Controls are owner-only, CSRF-protected, audited,
+strictly validated, included in backups, and consumed by the scheduler without
+interrupting active sessions.
 
 - Add readiness, bounded metrics, audit events, stale-manifest policy, cooldown,
   clock-skew diagnostics, key rotation, and backup/restore tests.

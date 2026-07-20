@@ -34,7 +34,7 @@ import { createRenditionService, createRenditionStore, renditionsMigration } fro
 import { createRenditionCleanupScheduler, createRenditionPolicyRepository, createRenditionPolicyService, renditionPolicyMigrations } from "./renditionPolicy/index.mjs";
 import { createTailscaleEnrollmentService } from "./tailscaleEnrollment.mjs";
 import {
-  clusterMigration, clusterFederationMigration, createClusterIngressRoutes, createClusterManifestClient,
+  clusterMigration, clusterOperationsMigration, clusterFederationMigration, createClusterIngressRoutes, createClusterManifestClient,
   createClusterManifestService, createClusterPairingClient, createClusterRepository, createClusterSyncService,
   createClusterGrantClient, createClusterGrantService, createClusterPlaybackScheduler, createClusterPlaybackService,
   createClusterDeliveryClient, createClusterShardDeliveryService,
@@ -65,18 +65,19 @@ const accountStore = await createAccountStore({ database });
 const guestService = createGuestService({ accountStore });
 const tailscaleEnrollment = createTailscaleEnrollmentService();
 accountStore.setOwnerCreatedHook(() => guestService.revokeAll());
-applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration, clusterFederationMigration]);
+applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration, clusterOperationsMigration, clusterFederationMigration]);
 const auditService = createAuditService({
   db: database,
   maxEvents: Number(process.env.NEBULA_AUDIT_MAX_EVENTS ?? 10_000),
   retentionDays: Number(process.env.NEBULA_AUDIT_RETENTION_DAYS ?? 90)
 });
 const clusterEnabled = process.env.NEBULA_CLUSTER_ENABLED === "true";
+const clusterRepository = createClusterRepository(database);
 const clusterService = clusterEnabled ? createClusterTrustService({
   capabilities: { directPlay: true, hls: true, remux: true, renditionProfiles: ["240p", "360p", "480p", "720p", "1080p"], transcode: true },
   endpoint: process.env.NEBULA_CLUSTER_ENDPOINT,
   name: process.env.NEBULA_CLUSTER_NODE_NAME ?? "Nebula",
-  repository: createClusterRepository(database),
+  repository: clusterRepository,
   role: process.env.NEBULA_CLUSTER_ROLE ?? "hybrid"
 }) : null;
 const catalogRepository = createCatalogRepository(database);
@@ -94,7 +95,7 @@ const syncLocalProjection = clusterService ? () => syncLocalClusterManifest({
 const clusterSync = clusterService ? createClusterSyncService({
   client: createClusterManifestClient(), federation: federatedCatalog, trust: clusterService
 }) : null;
-const clusterScheduler = clusterService ? createClusterPlaybackScheduler({ federation: federatedCatalog }) : null;
+const clusterScheduler = clusterService ? createClusterPlaybackScheduler({ federation: federatedCatalog, nodePolicy: clusterService.nodePolicy }) : null;
 const clusterGrantClient = clusterService ? createClusterGrantClient() : null;
 const clusterDeliveryClient = clusterService ? createClusterDeliveryClient({ trust: clusterService }) : null;
 const fingerprintRepository = createFingerprintRepository(database);
@@ -323,7 +324,7 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   catalog: { libraryPermissions, probeReader, repository: catalogRepository, scan: scanCatalog },
   ...(clusterService ? { cluster: {
     audit: auditService, federation: federatedCatalog, pairingClient: createClusterPairingClient(),
-    playback: clusterPlayback, service: clusterService, sync: clusterSync
+    playback: clusterPlayback, scheduler: clusterScheduler, service: clusterService, sync: clusterSync
   } } : {}),
   jobs: jobsService,
   guestService,

@@ -16,6 +16,7 @@ import { bindPlaybackPolicyAdmin } from "./settings/playbackPolicyAdmin";
 import { bindTranscodeAccelerationAdmin } from "./settings/transcodeAccelerationAdmin";
 import { bindRenditionStorageAdmin } from "./settings/renditionStorageAdmin";
 import { bindTailscaleAdmin } from "./settings/tailscaleAdmin";
+import { bindClusterAdmin } from "./settings/clusterAdmin";
 import { bindStudioView, renderStudioView } from "./studio/renderStudioView";
 import { commandFromKey, type ShellCommand } from "./shell/commands";
 import { bindGamepadCommands } from "./shell/gamepad";
@@ -328,6 +329,7 @@ const bindSettingsTabs = (container: ParentNode) => {
     "rendition-storage": ["rendition-storage"],
     activity: ["activity"],
     "remote-access": ["remote-access"],
+    cluster: ["cluster"],
     apps: ["apps"],
     display: ["display"],
     performance: ["performance"],
@@ -345,6 +347,7 @@ const bindSettingsTabs = (container: ParentNode) => {
     "rendition-storage": { kicker: "Media delivery", title: "Storage", description: "Manage reusable quality output, retention, capacity, and cleanup." },
     activity: { kicker: "Server operations", title: "Activity", description: "Review bounded administration and security events without exposing sensitive data." },
     "remote-access": { kicker: "Private network", title: "Remote Access", description: "Manage tailnet HTTPS and inspect direct or relayed Tailscale paths." },
+    cluster: { kicker: "Distributed media", title: "Cluster", description: "Control shard names, scheduling priority, capacity, and maintenance admission." },
     renderer: { kicker: "Graphics", title: "Renderer", description: "Inspect the active rendering path, adapter capabilities, and GPU limits." },
     display: { kicker: "Graphics", title: "Display", description: "Review viewport, screen, pixel density, orientation, and motion preferences." },
     performance: { kicker: "Diagnostics", title: "Performance", description: "Monitor frame timing, sample count, and dashboard uptime." },
@@ -550,7 +553,8 @@ const launchApp = async (app: DashboardApp) => {
       const disposeRenditionStorage = bindRenditionStorageAdmin(appSurface);
       const disposeActivity = bindActivityAdmin(appSurface);
       const disposeTailscale = bindTailscaleAdmin(appSurface);
-      disposeActiveApp = () => { disposeJobs(); disposePlaybackPolicy(); disposeAcceleration(); disposeRenditionStorage(); disposeActivity(); disposeTailscale(); };
+      const disposeCluster = bindClusterAdmin(appSurface);
+      disposeActiveApp = () => { disposeJobs(); disposePlaybackPolicy(); disposeAcceleration(); disposeRenditionStorage(); disposeActivity(); disposeTailscale(); disposeCluster(); };
     }
   }
 

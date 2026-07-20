@@ -16,10 +16,11 @@ const deliveryFor = (source, request) => {
 
 export const createClusterPlaybackScheduler = ({
   federation, now = () => Date.now(), uuid = randomUUID, sessionTtlMs = 30 * 60 * 1000,
-  failureCooldownMs = 60_000
+  failureCooldownMs = 60_000, nodePolicy = () => null
 }) => {
   const sessions = new Map();
   const activeByNode = new Map();
+  const transcodesByNode = new Map();
   const cooldowns = new Map();
 
   const activeCount = (nodeId) => activeByNode.get(nodeId) ?? 0;
@@ -34,8 +35,16 @@ export const createClusterPlaybackScheduler = ({
       cooldowns: remaining.length
     };
   };
-  const releaseCandidate = (candidate) => activeByNode.set(candidate.nodeId, Math.max(0, activeCount(candidate.nodeId) - 1));
-  const claimCandidate = (candidate) => activeByNode.set(candidate.nodeId, activeCount(candidate.nodeId) + 1);
+  const transcodeCount = (nodeId) => transcodesByNode.get(nodeId) ?? 0;
+  const usesTranscodeSlot = (candidate) => candidate.mode === "live-transcode";
+  const releaseCandidate = (candidate) => {
+    activeByNode.set(candidate.nodeId, Math.max(0, activeCount(candidate.nodeId) - 1));
+    if (usesTranscodeSlot(candidate)) transcodesByNode.set(candidate.nodeId, Math.max(0, transcodeCount(candidate.nodeId) - 1));
+  };
+  const claimCandidate = (candidate) => {
+    activeByNode.set(candidate.nodeId, activeCount(candidate.nodeId) + 1);
+    if (usesTranscodeSlot(candidate)) transcodesByNode.set(candidate.nodeId, transcodeCount(candidate.nodeId) + 1);
+  };
   const candidatesFor = (request, excludedNodeIds = new Set(), exactReplicaKey = undefined) => {
     if (!request || typeof request.federatedItemId !== "string" || !request.capabilities || typeof request.capabilities.deviceId !== "string") {
       throw error(400, "invalid_cluster_playback_request", "A federated item and client capabilities are required.");
@@ -46,9 +55,18 @@ export const createClusterPlaybackScheduler = ({
       if (exactReplicaKey !== undefined && source.exactReplicaKey !== exactReplicaKey) return [];
       const delivery = deliveryFor(source, request);
       if (!delivery) return [];
+      const policy = nodePolicy(source.nodeId);
+      if (policy?.state === "revoked" || policy?.controls?.maintenanceDrain) return [];
+      const maxStreams = policy?.controls?.maxConcurrentStreams ?? null;
+      const maxTranscodes = policy?.controls?.maxConcurrentTranscodes ?? null;
+      if (maxStreams !== null && activeCount(source.nodeId) >= maxStreams) return [];
+      if (delivery.mode === "live-transcode" && maxTranscodes !== null && transcodeCount(source.nodeId) >= maxTranscodes) return [];
       const loadPenalty = activeCount(source.nodeId) * 100;
       const localityBonus = source.local ? 20 : 0;
-      const score = delivery.baseScore + localityBonus - loadPenalty;
+      // Priority breaks ties within delivery preference without overpowering
+      // the server-owned direct/remux/transcode ordering.
+      const priorityBonus = (policy?.controls?.priority ?? 0) * 0.25;
+      const score = delivery.baseScore + priorityBonus + localityBonus - loadPenalty;
       return [{
         ...delivery,
         endpoint: source.endpoint,
@@ -58,11 +76,12 @@ export const createClusterPlaybackScheduler = ({
         localItemId: source.localItemId,
         localSourceId: source.localSourceId,
         nodeId: source.nodeId,
-        nodeName: source.nodeName,
+        nodeName: policy?.name ?? source.nodeName,
         score,
         sourceRevision: source.sourceRevision,
         reasons: [
           { code: delivery.mode === "prebuilt-rendition" ? "PREBUILT_RENDITION" : delivery.decision === "direct-play" ? "DIRECT_PLAY" : delivery.decision === "remux" ? "REMUX" : "LIVE_TRANSCODE", score: delivery.baseScore },
+          ...(priorityBonus ? [{ code: "OWNER_PRIORITY", score: priorityBonus }] : []),
           ...(source.local ? [{ code: "LOCAL_COORDINATOR", score: localityBonus }] : []),
           ...(loadPenalty ? [{ code: "ACTIVE_SESSION_LOAD", score: -loadPenalty }] : [])
         ]
@@ -115,6 +134,7 @@ export const createClusterPlaybackScheduler = ({
       releaseCandidate(session.candidate); sessions.delete(session.id);
     },
     operationsSnapshot,
-    snapshot: () => ({ activeByNode: Object.fromEntries(activeByNode), sessionCount: sessions.size })
+    snapshot: () => ({ activeByNode: Object.fromEntries(activeByNode), sessionCount: sessions.size }),
+    nodeLoad: (nodeId) => ({ activeStreams: activeCount(nodeId), activeTranscodes: transcodeCount(nodeId) })
   };
 };
