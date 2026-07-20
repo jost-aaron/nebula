@@ -5,7 +5,11 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 REPO_ROOT=$(cd -- "$SCRIPT_DIR/.." && pwd -P)
 COMPOSE_FILE=${NEBULA_SERVER_COMPOSE_FILE:-"$REPO_ROOT/compose.deploy.yaml"}
 ENV_FILE=${NEBULA_SERVER_ENV_FILE:-"$REPO_ROOT/.env"}
-BASE_DIR=${NEBULA_SERVER_BASE_DIR:-/srv/nebula}
+case $(uname -s) in
+  Darwin) PLATFORM_BASE_DIR="$HOME/Library/Application Support/Nebula" ;;
+  *) PLATFORM_BASE_DIR=/srv/nebula ;;
+esac
+BASE_DIR=${NEBULA_SERVER_BASE_DIR:-$PLATFORM_BASE_DIR}
 DOCKER_BIN=${NEBULA_DOCKER_BIN:-docker}
 CURL_BIN=${NEBULA_CURL_BIN:-curl}
 WAIT_TIMEOUT=${NEBULA_SERVER_WAIT_TIMEOUT:-180}
@@ -40,7 +44,7 @@ Commands:
   help             Show this help
 
 Options:
-  --base-dir PATH       Default data/content/backups parent (default: /srv/nebula)
+  --base-dir PATH       Data/content/backups parent (platform default when omitted)
   --env-file PATH       Deployment env file (default: repository .env)
   --compose-file PATH   Deployment Compose file (default: compose.deploy.yaml)
   --uid ID              Numeric owner for newly initialized directories

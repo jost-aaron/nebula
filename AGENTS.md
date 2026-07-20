@@ -76,6 +76,9 @@ The host tree should not contain `node_modules` or `dist`.
 - Local URL: http://127.0.0.1:5173
 - WebGPU renderer is active when `navigator.gpu` and a compatible adapter exist.
 - Canvas 2D fallback is used when WebGPU is unavailable.
+- Persistent preview deployments use `scripts/nebula-server.sh` on Linux/macOS
+  or `scripts/nebula-server.ps1`/`.cmd` on Windows. Both operate
+  `compose.deploy.yaml`; do not fork platform-specific Compose behavior.
 
 ## Mental Model
 
@@ -158,8 +161,8 @@ Mouse behavior:
   rendition storage policy. Studio reports authenticated playback lifecycle,
   history, completion, and resume state using stable catalog IDs; guest playback
   remains non-persistent.
-- `scripts/nebula-server.sh` provides the no-clobber single-host deployment and
-  lifecycle CLI over `compose.deploy.yaml`.
+- `scripts/nebula-server.sh` and `scripts/nebula-server.ps1` provide matching
+  no-clobber single-host deployment lifecycles over `compose.deploy.yaml`.
 - The dormant Tailscale companion supports owner-only enable/disable and
   browser-assisted enrollment under Settings / Remote Access. Preserve the
   fixed-file control/status bridge; never mount Tailscale or Docker sockets into

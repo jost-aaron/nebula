@@ -39,7 +39,15 @@ Deployment CLI tests run in the same suite with fake Docker commands. They cover
 argument parsing, prerequisite failure before host mutation, conservative
 configuration generation, idempotent no-clobber initialization, backup token
 file permissions, and exact `compose.deploy.yaml` command construction; they do
-not start a production stack.
+not start a production stack. Platform-contract tests also keep the Linux,
+macOS, and Windows launchers aligned on localhost binding, account gating,
+no-clobber initialization, Tailscale isolation, and secret handling.
+
+Before a Windows release, additionally parse and run
+`scripts/nebula-server.ps1` on a disposable Windows 11 Docker Desktop host.
+Exercise initialization, ACL rejection, every lifecycle command, reboot
+recovery, backup token handling, and interactive Tailscale enrollment. Static
+cross-platform tests do not replace this native-host acceptance pass.
 
 Tailscale coverage verifies that both stacks include a dormant companion;
 `tailscaled` starts only after the fixed owner-controlled marker appears and
@@ -291,6 +299,13 @@ Harmless operator CLI smoke checks:
 ./scripts/nebula-server.sh --help
 ./scripts/nebula-server.sh validate
 docker compose run --rm dashboard node --test tests/nebula-server-cli.test.mjs
+```
+
+On Windows PowerShell 7, the equivalent smoke checks are:
+
+```powershell
+.\scripts\nebula-server.ps1 help
+.\scripts\nebula-server.ps1 validate
 ```
 
 `validate` requires an existing deployment `.env`; it renders the deployment

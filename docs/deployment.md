@@ -1,8 +1,9 @@
 # Deployment And Operations
 
 Nebula currently supports a **single-host, self-hosted preview deployment** built
-from this repository. Linux hosts with Docker Engine plus Compose v2 are the
-recommended target. Docker Desktop on macOS is suitable for evaluation. The
+from this repository. Linux hosts with Docker Engine plus Compose v2 remain the
+recommended persistent target. Docker Desktop on macOS and Windows is supported
+for preview deployments through native operator launchers. The
 server embeds Vite middleware and has not been hardened or load-tested as a
 general public internet service. Do not treat it as HA, multi-node, or a
 production media appliance.
@@ -27,23 +28,80 @@ runs as an explicit UID/GID, and checks liveness. No image is published.
   cache (including the embedded Vite cache). Backups contain database/metadata
   bundles but **never media**.
 
-## Operator CLI and fresh-host install
+## Operator CLIs and fresh-host install
 
-Clone or check out a reviewed Nebula revision on a Linux host with Docker, then
-run the repository-owned CLI. This is the one-command install path after Docker
-is installed:
+Clone or check out a reviewed Nebula revision, then run the repository-owned
+launcher for the host. Each launcher uses the same `compose.deploy.yaml`, writes
+the same conservative configuration, and refuses to replace an existing `.env`.
+
+Linux with Docker Engine and Compose v2:
 
 ```sh
 sudo ./scripts/nebula-server.sh install
 ```
 
-The command checks Docker daemon access and Compose v2 before changing the host,
-creates `/srv/nebula/{data,content,backups}` as mode `0750`, writes a mode `0600`
-`.env` from conservative documented defaults, validates and starts
-`compose.deploy.yaml`, waits for `/readyz`, and prints the owner setup URL. When
-run through `sudo`, the directories are owned by the invoking user's numeric
-UID/GID. An existing `.env` is retained byte-for-byte; existing storage is never
-deleted. Re-running `install` is safe and reconciles the current Compose stack.
+macOS with Docker Desktop:
+
+```sh
+./scripts/nebula-server.sh install
+```
+
+Windows with Docker Desktop, its WSL2 Linux-container engine, and PowerShell 7:
+
+```powershell
+.\scripts\nebula-server.ps1 install
+```
+
+The command checks Docker daemon access and Compose v2 before changing the host.
+Linux creates `/srv/nebula/{data,content,backups}`; macOS uses
+`~/Library/Application Support/Nebula`; Windows uses `%LOCALAPPDATA%\Nebula`.
+Unix launchers enforce restrictive file modes. The Windows launcher removes ACL
+inheritance from data, backups, `.env`, Tailscale state, and secret files and
+rejects broadly writable ACLs. Both launchers validate and start
+`compose.deploy.yaml`, wait for `/readyz`, and print the owner setup URL. When
+Linux is run through `sudo`, the directories are owned by the invoking user's
+numeric UID/GID. An existing `.env` is retained byte-for-byte; existing storage
+is never deleted. Re-running `install` is safe and reconciles the current stack.
+The Windows `.cmd` shim delegates to PowerShell 7 without bypassing the signed-in
+user's execution policy.
+
+### Windows prerequisites and storage
+
+Install Docker Desktop with the WSL2 engine and PowerShell 7. Docker Desktop
+must be running and configured for Linux containers; native Windows containers
+are not supported. Install PowerShell 7 with:
+
+```powershell
+winget install Microsoft.PowerShell
+```
+
+Clone the repository to a local NTFS path available to Docker Desktop. Keep the
+default `%LOCALAPPDATA%\Nebula` storage root unless another local NTFS path is
+required. Do not place SQLite data, Tailscale state, or secret files on a network
+share, FAT/exFAT volume, cloud-synchronized directory, or WSL `/mnt/*` bridge.
+The media `content` directory may be moved to another local NTFS disk by editing
+`NEBULA_CONTENT_PATH` after initialization; keep it writable for Files actions.
+
+PowerShell lifecycle commands mirror Bash:
+
+```powershell
+.\scripts\nebula-server.ps1 validate
+.\scripts\nebula-server.ps1 up
+.\scripts\nebula-server.ps1 status
+.\scripts\nebula-server.ps1 logs -Tail 200 -Follow
+.\scripts\nebula-server.ps1 update
+.\scripts\nebula-server.ps1 down
+```
+
+For Tailscale preconfiguration:
+
+```powershell
+.\scripts\nebula-server.ps1 install -Tailscale -TailscaleHostname nebula-windows
+```
+
+Then use localhost owner Settings / Remote Access for interactive enrollment.
+The companion stays userspace-only, Serve remains private, and Funnel stays
+disabled. Every client must separately join the same tailnet.
 
 Inspect the generated `.env` before making the service reachable beyond
 loopback. For a different storage root or noninteractive provisioning, use

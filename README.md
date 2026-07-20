@@ -36,16 +36,24 @@ Open http://127.0.0.1:5173.
 
 This is the source-mounted development stack, not the recommended persistent
 deployment shape. For a single-host self-hosted preview, the repository-owned
-operator CLI makes a fresh Linux-host deployment one command after Docker is
-installed:
+operator CLIs make a fresh Linux, macOS, or Windows deployment one command after
+Docker is installed:
 
 ```sh
 sudo ./scripts/nebula-server.sh install
 ```
 
-It creates an explicit `.env` plus `/srv/nebula/{data,content,backups}`, validates
-and starts `compose.deploy.yaml`, waits for readiness, and prints the owner setup
-URL. It never replaces an existing `.env`. Read
+On macOS, omit `sudo`; storage defaults under the current user's Library. On
+Windows, use Docker Desktop, PowerShell 7, and:
+
+```powershell
+.\scripts\nebula-server.ps1 install
+```
+
+It creates an explicit `.env` plus platform-native data, content, backup, and
+Tailscale state directories, validates and starts `compose.deploy.yaml`, waits
+for readiness, and prints the owner setup URL. It never replaces an existing
+`.env`. Read
 [docs/deployment.md](docs/deployment.md) before changing network exposure and for
 exact update, backup, and staged recovery workflows. The current runtime is not
 HA or hardened for public internet exposure.
@@ -122,7 +130,8 @@ without either configuration source.
 - `compose.yaml` - container-first local development entrypoint.
 - `compose.deploy.yaml` - locally built, single-host deployment example.
 - `.env.example` - placeholder-only deployment configuration reference.
-- `scripts/nebula-server.sh` - no-clobber single-host install and lifecycle CLI.
+- `scripts/nebula-server.sh` - no-clobber Linux/macOS install and lifecycle CLI.
+- `scripts/nebula-server.ps1` and `.cmd` - equivalent Windows PowerShell 7 CLI.
 - `Dockerfile` - Node/Vite image used by Compose.
 - `AGENTS.md` - handoff notes for another coding model or automation agent.
 - `docs/` - deeper architecture, rendering, workflow, testing, and roadmap notes.

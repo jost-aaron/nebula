@@ -21,6 +21,10 @@ described in `docs/multi-origin-hls-experiment.md`.
 Nebula Dashboard is a Docker Compose first browser dashboard/runtime prototype.
 The current app includes:
 
+- Native deployment launchers: Bash with safe Linux/macOS defaults and
+  PowerShell 7 plus a `.cmd` shim for Windows Docker Desktop. They share the
+  no-clobber `compose.deploy.yaml` contract and protect platform secrets with
+  POSIX modes or Windows ACLs.
 - WebGPU animated background with Canvas fallback.
 - Console-like app shell with app-first navigation and full-screen app launch
   animation.
