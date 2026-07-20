@@ -6,12 +6,33 @@ export const CLUSTER_DELIVERY_PATH = "/api/shard/v1/playback/delivery";
 export const CLUSTER_DELIVERY_STATUS_PATH = "/api/shard/v1/playback/delivery/status";
 export const CLUSTER_DELIVERY_CANCEL_PATH = "/api/shard/v1/playback/delivery/cancel";
 const error = (status, code, message) => Object.assign(new Error(message), { status, code, expose: true });
-const readJson = async (response, limit) => {
-  const chunks = []; let size = 0;
-  for await (const chunk of response.body ?? []) {
-    const bytes = Buffer.from(chunk); size += bytes.length;
-    if (size > limit) throw error(502, "invalid_shard_response", "The shard delivery response exceeded its size limit.");
-    chunks.push(bytes);
+const readJson = async (response, limit, signal) => {
+  const body = response.body;
+  if (!body) throw error(502, "invalid_shard_response", "The shard delivery response was invalid.");
+  const reader = body.getReader();
+  const chunks = []; let size = 0; let rejectAbort;
+  const aborted = new Promise((_, reject) => { rejectAbort = reject; });
+  const abort = () => {
+    void reader.cancel(signal.reason).catch(() => undefined);
+    rejectAbort(signal.reason ?? new DOMException("The operation was aborted.", "AbortError"));
+  };
+  signal.addEventListener("abort", abort, { once: true });
+  try {
+    if (signal.aborted) abort();
+    while (true) {
+      const { done, value } = await Promise.race([reader.read(), aborted]);
+      if (signal.aborted) throw signal.reason;
+      if (done) break;
+      const bytes = Buffer.from(value); size += bytes.length;
+      if (size > limit) {
+        await reader.cancel().catch(() => undefined);
+        throw error(502, "invalid_shard_response", "The shard delivery response exceeded its size limit.");
+      }
+      chunks.push(bytes);
+    }
+  } finally {
+    signal.removeEventListener("abort", abort);
+    reader.releaseLock();
   }
   try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }
   catch { throw error(502, "invalid_shard_response", "The shard delivery response was invalid."); }
@@ -56,7 +77,8 @@ const validateResult = (value, operation) => {
 
 export const createClusterDeliveryClient = ({
   allowDirect = false, fetcher = null, maxResponseBytes = 64 * 1024,
-  proxyUrl = process.env.NEBULA_CLUSTER_HTTP_PROXY, timeoutMs = 10_000, trust
+  proxyUrl = process.env.NEBULA_CLUSTER_HTTP_PROXY, timeoutMs = 10_000, trust,
+  clearTimeoutFn = clearTimeout, setTimeoutFn = setTimeout
 } = {}) => {
   if (!trust) throw new TypeError("Cluster trust is required.");
   const proxy = validateClusterProxyUrl(proxyUrl);
@@ -67,16 +89,18 @@ export const createClusterDeliveryClient = ({
     const origin = validateClusterEndpoint(endpoint);
     const envelope = trust.signRequest({ body: payload, method: "POST", path });
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs); timer.unref?.();
-    let response;
+    const timer = setTimeoutFn(() => controller.abort(), timeoutMs); timer.unref?.();
+    let response; let value;
     try {
       response = await transport(`${origin}${path}`, {
         body: JSON.stringify({ envelope, payload }), headers: { "content-type": "application/json" },
         method: "POST", redirect: "error", signal: controller.signal
       });
-    } catch { throw error(502, "shard_unreachable", "The shard delivery request failed."); }
-    finally { clearTimeout(timer); }
-    const value = await readJson(response, maxResponseBytes);
+      value = await readJson(response, maxResponseBytes, controller.signal);
+    } catch (cause) {
+      if (cause?.code === "invalid_shard_response") throw cause;
+      throw error(502, "shard_unreachable", "The shard delivery request failed.");
+    } finally { clearTimeoutFn(timer); }
     if (!response.ok) throw error(response.status >= 400 && response.status < 500 ? response.status : 502, value?.code ?? "shard_delivery_failed", "The shard rejected the delivery request.");
     if (!value || Object.keys(value).sort().join(",") !== "envelope,payload") throw error(502, "invalid_shard_response", "The shard delivery response was not signed.");
     const peer = trust.verifyRequest(value.envelope, value.payload, { method: "POST", path });
