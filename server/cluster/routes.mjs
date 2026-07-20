@@ -86,20 +86,27 @@ export const createClusterIngressRoutes = (options) => {
       const details = await stat(asset);
       const headers = { "accept-ranges": "bytes", "cache-control": playlist ? "no-store" : "private, no-store", "content-type": explicitType ?? mimeType(asset), "vary": "Origin" };
       if (request.headers.origin === resolved.clientOrigin) headers["access-control-allow-origin"] = resolved.clientOrigin;
-      if (request.method === "HEAD") { response.writeHead(200, { ...headers, "content-length": details.size }); response.end(); return true; }
       if (playlist) {
+        if (details.size > 1024 * 1024) throw Object.assign(new Error("The generated playlist exceeded its size limit."), { status: 502, code: "invalid_delivery_playlist", expose: true });
         const raw = await readFile(asset, "utf8");
         const ticket = encodeURIComponent(url.searchParams.get("ticket"));
         const rewritten = raw.split("\n").map((line) => {
-          if (!line || line.startsWith("#")) return line;
+          if (!line) return line;
+          if (line.startsWith("#")) {
+            if (/URI\s*=/.test(line)) throw Object.assign(new Error("The generated playlist contains an unsupported embedded asset reference."), { status: 502, code: "invalid_delivery_playlist", expose: true });
+            return line;
+          }
           const parsed = new URL(line, "https://nebula.invalid/");
-          if (parsed.origin !== "https://nebula.invalid" || parsed.pathname.includes("..") || parsed.pathname.split("/").filter(Boolean).length !== 1) {
+          if (parsed.origin !== "https://nebula.invalid" || parsed.hash || parsed.pathname.includes("..") || parsed.pathname.split("/").filter(Boolean).length !== 1) {
             throw Object.assign(new Error("The generated playlist contains an invalid asset reference."), { status: 502, code: "invalid_delivery_playlist", expose: true });
           }
           return `${line}${line.includes("?") ? "&" : "?"}ticket=${ticket}`;
         }).join("\n");
-        response.writeHead(200, { ...headers, "content-length": Buffer.byteLength(rewritten) }); response.end(rewritten); return true;
+        response.writeHead(200, { ...headers, "content-length": Buffer.byteLength(rewritten) });
+        response.end(request.method === "HEAD" ? undefined : rewritten);
+        return true;
       }
+      if (request.method === "HEAD") { response.writeHead(200, { ...headers, "content-length": details.size }); response.end(); return true; }
       const range = request.headers.range;
       if (!range) { response.writeHead(200, { ...headers, "content-length": details.size }); createReadStream(asset).pipe(response); return true; }
       const parsed = parseByteRange(range, details.size);

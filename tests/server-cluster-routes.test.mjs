@@ -96,10 +96,26 @@ test("generated HLS ingress rewrites only shard-owned relative assets with the m
   assert.equal(res.status, 200);
   assert.match(res.body, /segment-000\.ts\?ticket=ticket_fixture_01/);
   assert.equal(res.headers["access-control-allow-origin"], "http://127.0.0.1:5173");
+  const head = response();
+  const headRequest = request("HEAD"); headRequest.headers.origin = "http://127.0.0.1:5173";
+  await routes(headRequest, head, new URL("http://nebula/api/shard/v1/media/grant_fixture_01/hls/master.m3u8?ticket=ticket_fixture_01"));
+  assert.equal(head.status, 200);
+  assert.equal(head.headers["content-length"], Buffer.byteLength(res.body));
+  assert.equal(head.body, "");
 
   await writeFile(playlist, "#EXTM3U\nhttps://attacker.example/segment.ts\n");
   const denied = response();
   await routes(req, denied, new URL("http://nebula/api/shard/v1/media/grant_fixture_01/hls/master.m3u8?ticket=ticket_fixture_01"));
   assert.equal(denied.status, 502);
   assert.equal(JSON.parse(denied.body).code, "invalid_delivery_playlist");
+
+  await writeFile(playlist, "#EXTM3U\nsegment-000.ts#drop-ticket\n");
+  const fragment = response();
+  await routes(req, fragment, new URL("http://nebula/api/shard/v1/media/grant_fixture_01/hls/master.m3u8?ticket=ticket_fixture_01"));
+  assert.equal(fragment.status, 502);
+
+  await writeFile(playlist, "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"https://attacker.example/key\"\nsegment-000.ts\n");
+  const embedded = response();
+  await routes(req, embedded, new URL("http://nebula/api/shard/v1/media/grant_fixture_01/hls/master.m3u8?ticket=ticket_fixture_01"));
+  assert.equal(embedded.status, 502);
 });

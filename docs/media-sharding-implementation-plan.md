@@ -311,8 +311,9 @@ or an exact origin in Nebula's API CORS allowlist, preserving localhost and
 Capacitor playback without wildcard CORS. The coordinator's server-to-server activation uses the
 pinned `.ts.net` endpoint through the fixed userspace Tailscale proxy, rejects
 redirects, applies a timeout and response-size limit, and validates the exact
-response shape. Tickets currently appear in the direct media URL query string,
-so operators must continue to prevent URL logging and referrer leakage.
+response shape. Tickets currently appear in the direct media URL query string.
+The browser document uses `Referrer-Policy: no-referrer`; operators must also
+keep request URLs out of proxy and access logs.
 
 This is presently an owner-only coordinator authorization path. The shard does
 not receive or query the coordinator account database; it trusts the scoped,
