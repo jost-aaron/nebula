@@ -25,6 +25,11 @@ test("cluster controls poll only while visible and dispose cleanly", () => {
   assert.match(main, /disposeCluster\(\)/);
 });
 
+test("standalone mode stays intentional and does not expose transport parse errors", () => {
+  assert.match(source, /Cluster mode is not enabled on this server/);
+  assert.match(source, /catch \{[\s\S]*?Cluster mode is not enabled on this server[\s\S]*?show\(""\)/);
+});
+
 test("cluster controls stack without horizontal overflow on phone layouts", () => {
   assert.match(css, /@media \(max-width: 560px\)/);
   assert.match(css, /\.cluster-admin-summary, \.cluster-node-fields \{ grid-template-columns: minmax\(0,1fr\); \}/);

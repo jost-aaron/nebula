@@ -78,10 +78,24 @@ export const bindClusterAdmin = (container: ParentNode) => {
     });
   };
   const load = async () => {
-    try { const snapshot = await getClusterAdmin(); if (disposed) return; content.innerHTML = renderSnapshot(snapshot); bindCards(); }
-    catch (error) { if (!disposed) { content.innerHTML = `<p class="cluster-admin-unavailable">Cluster mode is not enabled on this server.</p>`; show(error instanceof Error ? error.message : "Cluster controls are unavailable."); } }
+    try {
+      const snapshot = await getClusterAdmin();
+      if (disposed) return false;
+      content.innerHTML = renderSnapshot(snapshot);
+      bindCards();
+      return true;
+    } catch {
+      if (!disposed) {
+        content.innerHTML = `<p class="cluster-admin-unavailable">Cluster mode is not enabled on this server.</p>`;
+        show("");
+      }
+      return false;
+    }
   };
-  root.querySelector("[data-cluster-refresh]")?.addEventListener("click", () => { show("Refreshing…"); void load().then(() => show("Cluster status refreshed.")); });
+  root.querySelector("[data-cluster-refresh]")?.addEventListener("click", () => {
+    show("Refreshing…");
+    void load().then((loaded) => { if (loaded) show("Cluster status refreshed."); });
+  });
   void load();
   const timer = window.setInterval(() => { if (!root.hidden) void load(); }, 10_000);
   return () => { disposed = true; window.clearInterval(timer); };

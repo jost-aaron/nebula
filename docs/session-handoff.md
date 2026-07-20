@@ -327,3 +327,11 @@ At handoff time:
   resume its persisted SQLite transition after restart or backup restore.
   Rotation status never includes public or private key material. Real-tailnet
   interrupted-transition acceptance remains an operator check.
+- Phase 5 aggregate cluster readiness, low-cardinality metrics, bounded clock
+  diagnostics, stale-manifest/cooldown reporting, mixed-version rolling tests,
+  and backup/restore coverage are implemented. Public readiness stays opaque;
+  detailed reasons and rotation controls remain owner/service-admin only.
+- Media-sharding Phases 0-5 are implementation-complete. The remaining MVP
+  acceptance work is a disposable real-tailnet Direct/DERP multi-node pass.
+  Member/guest federation and distributed account policy projection remain
+  fail-closed; optional multi-origin HLS remains a post-MVP experiment.

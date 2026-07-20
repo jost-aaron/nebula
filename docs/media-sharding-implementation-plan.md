@@ -3,12 +3,13 @@
 ## Status
 
 This document scopes the media-platform sharding feature and records its staged
-implementation status. Phases 0-3 are complete. Phase 4 now implements
+implementation status. Phases 0-5 are implementation-complete. Phase 4 implements
 coordinator-scheduled original, remuxed, live-HLS, and persistent-rendition
 delivery through signed shard grants, plus coordinator-owned personal playback
-state. Phase 5 owner priority, capacity, safe display-name, and maintenance-drain
-controls are implemented; the remaining operations and real-tailnet limitations
-below remain part of the contract.
+state and remote subtitles. Phase 5 adds owner operations controls, aggregate
+observability, bounded session cleanup, rolling compatibility, backup coverage,
+and signing-key rotation. Real-tailnet acceptance and the optional Phase 6
+experiment remain outstanding as described below.
 
 Generated playback sessions now use hard, non-sliding deadlines at both the
 coordinator and shard. Periodic sweeps release scheduler claims and cancel
@@ -550,7 +551,7 @@ deliberately disabled until coordinator permissions can be projected safely.
 - Federated browsing is currently limited to owners and service clients. Member
   and guest requests remain local-only until library permissions can be applied
   consistently across every shard.
-- Phase 4 is in progress: deterministic session-level scheduling, account-bound
+- Phase 4 is implementation-complete pending operator acceptance: deterministic session-level scheduling, account-bound
   cluster playback sessions, signed delegated grants, fixed range-capable shard
   media ingress, direct client-to-shard original playback in Cinema and Studio,
   remote remux, remote HLS/live transcode, persistent-rendition reuse,
@@ -558,8 +559,9 @@ deliberately disabled until coordinator permissions can be projected safely.
   and resume state, and the exact-replica failover API are implemented with
   generated fixtures. Cinema and Studio attempt failover after a remote media
   error.
-- Remote subtitle delivery, member/guest federation, and distributed production
-  policy admission are not implemented. A real-tailnet multi-node
+- Remote subtitle delivery is implemented through opaque, grant-bound sidecar
+  tracks and burn-in selection. Member/guest federation and distributed account
+  policy projection remain intentionally fail-closed. A real-tailnet multi-node
   playback/failover pass has not been completed.
 
 ### Phase 0: contracts and threat model
@@ -623,8 +625,8 @@ Exit: concurrent sessions distribute across shards, permissions remain
 isolated, and killing the active shard resumes an exact replica near the same
 position.
 
-Status: implementation-complete pending operator acceptance, except for remote
-subtitle delivery and distributed production policy admission. Generated-fixture tests cover deterministic
+Status: implementation-complete pending operator acceptance. Generated-fixture
+tests cover deterministic
 balancing, sticky sessions, scheduler explanations, drain/cooldown handling,
 grant signature and replay defenses, source/revision binding, range media
 ingress, signed remote delivery creation/status/cancellation, remote remux and
@@ -637,11 +639,14 @@ an approved test tailnet.
 
 ### Phase 5: operations and hardening
 
-Status: in progress. Persistent owner scheduling priority, stream and live-
-transcode capacity, maintenance drain/undrain, and safe coordinator display-name
-overrides are complete. Controls are owner-only, CSRF-protected, audited,
-strictly validated, included in backups, and consumed by the scheduler without
-interrupting active sessions.
+Status: implementation-complete pending real-tailnet operator acceptance.
+Persistent owner scheduling priority, stream and live-transcode capacity,
+maintenance drain/undrain, and safe coordinator display-name overrides are
+owner-only, CSRF-protected, audited, strictly validated, included in backups,
+and consumed by the scheduler without interrupting active sessions. Aggregate
+readiness/metrics, bounded clock diagnostics, stale-manifest/cooldown reporting,
+mixed-version rolling tests, restart-safe key rotation, backup/restore checks,
+and hard playback-session expiry are implemented with generated fixtures.
 
 - Add readiness, bounded metrics, audit events, stale-manifest policy, cooldown,
   clock-skew diagnostics, key rotation, and backup/restore tests.
