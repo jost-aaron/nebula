@@ -156,6 +156,35 @@ in `deployment.md`, use an isolated tailnet/copied Nebula data and verify:
     Also confirm that revocation blocks new grant activation while an already
     accepted bearer ticket remains bounded by its expiry or shard restart; an
     immediate distributed active-ticket revocation mechanism does not exist yet.
+11. For Phase 5 rolling operations, drain one shard before updating it and
+    confirm it receives no new sessions. Restart the coordinator and shard one
+    at a time, then verify their persisted node identities still authenticate
+    signed health requests. Force a catalog revision between manifest pages and
+    confirm the coordinator discards the stale cursor, starts one fresh full
+    reconciliation generation, and completes without deleting valid projected
+    rows. Repeated cursor churn must fail boundedly rather than loop. Version 1
+    peers remain compatible; legacy payloads missing required fields, future
+    protocol versions, and unknown future trust/path fields must fail closed.
+    Back up the coordinator, restore it offline into an empty data root, and
+    confirm cluster identity, paired nodes, manifest cursor/generation state,
+    draining state, and revocations are unchanged. A revoked node must remain
+    excluded and unable to authenticate after both restart and restore.
+
+Focused generated-fixture coverage for the Phase 5 slice:
+
+```sh
+docker compose run --rm dashboard node --test \
+  tests/server-cluster-rolling.test.mjs \
+  tests/server-cluster-sync.test.mjs \
+  tests/server-cluster-protocol.test.mjs \
+  tests/server-cluster-trust.test.mjs \
+  tests/server-backup.test.mjs
+```
+
+These fixtures use temporary databases and generated manifests only. Success
+and failure paths both remove their temporary roots; no `content/` media,
+tailnet credentials, persisted test keys, or rendered secret-bearing Compose
+configuration is required.
 
 Harmless operator CLI smoke checks:
 

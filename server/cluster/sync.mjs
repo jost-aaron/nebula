@@ -46,26 +46,34 @@ export const createClusterManifestClient = ({
   };
 };
 
-export const createClusterSyncService = ({ client, federation, trust, maxPages = 10_000 } = {}) => {
+export const createClusterSyncService = ({ client, federation, trust, maxCursorRestarts = 1, maxPages = 10_000 } = {}) => {
   if (!client?.page || !federation?.applyManifestPage || !trust?.signRequest) throw new TypeError("Cluster sync dependencies are required.");
+  if (!Number.isSafeInteger(maxCursorRestarts) || maxCursorRestarts < 0 || maxCursorRestarts > 3) throw new TypeError("maxCursorRestarts must be between 0 and 3.");
   return {
     async syncNode(nodeId) {
       const node = trust.listNodes().find((entry) => entry.nodeId === nodeId);
       if (!node || node.state === "revoked") throw error(404, "node_not_found", "Cluster node not found.");
-      const syncGeneration = `sync_${randomUUID().replaceAll("-", "")}`;
-      let cursor = null;
-      const seen = new Set();
-      for (let count = 0; count < maxPages; count += 1) {
-        const payload = { cursor, limit: 500 };
-        const path = "/api/shard/v1/manifest";
-        const response = await client.page({ endpoint: node.endpoint, envelope: trust.signRequest({ body: payload, method: "POST", path }), payload });
-        trust.verifyRequest(response.envelope, response.payload, { method: "POST", path });
-        const applied = federation.applyManifestPage({ nodeId, page: response.payload, syncGeneration });
-        if (applied.complete) return applied;
-        if (!applied.cursor || seen.has(applied.cursor)) throw error(502, "invalid_manifest_cursor", "The shard repeated an invalid manifest cursor.");
-        seen.add(applied.cursor); cursor = applied.cursor;
+      for (let restart = 0; restart <= maxCursorRestarts; restart += 1) {
+        const syncGeneration = `sync_${randomUUID().replaceAll("-", "")}`;
+        let cursor = null;
+        const seen = new Set();
+        try {
+          for (let count = 0; count < maxPages; count += 1) {
+            const payload = { cursor, limit: 500 };
+            const path = "/api/shard/v1/manifest";
+            const response = await client.page({ endpoint: node.endpoint, envelope: trust.signRequest({ body: payload, method: "POST", path }), payload });
+            trust.verifyRequest(response.envelope, response.payload, { method: "POST", path });
+            const applied = federation.applyManifestPage({ nodeId, page: response.payload, syncGeneration });
+            if (applied.complete) return applied;
+            if (!applied.cursor || seen.has(applied.cursor)) throw error(502, "invalid_manifest_cursor", "The shard repeated an invalid manifest cursor.");
+            seen.add(applied.cursor); cursor = applied.cursor;
+          }
+          throw error(502, "manifest_page_limit", "The shard manifest exceeded the synchronization page limit.");
+        } catch (syncError) {
+          if (syncError?.code !== "cursor_lost" || restart === maxCursorRestarts) throw syncError;
+        }
       }
-      throw error(502, "manifest_page_limit", "The shard manifest exceeded the synchronization page limit.");
+      throw error(502, "manifest_sync_failed", "The shard manifest could not be synchronized.");
     }
   };
 };

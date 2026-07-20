@@ -1,4 +1,6 @@
-export const CLUSTER_PROTOCOL_VERSION = 1;
+import { CLUSTER_PROTOCOL_SUPPORT, isClusterProtocolCompatible } from "./compatibility.mjs";
+
+export const CLUSTER_PROTOCOL_VERSION = CLUSTER_PROTOCOL_SUPPORT.current;
 export const CLUSTER_MANIFEST_PAGE_LIMIT = 500;
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/;
@@ -59,7 +61,7 @@ const timestamp = (value, label) => {
   return value;
 };
 const protocolVersion = (value) => {
-  if (value !== CLUSTER_PROTOCOL_VERSION) fail("unsupported_protocol", `Cluster protocol version ${String(value)} is not supported.`);
+  if (!isClusterProtocolCompatible(value)) fail("unsupported_protocol", `Cluster protocol version ${String(value)} is not supported.`);
 };
 const base64UrlBytes = (value, label, bytes) => {
   requiredString(value, label, 256);

@@ -14,7 +14,9 @@ import { probeMigration } from "../server/probe/catalogAdapter.mjs";
 import { playbackPolicyMigration } from "../server/playbackPolicy/index.mjs";
 import { auditMigration } from "../server/audit/schema.mjs";
 import { renditionsMigration } from "../server/renditions/index.mjs";
-import { clusterFederationMigration, clusterMigration } from "../server/cluster/index.mjs";
+import {
+  clusterFederationMigration, clusterMigration, createClusterRepository, createClusterTrustService
+} from "../server/cluster/index.mjs";
 
 const fixture = async (t) => {
   const root = await import("node:fs/promises").then(({ mkdtemp }) => mkdtemp(path.join(os.tmpdir(), "nebula-backup-")));
@@ -71,6 +73,51 @@ test("online backup captures WAL state and restores every persisted domain", asy
     profile_id: "720p",
     retention: "pinned",
     state: "ready"
+  });
+});
+
+test("backup and restore preserve cluster identity, cursors, draining nodes, and revocations", async (t) => {
+  const scope = await fixture(t);
+  const now = "2026-07-19T12:00:00.000Z";
+  const capabilities = { directPlay: true, hls: true, remux: true, renditionProfiles: [], transcode: true };
+  const repository = createClusterRepository(scope.database, { now: () => now });
+  const trust = createClusterTrustService({
+    capabilities, endpoint: "https://home.tail024251.ts.net/", name: "Home",
+    now: () => Date.parse(now), repository, role: "coordinator"
+  });
+  const clusterId = trust.identity().clusterId;
+  const insertNode = scope.database.prepare(`INSERT INTO cluster_nodes
+    (node_id, cluster_id, name, role, endpoint, public_key, capabilities_json, state, key_version, paired_at, last_seen_at, revoked_at, updated_at)
+    VALUES (?, ?, ?, 'shard', ?, ?, ?, ?, 1, ?, ?, ?, ?)`);
+  const publicKey = Buffer.alloc(32, 4).toString("base64url");
+  insertNode.run("node_draining_01", clusterId, "Draining", "https://draining.tail024251.ts.net", publicKey,
+    JSON.stringify(capabilities), "draining", now, now, null, now);
+  insertNode.run("node_revoked_01", clusterId, "Revoked", "https://revoked.tail024251.ts.net", publicKey,
+    JSON.stringify(capabilities), "revoked", now, now, now, now);
+  scope.database.prepare(`INSERT INTO cluster_manifest_cursors
+    (node_id, manifest_revision, cursor, sync_generation, last_sync_at, last_complete_at, last_error_code, updated_at)
+    VALUES ('node_draining_01', 7, 'cursor_restore_01', 'sync_restore_01', ?, ?, 'cursor_lost', ?)`).run(now, now, now);
+
+  const originalIdentity = trust.identity();
+  const backup = createBackupService({ ...scope, now: () => new Date(now) });
+  await backup.create({ backupId: "cluster-state" });
+  const destination = path.join(scope.root, "restored", "nebula.sqlite");
+  await backup.restore({ backupId: "cluster-state", destinationDatabasePath: destination });
+
+  const restoredDatabase = new DatabaseSync(destination);
+  t.after(() => restoredDatabase.close());
+  const restoredRepository = createClusterRepository(restoredDatabase, { now: () => now });
+  const restoredTrust = createClusterTrustService({
+    capabilities, endpoint: originalIdentity.descriptor.endpoint, name: "Ignored after restore",
+    now: () => Date.parse(now), repository: restoredRepository, role: "coordinator"
+  });
+  assert.deepEqual(restoredTrust.identity(), originalIdentity);
+  assert.equal(restoredRepository.getNode("node_draining_01").state, "draining");
+  assert.equal(restoredRepository.getNode("node_revoked_01").state, "revoked");
+  assert.equal(restoredTrust.listNodes().some(({ nodeId }) => nodeId === "node_revoked_01"), false);
+  assert.deepEqual({ ...restoredDatabase.prepare(`SELECT manifest_revision AS manifestRevision, cursor, sync_generation AS syncGeneration,
+      last_error_code AS lastErrorCode FROM cluster_manifest_cursors WHERE node_id = 'node_draining_01'`).get() }, {
+    cursor: "cursor_restore_01", lastErrorCode: "cursor_lost", manifestRevision: 7, syncGeneration: "sync_restore_01"
   });
 });
 
