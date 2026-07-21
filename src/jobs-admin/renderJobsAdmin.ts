@@ -9,6 +9,13 @@ const MAINTENANCE_JOBS: ReadonlyArray<{ type: JobType; label: string }> = [
   { type: "cleanup", label: "Run cleanup" }
 ];
 const ACTIVE_STATES = new Set<JobState>(["queued", "running"]);
+const timeValue = (value: string) => new Date(value).getTime() || 0;
+const newestFirst = (left: BackgroundJob, right: BackgroundJob) => timeValue(right.updatedAt) - timeValue(left.updatedAt);
+const queueOrder = (left: BackgroundJob, right: BackgroundJob) => {
+  if (left.state === "running" && right.state !== "running") return -1;
+  if (right.state === "running" && left.state !== "running") return 1;
+  return timeValue(left.availableAt) - timeValue(right.availableAt) || timeValue(left.createdAt) - timeValue(right.createdAt);
+};
 
 const escapeHtml = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;")
   .replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -73,8 +80,20 @@ export const bindJobsAdmin = (container: ParentNode) => {
   let loading = false;
 
   const draw = () => {
-    list.innerHTML = jobs.length ? jobs.map((job) => renderJob(job, confirmingId)).join("")
-      : `<div class="jobs-admin-empty">No jobs match these filters.</div>`;
+    const latestSucceeded = [...jobs].filter((job) => job.state === "succeeded").sort(newestFirst)[0] ?? null;
+    const active = jobs.filter((job) => ACTIVE_STATES.has(job.state)).sort(queueOrder);
+    const focusedIds = new Set([latestSucceeded?.id, ...active.map((job) => job.id)].filter(Boolean));
+    const history = jobs.filter((job) => !focusedIds.has(job.id)).sort(newestFirst);
+    const focused = [...(latestSucceeded ? [latestSucceeded] : []), ...active];
+    list.innerHTML = jobs.length ? `
+      <section class="jobs-admin-group" aria-labelledby="jobs-admin-now">
+        <div class="jobs-admin-group-heading"><strong id="jobs-admin-now">Now</strong><span>${active.length} active</span></div>
+        <div class="jobs-admin-group-list">${focused.length ? focused.map((job) => renderJob(job, confirmingId)).join("") : `<div class="jobs-admin-empty">No active or recently completed jobs.</div>`}</div>
+      </section>
+      <details class="jobs-admin-history"${stateFilter.value ? " open" : ""}>
+        <summary>History <span>${history.length}</span></summary>
+        <div class="jobs-admin-group-list">${history.length ? history.map((job) => renderJob(job, confirmingId)).join("") : `<div class="jobs-admin-empty">No older jobs.</div>`}</div>
+      </details>` : `<div class="jobs-admin-empty">No jobs match these filters.</div>`;
     list.setAttribute("aria-busy", "false");
   };
   const load = async (announce = true) => {

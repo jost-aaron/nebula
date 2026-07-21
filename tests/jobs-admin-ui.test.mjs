@@ -27,6 +27,15 @@ test("failed probes can be explicitly retried by the owner", () => {
   assert.match(source, /maxAttempts: 1/);
 });
 
+test("jobs admin keeps one completion receipt above active work and moves older jobs to history", () => {
+  assert.match(source, /latestSucceeded/);
+  assert.match(source, /const focused = \[\.\.\.\(latestSucceeded \? \[latestSucceeded\] : \[\]\), \.\.\.active\]/);
+  assert.match(source, /class="jobs-admin-history"/);
+  assert.match(source, /jobs\.filter\(\(job\) => !focusedIds\.has\(job\.id\)\)/);
+  assert.match(source, /left\.state === "running"/);
+  assert.match(css, /\.jobs-admin-history/);
+});
+
 test("jobs admin exposes progress, live status, filtering, and phone layout", () => {
   assert.match(source, /role="progressbar"/);
   assert.match(source, /aria-live="polite"/);

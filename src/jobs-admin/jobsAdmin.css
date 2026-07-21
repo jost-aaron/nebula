@@ -35,6 +35,12 @@
 .jobs-admin-enqueue button:first-child { color: #061019; background: #7de0ea; }
 .jobs-admin-filters label { display: grid; gap: 4px; color: #9aa8b7; font-size: 0.78rem; }
 .jobs-admin-list { display: grid; gap: 8px; }
+.jobs-admin-group, .jobs-admin-group-list { display: grid; gap: 8px; }
+.jobs-admin-group-heading { display: flex; align-items: center; justify-content: space-between; color: #dbe4ec; }
+.jobs-admin-group-heading span, .jobs-admin-history summary span { color: #8493a3; font-size: 0.78rem; font-weight: 500; }
+.jobs-admin-history { border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 10px; }
+.jobs-admin-history summary { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px; color: #dbe4ec; cursor: pointer; font-weight: 700; }
+.jobs-admin-history[open] summary { margin-bottom: 8px; }
 
 .jobs-admin-card {
   display: grid;
@@ -70,6 +76,7 @@
   .jobs-admin-enqueue { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .jobs-admin-card { padding: 10px; }
   .jobs-admin-confirm { align-items: stretch; flex-direction: column; }
+  .jobs-admin-history summary { min-height: 38px; }
 }
 
 @media (prefers-reduced-motion: reduce) { .jobs-admin-progress i { transition: none; } }
