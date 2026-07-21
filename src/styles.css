@@ -1281,7 +1281,7 @@ h1 {
 }
 
 .cinema-alphabet-rail span {
-  min-height: 28px;
+  min-height: 24px;
   display: grid;
   place-items: center;
   color: rgba(207, 229, 233, 0.24);
@@ -1294,6 +1294,7 @@ h1 {
 }
 
 .cinema-alphabet-rail span[hidden] { display: none; }
+.cinema-alphabet-rail span[data-distance="4"] { color: rgba(207, 229, 233, 0.2); opacity: 0.22; transform: scale(0.78); }
 .cinema-alphabet-rail span[data-distance="3"] { color: rgba(207, 229, 233, 0.34); opacity: 0.38; transform: scale(0.86); }
 .cinema-alphabet-rail span[data-distance="2"] { color: rgba(218, 238, 241, 0.58); font-size: 0.86rem; opacity: 0.6; transform: scale(0.94); }
 .cinema-alphabet-rail span[data-distance="1"] { color: rgba(231, 246, 248, 0.82); font-size: 1rem; opacity: 0.84; transform: scale(1.06); }
@@ -7591,7 +7592,7 @@ h1 {
 @media (max-width: 700px) {
   .cinema-library.browsing { padding-left: 34px; }
   .cinema-alphabet-rail { left: 0; width: 29px; }
-  .cinema-alphabet-rail span { min-height: 24px; font-size: 0.68rem; }
+  .cinema-alphabet-rail span { min-height: 21px; font-size: 0.68rem; }
   .cinema-alphabet-rail span[data-distance="1"] { font-size: 0.88rem; }
   .cinema-alphabet-rail span.active { font-size: 1.12rem; }
 
