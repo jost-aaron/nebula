@@ -1258,6 +1258,17 @@ h1 {
   overflow-anchor: none;
 }
 
+.cinema-library-stage {
+  position: relative;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.cinema-library-stage > .cinema-library.browsing {
+  height: 100%;
+}
+
 .cinema-library.browsing {
   padding-left: 44px;
 }
@@ -1276,7 +1287,6 @@ h1 {
   padding-block: clamp(10px, 1.8vh, 22px);
   pointer-events: none;
   overflow: hidden;
-  transform: translateY(var(--cinema-alphabet-scroll-offset, 0px));
   user-select: none;
 }
 
@@ -1290,21 +1300,20 @@ h1 {
   line-height: 1;
   opacity: 0.28;
   transform: scale(0.82);
-  transition: color 150ms ease, font-size 150ms ease, opacity 150ms ease, transform 150ms ease;
+  transition: color 170ms ease, opacity 170ms ease, transform 170ms ease;
 }
 
 .cinema-alphabet-rail span[hidden] { display: none; }
 .cinema-alphabet-rail span[data-distance="4"] { color: rgba(207, 229, 233, 0.2); opacity: 0.22; transform: scale(0.78); }
 .cinema-alphabet-rail span[data-distance="3"] { color: rgba(207, 229, 233, 0.34); opacity: 0.38; transform: scale(0.86); }
-.cinema-alphabet-rail span[data-distance="2"] { color: rgba(218, 238, 241, 0.58); font-size: 0.86rem; opacity: 0.6; transform: scale(0.94); }
-.cinema-alphabet-rail span[data-distance="1"] { color: rgba(231, 246, 248, 0.82); font-size: 1rem; opacity: 0.84; transform: scale(1.06); }
+.cinema-alphabet-rail span[data-distance="2"] { color: rgba(218, 238, 241, 0.58); opacity: 0.6; transform: scale(1); }
+.cinema-alphabet-rail span[data-distance="1"] { color: rgba(231, 246, 248, 0.82); opacity: 0.84; transform: scale(1.2); }
 .cinema-alphabet-rail span.active {
   color: var(--cinema-amber);
-  font-size: 1.34rem;
   font-weight: 950;
   opacity: 1;
   text-shadow: 0 0 14px rgba(255, 180, 72, 0.58);
-  transform: scale(1.18);
+  transform: scale(1.55);
 }
 
 .cinema-library.browsing .cinema-library-row,
@@ -7593,8 +7602,6 @@ h1 {
   .cinema-library.browsing { padding-left: 34px; }
   .cinema-alphabet-rail { left: 0; width: 29px; }
   .cinema-alphabet-rail span { min-height: 21px; font-size: 0.68rem; }
-  .cinema-alphabet-rail span[data-distance="1"] { font-size: 0.88rem; }
-  .cinema-alphabet-rail span.active { font-size: 1.12rem; }
 
   .cinema-content,
   .cinema-watch-surface {

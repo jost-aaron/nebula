@@ -29,8 +29,12 @@ test("cinema alphabet rail follows the real grid scroll surface without duplicat
   assert.match(cinema, /const marker = hostBounds\.top \+ 1/);
   assert.match(cinema, /const windowSize = 9/);
   assert.match(cinema, /letter\.hidden = index < windowStart \|\| index >= windowEnd/);
-  assert.match(cinema, /--cinema-alphabet-scroll-offset/);
-  assert.match(styles, /\.cinema-alphabet-rail span\.active[\s\S]*?font-size: 1\.34rem/);
+  assert.match(cinema, /class="cinema-library-stage"/);
+  assert.doesNotMatch(cinema, /--cinema-alphabet-scroll-offset/);
+  assert.match(styles, /\.cinema-alphabet-rail span\.active[\s\S]*?transform: scale\(1\.55\)/);
+  assert.doesNotMatch(styles, /transition:[^;]*font-size/);
   assert.match(styles, /\.cinema-alphabet-rail \{[\s\S]*?height: 100%[\s\S]*?justify-content: space-around/);
+  assert.match(styles, /\.cinema-library-stage \{[\s\S]*?overflow: hidden/);
+  assert.doesNotMatch(styles, /translateY\(var\(--cinema-alphabet-scroll-offset/);
   assert.match(styles, /span\[data-distance="1"\]/);
 });

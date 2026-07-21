@@ -446,10 +446,11 @@ const renderLibrary = (entries: CinemaEntry[], activeCategory: CinemaCategory, q
     : categoryEntries;
 
   return `
-    <main class="cinema-library browsing" data-cinema-view="library">
+    <div class="cinema-library-stage">
       <aside class="cinema-alphabet-rail" data-cinema-alphabet-rail aria-label="Current alphabetical position">
         ${["#", ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"].map((letter) => `<span data-cinema-letter="${letter}" data-distance="4">${letter}</span>`).join("")}
       </aside>
+      <main class="cinema-library browsing" data-cinema-view="library">
       ${!query ? renderContinueWatching(entries, playback) : ""}
       <div class="cinema-catalog-status">${renderCinemaIcon(catalogMessage.includes("fallback") ? "HardDrive" : "RefreshCw")}<span>${escapeHtml(catalogMessage)}</span><button type="button" data-cinema-action="scan-catalog">Scan library</button></div>
       <section class="cinema-library-row">
@@ -476,7 +477,8 @@ const renderLibrary = (entries: CinemaEntry[], activeCategory: CinemaCategory, q
         </header>
         <div class="cinema-grid" data-cinema-grid>${renderCinemaCards(visibleEntries, activeCategory, playback)}</div>
       </section>
-    </main>
+      </main>
+    </div>
   `;
 };
 
@@ -1103,7 +1105,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   const bindAlphabetRail = () => {
     const library = content.querySelector<HTMLElement>(".cinema-library.browsing");
     const scrollHost = library;
-    const rail = library?.querySelector<HTMLElement>("[data-cinema-alphabet-rail]");
+    const rail = content.querySelector<HTMLElement>("[data-cinema-alphabet-rail]");
     if (!scrollHost || !rail) return;
     if (alphabetScrollHost === scrollHost && refreshAlphabetRail) {
       refreshAlphabetRail();
@@ -1128,7 +1130,6 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         letter.dataset.distance = String(distance);
         letter.classList.toggle("active", distance === 0);
       });
-      rail.style.setProperty("--cinema-alphabet-scroll-offset", `${scrollHost.scrollTop}px`);
       rail.setAttribute("aria-label", `Current alphabetical position: ${activeLetter}`);
     };
     const schedule = () => {
