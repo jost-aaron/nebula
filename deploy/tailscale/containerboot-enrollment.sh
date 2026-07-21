@@ -38,6 +38,15 @@ publish_output() {
   done < "$fifo"
 }
 
+publish_login() {
+  login_url=$(/usr/local/bin/tailscale --socket=/tmp/tailscaled.sock status --json 2>/dev/null \
+    | sed -n 's/^[[:space:]]*"AuthURL":[[:space:]]*"\(https:\/\/login\.tailscale\.com\/a\/[A-Za-z0-9]*\)".*/\1/p' \
+    | head -n 1 || true)
+  if printf '%s\n' "$login_url" | grep -Eq '^https://login\.tailscale\.com/a/[A-Za-z0-9]+$'; then
+    publish_file "$login_file" "$login_url"
+  fi
+}
+
 publish_connection() {
   publish_file "$connected_file" connected
   rm -f "$login_file"
@@ -103,6 +112,11 @@ run_tailscale() {
     if [ ! -f "$enabled_file" ]; then
       kill -TERM "$child_pid" 2>/dev/null || true
       break
+    fi
+    if [ "$published" = false ]; then
+      # Newer containerboot releases redact the URL in their output. The local
+      # daemon status remains the authoritative source while login is pending.
+      publish_login
     fi
     if [ "$published" = false ] && wget -q -O /dev/null http://127.0.0.1:9002/healthz 2>/dev/null; then
       publish_connection

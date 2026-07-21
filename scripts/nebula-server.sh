@@ -267,7 +267,12 @@ tailscale_hint() {
   [[ $TAILSCALE == true ]] || return 0
   note "enable Tailscale in owner Settings / Remote Access, then inspect it with: docker compose --env-file '$ENV_FILE' -f '$COMPOSE_FILE' exec tailscale tailscale serve status"
 }
-start_stack() { compose up -d --build; wait_for_readiness; note "owner setup URL: $(setup_url)"; tailscale_hint; }
+reattach_tailscale() {
+  # The companion joins the dashboard's network namespace. Recreate it after
+  # deployments so it never remains attached to a replaced dashboard ID.
+  compose up -d --no-deps --force-recreate tailscale
+}
+start_stack() { compose up -d --build; reattach_tailscale; wait_for_readiness; note "owner setup URL: $(setup_url)"; tailscale_hint; }
 
 create_backup() {
   require_configuration
@@ -299,6 +304,6 @@ case "$COMMAND" in
   down|stop) require_configuration; compose down ;;
   status) require_configuration; compose ps ;;
   logs) require_configuration; log_args=(logs --tail "$LOG_TAIL"); [[ $FOLLOW == false ]] || log_args+=(-f); log_args+=(dashboard tailscale); compose "${log_args[@]}" ;;
-  update|upgrade) validate_configuration; validate_storage; validate_tailscale; note "updating the checked-out revision only; create and verify a backup before migrations"; compose build --pull; compose up -d; wait_for_readiness; note "updated server URL: $(setup_url)"; tailscale_hint ;;
+  update|upgrade) validate_configuration; validate_storage; validate_tailscale; note "updating the checked-out revision only; create and verify a backup before migrations"; compose build --pull; compose up -d; reattach_tailscale; wait_for_readiness; note "updated server URL: $(setup_url)"; tailscale_hint ;;
   backup) create_backup ;;
 esac

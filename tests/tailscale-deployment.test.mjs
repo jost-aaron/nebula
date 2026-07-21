@@ -38,6 +38,8 @@ test("companion publishes only sanitized enrollment and connection status", asyn
   const compose = await readFile(deployComposeUrl, "utf8");
   const supervisor = await readFile(supervisorUrl, "utf8");
   assert.match(supervisor, /https:\/\/login\\\.tailscale\\\.com\/a\/\[A-Za-z0-9\]\+/);
+  assert.match(supervisor, /tailscale.*status --json[\s\S]*?"AuthURL"/);
+  assert.match(supervisor, /publish_login/);
   assert.match(supervisor, /server-fqdn/);
   assert.match(supervisor, /serve-ready/);
   assert.match(supervisor, /serve-error/);

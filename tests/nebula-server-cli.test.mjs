@@ -77,6 +77,7 @@ test("validate and lifecycle commands construct deploy Compose invocations", asy
   const commands = await readFile(scope.log, "utf8");
   assert.match(commands, /compose --env-file .*nebula\.env -f .*compose\.deploy\.yaml config --quiet/);
   assert.match(commands, /compose --env-file .*nebula\.env -f .*compose\.deploy\.yaml up -d --build/);
+  assert.match(commands, /compose --env-file .*nebula\.env -f .*compose\.deploy\.yaml up -d --no-deps --force-recreate tailscale/);
   assert.match(commands, /compose --env-file .*nebula\.env -f .*compose\.deploy\.yaml logs --tail 42 -f dashboard tailscale/);
   assert.doesNotMatch(commands, /--profile tailscale/);
 });
