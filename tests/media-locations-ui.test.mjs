@@ -38,3 +38,12 @@ test("cinema alphabet rail follows the real grid scroll surface without duplicat
   assert.doesNotMatch(styles, /translateY\(var\(--cinema-alphabet-scroll-offset/);
   assert.match(styles, /span\[data-distance="1"\]/);
 });
+
+test("Cinema distinguishes initial loading, genuine empty, and failed library states", async () => {
+  const [cinema, styles] = await Promise.all([read("../src/cinema/renderCinemaView.ts"), read("../src/styles.css")]);
+  assert.match(cinema, /role="status" aria-label="Loading Cinema library"/);
+  assert.match(cinema, /Loading your library/);
+  assert.match(cinema, /No \$\{escapeHtml\(categoryLabel\(activeCategory\)\.toLowerCase\(\)\)\} found/);
+  assert.match(cinema, /let libraryError: string \| null = null/);
+  assert.match(styles, /@keyframes cinema-library-spin/);
+});

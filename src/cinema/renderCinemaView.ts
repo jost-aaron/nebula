@@ -437,7 +437,7 @@ const renderContinueWatching = (entries: CinemaEntry[], playback: Map<string, Co
   return continuing.length ? `<section class="cinema-continue"><header><div><p class="eyebrow">For You</p><h3>Continue Watching</h3></div><span>${continuing.length} in progress</span></header><div class="cinema-grid">${renderCinemaCards(continuing, "movies", playback)}</div></section>` : "";
 };
 
-const renderLibrary = (entries: CinemaEntry[], activeCategory: CinemaCategory, query: string, selected: CinemaEntry | null, playback: Map<string, ContinueWatchingEntry>, catalogMessage: string) => {
+const renderLibrary = (entries: CinemaEntry[], activeCategory: CinemaCategory, query: string, selected: CinemaEntry | null, playback: Map<string, ContinueWatchingEntry>, catalogMessage: string, isLoading = false, libraryError: string | null = null) => {
   const categoryEntries = entries.filter((entry) => entry.category === activeCategory);
   const visibleEntries = query
     ? categoryEntries.filter((entry) =>
@@ -447,7 +447,7 @@ const renderLibrary = (entries: CinemaEntry[], activeCategory: CinemaCategory, q
 
   return `
     <div class="cinema-library-stage">
-      <aside class="cinema-alphabet-rail" data-cinema-alphabet-rail aria-label="Current alphabetical position">
+      <aside class="cinema-alphabet-rail" data-cinema-alphabet-rail aria-label="Current alphabetical position"${isLoading || libraryError || visibleEntries.length === 0 ? " hidden" : ""}>
         ${["#", ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"].map((letter) => `<span data-cinema-letter="${letter}" data-distance="4">${letter}</span>`).join("")}
       </aside>
       <main class="cinema-library browsing" data-cinema-view="library">
@@ -458,7 +458,7 @@ const renderLibrary = (entries: CinemaEntry[], activeCategory: CinemaCategory, q
           <div class="cinema-library-heading">
             <p class="eyebrow">Library</p>
             <h3>${escapeHtml(categoryLabel(activeCategory))}</h3>
-            <span data-cinema-loaded-count>${visibleEntries.length} ${visibleEntries.length === 1 ? "title" : "titles"}</span>
+            <span data-cinema-loaded-count>${isLoading ? "Loading titles..." : libraryError ? "Library unavailable" : `${visibleEntries.length} ${visibleEntries.length === 1 ? "title" : "titles"}`}</span>
           </div>
           <div class="cinema-library-tools">
             <nav class="cinema-category-segments" aria-label="Media categories">
@@ -475,7 +475,23 @@ const renderLibrary = (entries: CinemaEntry[], activeCategory: CinemaCategory, q
             </nav>
           </div>
         </header>
-        <div class="cinema-grid" data-cinema-grid>${renderCinemaCards(visibleEntries, activeCategory, playback)}</div>
+        <div class="cinema-grid" data-cinema-grid>${isLoading ? `
+          <div class="cinema-library-loading" role="status" aria-label="Loading Cinema library">
+            <span class="cinema-library-spinner" aria-hidden="true"></span>
+            <strong>Loading your library</strong>
+            <small>Finding titles and playback information...</small>
+          </div>
+        ` : libraryError ? `
+          <div class="cinema-empty">
+            <strong>Library unavailable</strong>
+            <span>${escapeHtml(libraryError)}</span>
+          </div>
+        ` : visibleEntries.length > 0 ? renderCinemaCards(visibleEntries, activeCategory, playback) : `
+          <div class="cinema-empty">
+            <strong>No ${escapeHtml(categoryLabel(activeCategory).toLowerCase())} found</strong>
+            <span>${query ? "Try a different search." : "Add a media location or scan the library to discover content."}</span>
+          </div>
+        `}</div>
       </section>
       </main>
     </div>
@@ -912,6 +928,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   let view: CinemaView = "library";
   let query = "";
   let isScanning = false;
+  let libraryError: string | null = null;
   let catalogMessage = "Loading catalog…";
   let playback = new Map<string, ContinueWatchingEntry>();
   const catalogState = new Map<string, CinemaCatalogState>();
@@ -1161,7 +1178,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     content.classList.toggle("scanning", isScanning);
 
     if (view === "library") {
-      content.innerHTML = renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage);
+      content.innerHTML = renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
     }
 
     if (view === "watchlist") {
@@ -1169,11 +1186,11 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     }
 
     if (view === "title-detail") {
-      content.innerHTML = selected ? renderTitleHero(selected, entries, selected.id ? playback.get(selected.id) : undefined, selected.id ? catalogState.get(selected.id) : undefined, selected.id ? subtitleState.get(selected.id) : undefined, subtitlePreference, options.canManageRenditions) : renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage);
+      content.innerHTML = selected ? renderTitleHero(selected, entries, selected.id ? playback.get(selected.id) : undefined, selected.id ? catalogState.get(selected.id) : undefined, selected.id ? subtitleState.get(selected.id) : undefined, subtitlePreference, options.canManageRenditions) : renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
     }
 
     if (view === "player") {
-      content.innerHTML = selected ? renderPlayerView(selected, entries, selected.id ? subtitleState.get(selected.id) : undefined, qualityPreference, renditionProfiles) : renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage);
+      content.innerHTML = selected ? renderPlayerView(selected, entries, selected.id ? subtitleState.get(selected.id) : undefined, qualityPreference, renditionProfiles) : renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
     }
 
     if (view === "servers") {
@@ -2014,6 +2031,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     pageLoading = true;
     if (reset) {
       isScanning = true;
+      libraryError = null;
       entries = [];
       libraryHasMore = false;
       render();
@@ -2050,12 +2068,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       selected = selected ? entries.find((entry) => entry.path === selected?.path) ?? selected : null;
     } catch (error) {
       failed = true;
-      if (reset) content.innerHTML = `
-        <div class="cinema-empty">
-          <strong>Library unavailable</strong>
-          <span>${escapeHtml(error instanceof Error ? error.message : "Unable to scan content.")}</span>
-        </div>
-      `;
+      if (reset) libraryError = error instanceof Error ? error.message : "Unable to scan content.";
     } finally {
       isScanning = false;
       pageLoading = false;
