@@ -92,6 +92,15 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
       ? projectRepositoryItemsPage(catalog.repository, { availability: "available", itemType: category === "tv" ? "episode" : category === "movies" ? "movie" : undefined, limit, mediaKind: "video", offset, query })
       : null;
     const scanned = page?.entries ?? await scanMediaLibrary(storage, metadata, { mediaKind: "video" });
+    const totals = catalog?.repository?.listItemsPage
+      ? {
+          movies: catalog.repository.listItemsPage({ availability: "available", itemType: "movie", limit: 1, mediaKind: "video" }).total,
+          tv: catalog.repository.listItemsPage({ availability: "available", itemType: "episode", limit: 1, mediaKind: "video" }).total
+        }
+      : {
+          movies: scanned.filter((entry) => entry.category === "movies").length,
+          tv: scanned.filter((entry) => entry.category === "tv").length
+        };
     const context = request.nebulaAuth;
     let entries = libraryPermissions ? scanned.filter((entry) => libraryPermissions.canAccessPath(context, entry.path, "video")) : scanned;
 
@@ -120,7 +129,7 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
       entries = projectUnifiedLibrary({ authorizeItem: authorizeFederatedItem, entries, federation: options.federation, mediaKind: "video" });
     }
     entries.sort((a, b) => (a.sortTitle || a.title).localeCompare(b.sortTitle || b.title));
-    json(response, 200, { entries, page: page ? { hasMore: page.offset + page.items.length < page.total, limit: page.limit, nextOffset: page.offset + page.items.length, offset: page.offset, total: page.total } : { hasMore: false, limit: entries.length, nextOffset: entries.length, offset: 0, total: entries.length } });
+    json(response, 200, { entries, page: page ? { hasMore: page.offset + page.items.length < page.total, limit: page.limit, nextOffset: page.offset + page.items.length, offset: page.offset, total: page.total } : { hasMore: false, limit: entries.length, nextOffset: entries.length, offset: 0, total: entries.length }, totals });
   };
 
   const updateCinemaMetadata = async (request, response) => {

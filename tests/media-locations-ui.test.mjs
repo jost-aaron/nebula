@@ -50,3 +50,14 @@ test("Cinema distinguishes initial loading, genuine empty, and failed library st
   assert.match(cinema, /let libraryError: string \| null = null/);
   assert.match(styles, /@keyframes cinema-library-spin/);
 });
+
+test("Cinema category badges use library-wide totals instead of loaded page entries", async () => {
+  const [cinema, api, types] = await Promise.all([
+    read("../src/cinema/renderCinemaView.ts"), read("../src/api/cinemaApi.ts"), read("../src/shared/cinemaTypes.ts")
+  ]);
+  assert.match(cinema, /categoryTotals\[category\.id\] \?\? "…"/);
+  assert.match(cinema, /categoryTotals = library\.totals/);
+  assert.doesNotMatch(cinema, /categoryCount\.textContent = String\(count\)/);
+  assert.match(api, /totals: library\.totals/);
+  assert.match(types, /totals: Record<CinemaCategory, number>/);
+});

@@ -39,6 +39,7 @@ export interface CinemaEntry extends CatalogCompatibilityIdentity {
 export interface CinemaLibraryResponse {
   entries: CinemaEntry[];
   page: { hasMore: boolean; limit: number; nextOffset: number; offset: number; total: number };
+  totals: Record<CinemaCategory, number>;
 }
 
 export interface CinemaIdentificationFrame {

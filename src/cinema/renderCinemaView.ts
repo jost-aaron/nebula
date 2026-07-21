@@ -437,7 +437,7 @@ const renderContinueWatching = (entries: CinemaEntry[], playback: Map<string, Co
   return continuing.length ? `<section class="cinema-continue"><header><div><p class="eyebrow">For You</p><h3>Continue Watching</h3></div><span>${continuing.length} in progress</span></header><div class="cinema-grid">${renderCinemaCards(continuing, "movies", playback)}</div></section>` : "";
 };
 
-const renderLibrary = (entries: CinemaEntry[], activeCategory: CinemaCategory, query: string, selected: CinemaEntry | null, playback: Map<string, ContinueWatchingEntry>, catalogMessage: string, isLoading = false, libraryError: string | null = null) => {
+const renderLibrary = (entries: CinemaEntry[], categoryTotals: Record<CinemaCategory, number | null>, activeCategory: CinemaCategory, query: string, selected: CinemaEntry | null, playback: Map<string, ContinueWatchingEntry>, catalogMessage: string, isLoading = false, libraryError: string | null = null) => {
   const categoryEntries = entries.filter((entry) => entry.category === activeCategory);
   const visibleEntries = query
     ? categoryEntries.filter((entry) =>
@@ -467,7 +467,7 @@ const renderLibrary = (entries: CinemaEntry[], activeCategory: CinemaCategory, q
                   (category) => `
                     <button class="${category.id === activeCategory ? "active" : ""}" type="button" data-cinema-category="${category.id}">
                       ${category.label}
-                      <span data-cinema-category-count="${category.id}">${entries.filter((entry) => entry.category === category.id).length}</span>
+                      <span data-cinema-category-count="${category.id}">${categoryTotals[category.id] ?? "…"}</span>
                     </button>
                   `
                 )
@@ -921,6 +921,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   }
 
   let entries: CinemaEntry[] = [];
+  let categoryTotals: Record<CinemaCategory, number | null> = { movies: null, tv: null };
   let activeCategory: CinemaCategory = "movies";
   let selected: CinemaEntry | null = null;
   const subtitleState = new Map<string, SubtitleTracksResponse>();
@@ -1178,7 +1179,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     content.classList.toggle("scanning", isScanning);
 
     if (view === "library") {
-      content.innerHTML = renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
+      content.innerHTML = renderLibrary(entries, categoryTotals, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
     }
 
     if (view === "watchlist") {
@@ -1186,11 +1187,11 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     }
 
     if (view === "title-detail") {
-      content.innerHTML = selected ? renderTitleHero(selected, entries, selected.id ? playback.get(selected.id) : undefined, selected.id ? catalogState.get(selected.id) : undefined, selected.id ? subtitleState.get(selected.id) : undefined, subtitlePreference, options.canManageRenditions) : renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
+      content.innerHTML = selected ? renderTitleHero(selected, entries, selected.id ? playback.get(selected.id) : undefined, selected.id ? catalogState.get(selected.id) : undefined, selected.id ? subtitleState.get(selected.id) : undefined, subtitlePreference, options.canManageRenditions) : renderLibrary(entries, categoryTotals, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
     }
 
     if (view === "player") {
-      content.innerHTML = selected ? renderPlayerView(selected, entries, selected.id ? subtitleState.get(selected.id) : undefined, qualityPreference, renditionProfiles) : renderLibrary(entries, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
+      content.innerHTML = selected ? renderPlayerView(selected, entries, selected.id ? subtitleState.get(selected.id) : undefined, qualityPreference, renditionProfiles) : renderLibrary(entries, categoryTotals, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
     }
 
     if (view === "servers") {
@@ -2043,6 +2044,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       const library = await listCinemaLibrary({ category: activeCategory, limit: 60, offset: reset ? 0 : libraryOffset, query });
       appendedEntries = library.entries;
       entries = reset ? library.entries : [...entries, ...library.entries];
+      categoryTotals = library.totals;
       libraryHasMore = library.page.hasMore;
       libraryOffset = library.page.nextOffset;
       if (reset) try {
@@ -2078,8 +2080,6 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         const count = entries.filter((entry) => entry.category === activeCategory).length;
         const loadedCount = content.querySelector<HTMLElement>("[data-cinema-loaded-count]");
         if (loadedCount) loadedCount.textContent = `${count} ${count === 1 ? "title" : "titles"}`;
-        const categoryCount = content.querySelector<HTMLElement>(`[data-cinema-category-count="${activeCategory}"]`);
-        if (categoryCount) categoryCount.textContent = String(count);
         hydratePosters();
         bindLibraryPageObserver();
         bindAlphabetRail();
