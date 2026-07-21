@@ -21,6 +21,8 @@ test("Settings is a focused application shell with grouped navigation and a cura
 });
 
 test("Settings keeps large controls and a bounded responsive workspace", () => {
+  assert.match(css, /\.app-window\.settings-window \{[\s\S]*?height: 100%/);
+  assert.doesNotMatch(css, /height: min\(940px, 100%\)/);
   assert.match(css, /\.settings-categories button \{[\s\S]*?min-height: 46px/);
   assert.match(css, /\.settings-layout \{[^}]*grid-template-columns: 270px minmax\(0, 1fr\)/);
   assert.match(css, /\.settings-workspace \{[^}]*min-width: 0/);
