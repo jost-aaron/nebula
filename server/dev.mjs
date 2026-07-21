@@ -319,7 +319,7 @@ const jobsWorker = createJobsWorker({
       for (const item of catalogRepository.listItems({ availability: "available" })) {
         const probe = probeReader.get(item.source.id);
         if (probe.sourceContentRevision !== item.source.contentRevision) {
-          context.enqueue({ type: "probe", payload: { sourceId: item.source.id }, dedupeKey: `${item.source.id}:${item.source.contentRevision}`, availableAt: enrichmentStart + enrichmentIndex * 10_000 });
+          context.enqueue({ type: "probe", payload: { sourceId: item.source.id }, dedupeKey: `${item.source.id}:${item.source.contentRevision}`, maxAttempts: 1, reuseTerminal: true, availableAt: enrichmentStart + enrichmentIndex * 10_000 });
           enrichmentIndex += 1;
         }
         if (clusterService) {

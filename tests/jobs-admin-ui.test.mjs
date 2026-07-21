@@ -21,6 +21,12 @@ test("jobs admin requires explicit cancellation confirmation", () => {
   assert.match(source, /next cancellation checkpoint/);
 });
 
+test("failed probes can be explicitly retried by the owner", () => {
+  assert.match(source, /data-jobs-retry-probe/);
+  assert.match(source, /Re-probe file/);
+  assert.match(source, /maxAttempts: 1/);
+});
+
 test("jobs admin exposes progress, live status, filtering, and phone layout", () => {
   assert.match(source, /role="progressbar"/);
   assert.match(source, /aria-live="polite"/);

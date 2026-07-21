@@ -14,6 +14,7 @@ export const createJobsService = ({ repository, allowedTypes = JOB_TYPES } = {})
       payload: request.payload ?? {},
       dedupeKey: request.dedupeKey === undefined ? null : String(request.dedupeKey),
       maxAttempts: positiveInteger(request.maxAttempts, 3),
+      reuseTerminal: request.reuseTerminal === true,
       ...(request.availableAt !== undefined ? { availableAt: request.availableAt } : {})
     });
   };

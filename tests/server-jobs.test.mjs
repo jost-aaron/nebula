@@ -59,6 +59,20 @@ test("deduplicated queued work can be expedited without creating another job", (
   assert.equal(repository.claimNext().id, first.job.id);
 });
 
+test("automatic enrichment reuses terminal failures until an explicit retry", (t) => {
+  const { db, repository } = fixture();
+  t.after(() => db.close());
+  const first = repository.enqueue({ type: "probe", dedupeKey: "source-a:1", maxAttempts: 1 }).job;
+  assert.equal(repository.claimNext().id, first.id);
+  repository.failAttempt(first.id, { code: "partial_or_corrupt", message: "Media source is incomplete or corrupt.", retryAt: Date.now() });
+  const automatic = repository.enqueue({ type: "probe", dedupeKey: "source-a:1", maxAttempts: 1, reuseTerminal: true });
+  assert.equal(automatic.created, false);
+  assert.equal(automatic.job.id, first.id);
+  const manual = repository.enqueue({ type: "probe", dedupeKey: "source-a:1", maxAttempts: 1 });
+  assert.equal(manual.created, true);
+  assert.notEqual(manual.job.id, first.id);
+});
+
 test("worker persists progress and successful results", async (t) => {
   const { db, repository } = fixture();
   t.after(() => db.close());

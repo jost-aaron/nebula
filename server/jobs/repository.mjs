@@ -31,7 +31,7 @@ export const createJobsRepository = ({ db, migrate = false, now = () => Date.now
   const timestamp = () => iso(now());
   const get = (id) => fromRow(db.prepare("SELECT * FROM background_jobs WHERE id = ?").get(id));
 
-  const enqueue = ({ type, payload = {}, dedupeKey = null, maxAttempts = 3, availableAt = timestamp() }) => {
+  const enqueue = ({ type, payload = {}, dedupeKey = null, maxAttempts = 3, availableAt = timestamp(), reuseTerminal = false }) => {
     const existing = dedupeKey === null ? null : db.prepare(`SELECT * FROM background_jobs
       WHERE type = ? AND dedupe_key = ? AND state IN ('queued', 'running')`).get(type, dedupeKey);
     if (existing) {
@@ -42,6 +42,12 @@ export const createJobsRepository = ({ db, migrate = false, now = () => Date.now
         return { created: false, job: get(existing.id) };
       }
       return { created: false, job: fromRow(existing) };
+    }
+    if (reuseTerminal && dedupeKey !== null) {
+      const terminal = db.prepare(`SELECT * FROM background_jobs
+        WHERE type = ? AND dedupe_key = ? AND state IN ('failed', 'cancelled')
+        ORDER BY updated_at DESC, rowid DESC LIMIT 1`).get(type, dedupeKey);
+      if (terminal) return { created: false, job: fromRow(terminal) };
     }
     const id = uuid();
     const createdAt = timestamp();

@@ -37,6 +37,7 @@ const renderJob = (job: BackgroundJob, confirmingId: string | null) => {
     </div>
     <div class="jobs-admin-progress" role="progressbar" aria-label="${escapeHtml(job.type)} job progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><i style="--job-progress:${progress}%"></i></div>
     ${job.error ? `<p class="jobs-admin-error"><strong>${escapeHtml(job.error.code ?? "Job failed")}:</strong> ${escapeHtml(job.error.message)}</p>` : ""}
+    ${job.type === "probe" && job.state === "failed" ? `<div><button type="button" data-jobs-retry-probe="${job.id}">Re-probe file</button></div>` : ""}
     ${ACTIVE_STATES.has(job.state) ? confirmingId === job.id
       ? `<div class="jobs-admin-confirm" role="group" aria-label="Confirm cancellation"><span>${job.state === "running" ? "Running work stops at its next cancellation checkpoint." : "This queued job will not run."}</span><button type="button" data-jobs-confirm-cancel="${job.id}">Confirm cancel</button><button type="button" data-jobs-keep>Keep job</button></div>`
       : `<div><button class="jobs-admin-cancel" type="button" data-jobs-request-cancel="${job.id}" ${cancelRequested ? "disabled" : ""}>${cancelRequested ? "Cancellation requested" : "Cancel job"}</button></div>` : ""}
@@ -107,11 +108,17 @@ export const bindJobsAdmin = (container: ParentNode) => {
     try {
       const type = target.dataset.jobsEnqueue as JobType | undefined;
       const cancelId = target.dataset.jobsConfirmCancel;
-      if (!type && !cancelId) return;
+      const retryProbeId = target.dataset.jobsRetryProbe;
+      if (!type && !cancelId && !retryProbeId) return;
       setBusy(true);
       if (type) {
         const result = await enqueueJob({ type, payload: {}, dedupeKey: `manual:${type}` });
         status.textContent = result.created ? `${type} job queued.` : `${type} job is already active.`;
+      } else if (retryProbeId) {
+        const failedProbe = jobs.find((job) => job.id === retryProbeId && job.type === "probe");
+        if (!failedProbe) throw new Error("The failed probe is no longer available.");
+        const result = await enqueueJob({ type: "probe", payload: failedProbe.payload, dedupeKey: failedProbe.dedupeKey ?? undefined, maxAttempts: 1 });
+        status.textContent = result.created ? "File queued for re-probe." : "A probe for this file is already active.";
       } else if (cancelId) {
         await cancelJob(cancelId);
         confirmingId = null;
