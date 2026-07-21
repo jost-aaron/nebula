@@ -39,6 +39,18 @@ test("manual service validates types and exposes enqueue, query, list, and cance
   assert.equal(service.cancel(first.job.id).state, "cancelled");
 });
 
+test("cancel all stops queued jobs and requests cooperative running cancellation", (t) => {
+  const { db, repository, service } = fixture();
+  t.after(() => db.close());
+  const running = repository.enqueue({ type: "probe" }).job;
+  const queued = repository.enqueue({ type: "cleanup" }).job;
+  assert.equal(repository.claimNext().id, running.id);
+  assert.deepEqual(service.cancelAll(), { queuedCancelled: 1, runningRequested: 1, total: 2 });
+  assert.equal(repository.get(queued.id).state, "cancelled");
+  assert.ok(repository.get(running.id).cancelRequestedAt);
+  assert.equal(repository.get(running.id).state, "running");
+});
+
 test("manual service preserves delayed availability for load-scheduled jobs", (t) => {
   const { db, service } = fixture({ now: () => Date.parse("2026-07-20T00:00:00.000Z") });
   t.after(() => db.close());

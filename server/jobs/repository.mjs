@@ -105,6 +105,23 @@ export const createJobsRepository = ({ db, migrate = false, now = () => Date.now
     return get(id);
   };
 
+  const requestCancellationAll = () => {
+    const requestedAt = timestamp();
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const queuedCancelled = db.prepare(`UPDATE background_jobs SET state = 'cancelled',
+        cancel_requested_at = ?, completed_at = ?, updated_at = ? WHERE state = 'queued'`)
+        .run(requestedAt, requestedAt, requestedAt).changes;
+      const runningRequested = db.prepare(`UPDATE background_jobs SET cancel_requested_at = ?, updated_at = ?
+        WHERE state = 'running' AND cancel_requested_at IS NULL`).run(requestedAt, requestedAt).changes;
+      db.exec("COMMIT");
+      return { queuedCancelled, runningRequested, total: queuedCancelled + runningRequested };
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  };
+
   const isCancellationRequested = (id) => db.prepare(
     "SELECT cancel_requested_at IS NOT NULL AS requested FROM background_jobs WHERE id = ?"
   ).get(id)?.requested === 1;
@@ -156,5 +173,5 @@ export const createJobsRepository = ({ db, migrate = false, now = () => Date.now
     ORDER BY created_at DESC, id DESC LIMIT ?`).all(state, state, type, type, limit).map(fromRow);
 
   return { cancelRunning, claimNext, enqueue, failAttempt, get, isCancellationRequested, list,
-    recoverInterrupted, requestCancellation, succeed, updateProgress };
+    recoverInterrupted, requestCancellation, requestCancellationAll, succeed, updateProgress };
 };

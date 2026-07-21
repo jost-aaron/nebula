@@ -19,6 +19,12 @@ export const createJobsRoutes = (service, audit = null) => async (request, respo
     }
     return true;
   }
+  if (request.method === "POST" && url.pathname === "/api/jobs/cancel-all") {
+    const result = service.cancelAll();
+    audit?.recordBestEffort({ actor: actorFromContext(request.nebulaAuth), eventType: "jobs.cancel_all_requested", outcome: "success", target: { type: "jobs", id: "active" }, metadata: result });
+    json(response, 200, result);
+    return true;
+  }
   const match = /^\/api\/jobs\/([0-9a-f-]{36})(\/cancel)?$/i.exec(url.pathname);
   if (match && request.method === "GET" && !match[2]) {
     const job = service.get(match[1]);

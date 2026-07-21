@@ -52,3 +52,6 @@ export const enqueueJob = (request: EnqueueJobRequest) =>
 
 export const cancelJob = (id: string) =>
   apiJson<{ job: BackgroundJob }>(`/api/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+
+export const cancelAllJobs = () =>
+  apiJson<{ queuedCancelled: number; runningRequested: number; total: number }>("/api/jobs/cancel-all", { method: "POST" });

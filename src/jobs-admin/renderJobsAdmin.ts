@@ -1,4 +1,4 @@
-import { cancelJob, enqueueJob, JOB_STATES, JOB_TYPES, listJobs } from "../api/jobsApi";
+import { cancelAllJobs, cancelJob, enqueueJob, JOB_STATES, JOB_TYPES, listJobs } from "../api/jobsApi";
 import type { BackgroundJob, JobState, JobType } from "../api/jobsApi";
 import "./jobsAdmin.css";
 
@@ -54,7 +54,7 @@ const renderJob = (job: BackgroundJob, confirmingId: string | null) => {
 export const renderJobsAdmin = () => `<section class="jobs-admin" data-jobs-admin data-diagnostic-section="jobs" aria-labelledby="jobs-admin-title">
   <div class="jobs-admin-header">
     <div class="jobs-admin-copy"><h3 id="jobs-admin-title">Background jobs</h3><p>Owner operations for media maintenance and processing.</p></div>
-    <div class="jobs-admin-actions"><button type="button" data-jobs-refresh>Refresh</button></div>
+    <div class="jobs-admin-actions"><button type="button" data-jobs-refresh>Refresh</button><button class="jobs-admin-cancel-all" type="button" data-jobs-cancel-all>Cancel all jobs</button></div>
   </div>
   <div class="jobs-admin-enqueue" aria-label="Enqueue maintenance job">
     ${MAINTENANCE_JOBS.map(({ type, label }) => `<button type="button" data-jobs-enqueue="${type}">${label}</button>`).join("")}
@@ -74,6 +74,7 @@ export const bindJobsAdmin = (container: ParentNode) => {
   const status = root.querySelector<HTMLElement>("[data-jobs-status]")!;
   const stateFilter = root.querySelector<HTMLSelectElement>("[data-jobs-state]")!;
   const typeFilter = root.querySelector<HTMLSelectElement>("[data-jobs-type]")!;
+  const cancelAllButton = root.querySelector<HTMLButtonElement>("[data-jobs-cancel-all]")!;
   let jobs: BackgroundJob[] = [];
   let confirmingId: string | null = null;
   let disposed = false;
@@ -104,6 +105,7 @@ export const bindJobsAdmin = (container: ParentNode) => {
       const result = await listJobs({ limit: 100, state: (stateFilter.value || undefined) as JobState | undefined, type: (typeFilter.value || undefined) as JobType | undefined });
       if (disposed) return;
       jobs = result.jobs;
+      cancelAllButton.disabled = !jobs.some((job) => ACTIVE_STATES.has(job.state));
       confirmingId = jobs.some((job) => job.id === confirmingId) ? confirmingId : null;
       draw();
       status.textContent = `${jobs.length} job${jobs.length === 1 ? "" : "s"} · Updated ${new Date().toLocaleTimeString()}`;
@@ -121,6 +123,24 @@ export const bindJobsAdmin = (container: ParentNode) => {
     const target = (event.target as Element).closest<HTMLButtonElement>("button");
     if (!target) return;
     if (target.matches("[data-jobs-refresh]")) { void load(); return; }
+    if (target.matches("[data-jobs-cancel-all]")) {
+      if (target.dataset.confirm !== "true") {
+        target.dataset.confirm = "true";
+        target.textContent = "Confirm cancel all";
+        status.textContent = "Press again to cancel every queued and running job.";
+        return;
+      }
+      try {
+        setBusy(true);
+        const result = await cancelAllJobs();
+        target.dataset.confirm = "false";
+        target.textContent = "Cancel all jobs";
+        status.textContent = result.total ? `Cancellation requested for ${result.total} job${result.total === 1 ? "" : "s"}.` : "There are no active jobs to cancel.";
+        await load(false);
+      } catch (error) { status.textContent = error instanceof Error ? error.message : "Jobs could not be cancelled."; }
+      finally { if (!disposed) setBusy(false); }
+      return;
+    }
     if (target.matches("[data-jobs-keep]")) { confirmingId = null; draw(); return; }
     const requestId = target.dataset.jobsRequestCancel;
     if (requestId) { confirmingId = requestId; draw(); list.querySelector<HTMLButtonElement>(`[data-jobs-confirm-cancel="${requestId}"]`)?.focus(); return; }

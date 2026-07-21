@@ -21,7 +21,8 @@ export const createJobsService = ({ repository, allowedTypes = JOB_TYPES } = {})
   const get = (id) => repository.get(id);
   const list = (query = {}) => repository.list({ ...query, limit: Math.min(200, positiveInteger(query.limit, 50)) });
   const cancel = (id) => repository.requestCancellation(id);
-  return { cancel, enqueue, get, list, types: [...types] };
+  const cancelAll = () => repository.requestCancellationAll();
+  return { cancel, cancelAll, enqueue, get, list, types: [...types] };
 };
 
 export { JOB_TYPES };

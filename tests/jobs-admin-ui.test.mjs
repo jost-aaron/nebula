@@ -21,6 +21,13 @@ test("jobs admin requires explicit cancellation confirmation", () => {
   assert.match(source, /next cancellation checkpoint/);
 });
 
+test("jobs admin requires confirmation before cancelling every active job", () => {
+  assert.match(source, /data-jobs-cancel-all/);
+  assert.match(source, /Confirm cancel all/);
+  assert.match(source, /cancelAllJobs/);
+  assert.match(api, /\/api\/jobs\/cancel-all/);
+});
+
 test("failed probes can be explicitly retried by the owner", () => {
   assert.match(source, /data-jobs-retry-probe/);
   assert.match(source, /Re-probe file/);
