@@ -11,6 +11,7 @@ import { renderTranscodeAccelerationAdmin } from "./transcodeAccelerationAdmin";
 import { renderRenditionStorageAdmin } from "./renditionStorageAdmin";
 import { renderTailscaleAdmin } from "./tailscaleAdmin";
 import { renderClusterAdmin } from "./clusterAdmin";
+import { renderMediaLocationsAdmin } from "./mediaLocationsAdmin";
 
 const formatNumber = (value: number, digits = 1) => (Number.isFinite(value) ? value.toFixed(digits) : "0.0");
 
@@ -101,6 +102,7 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
             <div class="settings-nav-group">
               <small>Server</small>
               <button type="button" data-diagnostic-tab="jobs">Jobs</button>
+              <button type="button" data-diagnostic-tab="media-locations">Media Locations</button>
               <button type="button" data-diagnostic-tab="playback-policy">Playback</button>
               <button type="button" data-diagnostic-tab="transcode-acceleration">Transcoding</button>
               <button type="button" data-diagnostic-tab="rendition-storage">Storage</button>
@@ -149,6 +151,7 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
 
           ${renderAccountSettings(accountSession)}
           ${showJobsAdmin ? renderJobsAdmin() : ""}
+          ${showJobsAdmin ? renderMediaLocationsAdmin() : ""}
           ${showJobsAdmin ? renderPlaybackPolicyAdmin() : ""}
           ${showJobsAdmin ? renderTranscodeAccelerationAdmin() : ""}
           ${showJobsAdmin ? renderRenditionStorageAdmin() : ""}

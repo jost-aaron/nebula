@@ -13,7 +13,8 @@ export const createJobsService = ({ repository, allowedTypes = JOB_TYPES } = {})
       type: request.type,
       payload: request.payload ?? {},
       dedupeKey: request.dedupeKey === undefined ? null : String(request.dedupeKey),
-      maxAttempts: positiveInteger(request.maxAttempts, 3)
+      maxAttempts: positiveInteger(request.maxAttempts, 3),
+      ...(request.availableAt !== undefined ? { availableAt: request.availableAt } : {})
     });
   };
   const get = (id) => repository.get(id);

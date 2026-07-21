@@ -93,6 +93,40 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
     }));
   };
 
+  const listItemsPage = ({ availability, itemType, limit = 60, mediaKind, offset = 0, query = "" } = {}) => {
+    const clauses = [];
+    const values = [];
+    if (mediaKind) { clauses.push("i.media_kind = ?"); values.push(mediaKind); }
+    if (itemType) { clauses.push("i.item_type = ?"); values.push(itemType); }
+    if (availability) { clauses.push("s.availability = ?"); values.push(availability); }
+    const normalizedQuery = String(query).trim().toLowerCase();
+    if (normalizedQuery) {
+      clauses.push("(LOWER(i.title) LIKE ? OR LOWER(i.sort_title) LIKE ? OR LOWER(s.content_path) LIKE ?)");
+      const pattern = `%${normalizedQuery}%`;
+      values.push(pattern, pattern, pattern);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const boundedLimit = Math.max(1, Math.min(200, Number(limit) || 60));
+    const boundedOffset = Math.max(0, Number(offset) || 0);
+    const from = `FROM media_items i JOIN media_sources s ON s.item_id = i.id AND s.availability != 'superseded' ${where}`;
+    const total = Number(database.prepare(`SELECT COUNT(*) AS count ${from}`).get(...values)?.count ?? 0);
+    const rows = database.prepare(`
+      SELECT i.*, s.id AS source_id, s.item_id AS source_item_id, s.root_id AS source_root_id, s.content_path AS source_content_path,
+        s.previous_path AS source_previous_path, s.source_type AS source_source_type,
+        s.media_kind AS source_media_kind, s.file_key AS source_file_key, s.size_bytes AS source_size_bytes,
+        s.modified_ms AS source_modified_ms, s.availability AS source_availability,
+        s.content_revision AS source_content_revision, s.first_seen_at AS source_first_seen_at,
+        s.last_seen_at AS source_last_seen_at, s.missing_since AS source_missing_since,
+        s.missing_scan_count AS source_missing_scan_count, s.cleanup_eligible_at AS source_cleanup_eligible_at
+      ${from} ORDER BY i.sort_title, i.id LIMIT ? OFFSET ?
+    `).all(...values, boundedLimit, boundedOffset);
+    const items = rows.map((row) => ({
+      ...rowToItem(row),
+      source: rowToSource(Object.fromEntries(Object.entries(row).filter(([key]) => key.startsWith("source_")).map(([key, value]) => [key.slice(7), value])))
+    }));
+    return { items, limit: boundedLimit, offset: boundedOffset, total };
+  };
+
   const ensureLibrary = ({ id = uuid(), name, mediaKind = "mixed" }) => {
     const timestamp = now();
     database.prepare(`INSERT INTO media_libraries (id, name, media_kind, created_at, updated_at)
@@ -240,5 +274,5 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
   const listArtwork = (itemId) => database.prepare("SELECT id, artwork_type AS type, provider, remote_url AS remoteUrl, local_path AS localPath, width, height FROM media_artwork WHERE media_item_id = ? ORDER BY artwork_type, id").all(itemId).map((row) => ({ ...row }));
   const listCleanupCandidates = () => database.prepare("SELECT * FROM media_sources WHERE availability = 'missing' AND cleanup_eligible_at IS NOT NULL ORDER BY cleanup_eligible_at").all().map(rowToSource);
 
-  return { ensureLibrary, ensureRoot, getItem, getLibrary, getRootByKey, getSource, listArtwork, listCleanupCandidates, listExternalIds, listItems, putExternalMetadata, putProbeResult, reconcileScan, recordScanFailure, resolveContentPath };
+  return { ensureLibrary, ensureRoot, getItem, getLibrary, getRootByKey, getSource, listArtwork, listCleanupCandidates, listExternalIds, listItems, listItemsPage, putExternalMetadata, putProbeResult, reconcileScan, recordScanFailure, resolveContentPath };
 };

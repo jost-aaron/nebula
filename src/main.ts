@@ -17,6 +17,7 @@ import { bindTranscodeAccelerationAdmin } from "./settings/transcodeAcceleration
 import { bindRenditionStorageAdmin } from "./settings/renditionStorageAdmin";
 import { bindTailscaleAdmin } from "./settings/tailscaleAdmin";
 import { bindClusterAdmin } from "./settings/clusterAdmin";
+import { bindMediaLocationsAdmin } from "./settings/mediaLocationsAdmin";
 import { bindStudioView, renderStudioView } from "./studio/renderStudioView";
 import { commandFromKey, type ShellCommand } from "./shell/commands";
 import { bindGamepadCommands } from "./shell/gamepad";
@@ -324,6 +325,7 @@ const bindSettingsTabs = (container: ParentNode) => {
     all: ["overview"],
     account: ["account"],
     jobs: ["jobs"],
+    "media-locations": ["media-locations"],
     "playback-policy": ["playback-policy"],
     "transcode-acceleration": ["transcode-acceleration"],
     "rendition-storage": ["rendition-storage"],
@@ -342,6 +344,7 @@ const bindSettingsTabs = (container: ParentNode) => {
     all: { kicker: "At a glance", title: "Overview", description: "Server health, identity, and the controls you are most likely to need." },
     account: { kicker: "Personal", title: "Account", description: "Manage your profile, password, sessions, members, and library access." },
     jobs: { kicker: "Server operations", title: "Background Jobs", description: "Run and monitor library scans, metadata work, artwork, cleanup, and renditions." },
+    "media-locations": { kicker: "Library sources", title: "Media Locations", description: "Merge one or more folders into the Movies, TV Shows, and Music libraries." },
     "playback-policy": { kicker: "Media delivery", title: "Playback", description: "Control stream concurrency, bitrate policy, and account-level limits." },
     "transcode-acceleration": { kicker: "Media delivery", title: "Transcoding", description: "Inspect encoder support and choose deterministic hardware or software behavior." },
     "rendition-storage": { kicker: "Media delivery", title: "Storage", description: "Manage reusable quality output, retention, capacity, and cleanup." },
@@ -548,13 +551,14 @@ const launchApp = async (app: DashboardApp) => {
     bindAccountSettings(appSurface);
     if (accountSession.user?.role === "owner") {
       const disposeJobs = bindJobsAdmin(appSurface);
+      const disposeMediaLocations = bindMediaLocationsAdmin(appSurface);
       const disposePlaybackPolicy = bindPlaybackPolicyAdmin(appSurface);
       const disposeAcceleration = bindTranscodeAccelerationAdmin(appSurface);
       const disposeRenditionStorage = bindRenditionStorageAdmin(appSurface);
       const disposeActivity = bindActivityAdmin(appSurface);
       const disposeTailscale = bindTailscaleAdmin(appSurface);
       const disposeCluster = bindClusterAdmin(appSurface);
-      disposeActiveApp = () => { disposeJobs(); disposePlaybackPolicy(); disposeAcceleration(); disposeRenditionStorage(); disposeActivity(); disposeTailscale(); disposeCluster(); };
+      disposeActiveApp = () => { disposeJobs(); disposeMediaLocations(); disposePlaybackPolicy(); disposeAcceleration(); disposeRenditionStorage(); disposeActivity(); disposeTailscale(); disposeCluster(); };
     }
   }
 

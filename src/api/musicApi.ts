@@ -4,8 +4,9 @@ import type { PlaybackEventRequest, PlaybackEventResponse, PlaybackHistoryRespon
 import type { PlaybackClientCapabilities } from "../shared/playbackPlanTypes";
 import type { ClusterPlaybackCreateResponse } from "../shared/clusterTypes";
 
-export const listMusicLibrary = () => apiJson<MusicLibraryResponse>("/api/music/library").then((library) => ({
-  entries: library.entries.map((entry) => ({ ...entry, streamUrl: entry.streamUrl ? apiUrl(entry.streamUrl) : "" }))
+export const listMusicLibrary = ({ limit = 100, offset = 0, query = "" }: { limit?: number; offset?: number; query?: string } = {}) => apiJson<MusicLibraryResponse>(`/api/music/library?limit=${limit}&offset=${offset}${query ? `&query=${encodeURIComponent(query)}` : ""}`).then((library) => ({
+  entries: library.entries.map((entry) => ({ ...entry, streamUrl: entry.streamUrl ? apiUrl(entry.streamUrl) : "" })),
+  page: library.page
 }));
 
 export const listStudioPlaybackHistory = (limit = 50) =>

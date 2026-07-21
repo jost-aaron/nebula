@@ -97,6 +97,21 @@ test("full scans are idempotent and changed files preserve stable UUID identitie
   assert.equal(current.contentRevision, 2);
 });
 
+test("catalog pages bound menu work and search across unloaded titles", async (t) => {
+  const { contentRoot, repository, root } = await setup(t);
+  await writeFile(path.join(contentRoot, "Alpha.mp4"), "alpha");
+  await writeFile(path.join(contentRoot, "Bravo.mp4"), "bravo");
+  await writeFile(path.join(contentRoot, "Charlie.mp4"), "charlie");
+  await scanLocalRoot({ absoluteRoot: contentRoot, repository, rootId: root.id });
+  const first = repository.listItemsPage({ availability: "available", limit: 2, mediaKind: "video" });
+  const second = repository.listItemsPage({ availability: "available", limit: 2, mediaKind: "video", offset: 2 });
+  const searched = repository.listItemsPage({ availability: "available", limit: 2, mediaKind: "video", query: "charlie" });
+  assert.deepEqual({ first: first.items.map(({ title }) => title), second: second.items.map(({ title }) => title), total: first.total }, {
+    first: ["Alpha", "Bravo"], second: ["Charlie"], total: 3
+  });
+  assert.deepEqual(searched.items.map(({ title }) => title), ["Charlie"]);
+});
+
 test("inode-backed renames preserve source and item UUIDs", async (t) => {
   const { contentRoot, repository, root } = await setup(t);
   await mkdir(path.join(contentRoot, "Movies"));

@@ -9,7 +9,7 @@ const itemTypeFor = (contentPath, mediaKind) => {
   return /(?:^|\/)(?:tv|shows|series)(?:\/|$)|\bs\d{1,2}e\d{1,3}\b|\b\d{1,2}x\d{1,3}\b/i.test(contentPath) ? "episode" : "movie";
 };
 
-export const discoverLocalMedia = async ({ absoluteRoot, mediaKind = "mixed" }) => {
+export const discoverLocalMedia = async ({ absoluteRoot, contentPathPrefix = "", itemTypeOverride = null, mediaKind = "mixed" }) => {
   const files = [];
   const visit = async (folder) => {
     const entries = await readdir(folder, { withFileTypes: true });
@@ -22,11 +22,12 @@ export const discoverLocalMedia = async ({ absoluteRoot, mediaKind = "mixed" }) 
       const discoveredKind = isAudioFile(entry.name) ? "audio" : isVideoFile(entry.name) ? "video" : null;
       if (!discoveredKind || (mediaKind !== "mixed" && mediaKind !== discoveredKind)) continue;
       const details = await stat(absolutePath);
-      const contentPath = path.relative(absoluteRoot, absolutePath).split(path.sep).join("/");
+      const relativePath = path.relative(absoluteRoot, absolutePath).split(path.sep).join("/");
+      const contentPath = contentPathPrefix ? path.posix.join(contentPathPrefix, relativePath) : relativePath;
       const title = defaultTitle(entry.name);
       files.push({
         fileKey: details.ino && details.dev ? `${details.dev}:${details.ino}` : null,
-        itemType: itemTypeFor(contentPath, discoveredKind),
+        itemType: itemTypeOverride ?? itemTypeFor(contentPath, discoveredKind),
         mediaKind: discoveredKind,
         modifiedMs: Math.trunc(details.mtimeMs),
         path: contentPath,

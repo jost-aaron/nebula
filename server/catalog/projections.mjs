@@ -45,3 +45,16 @@ export const projectRepositoryItems = (repository, query = {}) => repository.lis
   item,
   source: item.source
 }));
+
+export const projectRepositoryItemsPage = (repository, query = {}) => {
+  const page = repository.listItemsPage(query);
+  return {
+    ...page,
+    entries: page.items.map((item) => projectCompatibilityEntry({
+      artwork: repository.listArtwork(item.id),
+      externalIds: repository.listExternalIds(item.id),
+      item,
+      source: item.source
+    }))
+  };
+};

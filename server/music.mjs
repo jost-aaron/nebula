@@ -4,7 +4,7 @@ import { json } from "./http.mjs";
 import { readMetadata, scanMediaLibrary } from "./mediaLibrary.mjs";
 import { isAudioFile, mimeType } from "./storage.mjs";
 import { parseByteRange } from "./ranges.mjs";
-import { projectRepositoryItems } from "./catalog/projections.mjs";
+import { projectRepositoryItems, projectRepositoryItemsPage } from "./catalog/projections.mjs";
 import { canBrowseFederatedLibrary, projectUnifiedLibrary } from "./cluster/index.mjs";
 
 export const createMusicRoutes = (storage, accountStore, { catalog = null, federation = null, federationAuthorization = null, guestService = null, libraryPermissions = null } = {}) => {
@@ -14,9 +14,14 @@ export const createMusicRoutes = (storage, accountStore, { catalog = null, feder
 
   const listMusicLibrary = async (request, response) => {
     const metadata = await readMetadata(storage.cinemaMetadataPath);
-    const scanned = await scanMediaLibrary(storage, metadata, { mediaKind: "audio" });
-    let catalogByPath = new Map(catalogEntries().map((entry) => [entry.path, entry]));
-    if (catalog?.scan && scanned.some((entry) => !catalogByPath.has(entry.path))) {
+    const url = new URL(request.url ?? "/", "http://nebula.local");
+    const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
+    const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit")) || 100));
+    const query = url.searchParams.get("query") ?? "";
+    const page = catalog?.repository?.listItemsPage ? projectRepositoryItemsPage(catalog.repository, { availability: "available", limit, mediaKind: "audio", offset, query }) : null;
+    const scanned = page?.entries ?? await scanMediaLibrary(storage, metadata, { mediaKind: "audio" });
+    let catalogByPath = new Map((page ? scanned : catalogEntries()).map((entry) => [entry.path, entry]));
+    if (!page && catalog?.scan && scanned.some((entry) => !catalogByPath.has(entry.path))) {
       await catalog.scan();
       catalogByPath = new Map(catalogEntries().map((entry) => [entry.path, entry]));
     }
@@ -48,7 +53,7 @@ export const createMusicRoutes = (storage, accountStore, { catalog = null, feder
       entries = projectUnifiedLibrary({ authorizeItem: authorizeFederatedItem, entries, federation, mediaKind: "audio" });
     }
     entries.sort((a, b) => (a.sortTitle || a.title).localeCompare(b.sortTitle || b.title));
-    json(response, 200, { entries });
+    json(response, 200, { entries, page: page ? { hasMore: page.offset + page.items.length < page.total, limit: page.limit, nextOffset: page.offset + page.items.length, offset: page.offset, total: page.total } : { hasMore: false, limit: entries.length, nextOffset: entries.length, offset: 0, total: entries.length } });
   };
 
   const streamMusicMedia = async (request, response, url) => {

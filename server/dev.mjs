@@ -12,8 +12,9 @@ import { createAccountStore } from "./accountStore.mjs";
 import { createGuestService } from "./guest/service.mjs";
 import {
   catalogMigration, bootstrapSharedContentRoot, createCatalogRepository, createFingerprintRepository,
-  createFingerprintService, importLegacyCinemaMetadata, scanLocalRoot
+  createFingerprintService, discoverLocalMedia, importLegacyCinemaMetadata, scanLocalRoot
 } from "./catalog/index.mjs";
+import { createMediaLocationsService, mediaLocationsMigration } from "./mediaLocations/index.mjs";
 import { openNebulaDatabase, applyDomainMigrations } from "./database.mjs";
 import { createPlaybackRepository } from "./playback/repository.mjs";
 import { createPlaybackService } from "./playback/service.mjs";
@@ -67,7 +68,7 @@ const accountStore = await createAccountStore({ database });
 const guestService = createGuestService({ accountStore });
 const tailscaleEnrollment = createTailscaleEnrollmentService();
 accountStore.setOwnerCreatedHook(() => guestService.revokeAll());
-applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration, clusterOperationsMigration, clusterKeyRotationMigration, clusterFederationMigration]);
+applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, mediaLocationsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration, clusterOperationsMigration, clusterKeyRotationMigration, clusterFederationMigration]);
 const auditService = createAuditService({
   db: database,
   maxEvents: Number(process.env.NEBULA_AUDIT_MAX_EVENTS ?? 10_000),
@@ -94,6 +95,7 @@ clusterService = clusterEnabled ? createClusterTrustService({
   role: process.env.NEBULA_CLUSTER_ROLE ?? "hybrid"
 }) : null;
 const catalogRepository = createCatalogRepository(database);
+const mediaLocations = createMediaLocationsService({ contentRoot: storage.contentRoot, database });
 let clusterSubtitleManifest = async () => [];
 const localClusterManifest = clusterService ? createClusterManifestService({
   database, nodeId: clusterService.identity().descriptor.nodeId,
@@ -137,7 +139,23 @@ const canAccountAccessFederatedItem = (accountId, itemId) => {
   ));
 };
 const scanCatalog = async () => {
-  const scan = await scanLocalRoot({ absoluteRoot: storage.contentRoot, repository: catalogRepository, rootId: catalogRoot.id });
+  const configuredLocations = mediaLocations.list();
+  let scan;
+  if (configuredLocations.length === 0) {
+    scan = await scanLocalRoot({ absoluteRoot: storage.contentRoot, repository: catalogRepository, rootId: catalogRoot.id });
+  } else {
+    const filesByPath = new Map();
+    for (const location of configuredLocations) {
+      const files = await discoverLocalMedia({
+        absoluteRoot: path.resolve(storage.contentRoot, location.contentPath),
+        contentPathPrefix: location.contentPath,
+        itemTypeOverride: location.category === "movies" ? "movie" : location.category === "tv" ? "episode" : "track",
+        mediaKind: location.category === "music" ? "audio" : "video"
+      });
+      files.forEach((file) => filesByPath.set(file.path, file));
+    }
+    scan = catalogRepository.reconcileScan({ files: [...filesByPath.values()].sort((left, right) => left.path.localeCompare(right.path)), rootId: catalogRoot.id, scanType: "full" });
+  }
   await importLegacyCinemaMetadata({ metadataPath: storage.cinemaMetadataPath, repository: catalogRepository, rootId: catalogRoot.id });
   await syncLocalProjection();
   return scan;
@@ -296,9 +314,21 @@ const jobsWorker = createJobsWorker({
   handlers: createMediaJobHandlers({
     scanLibrary: async (_payload, context) => {
       const scan = await scanCatalog();
+      const enrichmentStart = Date.now() + 60_000;
+      let enrichmentIndex = 0;
       for (const item of catalogRepository.listItems({ availability: "available" })) {
-        context.enqueue({ type: "probe", payload: { sourceId: item.source.id }, dedupeKey: `${item.source.id}:${item.source.contentRevision}` });
-        context.enqueue({ type: "fingerprint", payload: { sourceId: item.source.id }, dedupeKey: `${item.source.id}:${item.source.contentRevision}` });
+        const probe = probeReader.get(item.source.id);
+        if (probe.sourceContentRevision !== item.source.contentRevision) {
+          context.enqueue({ type: "probe", payload: { sourceId: item.source.id }, dedupeKey: `${item.source.id}:${item.source.contentRevision}`, availableAt: enrichmentStart + enrichmentIndex * 10_000 });
+          enrichmentIndex += 1;
+        }
+        if (clusterService) {
+          const fingerprint = fingerprintRepository.get(item.source.id);
+          if (fingerprint?.state !== "ready" || fingerprint.sourceRevision !== item.source.contentRevision) {
+            context.enqueue({ type: "fingerprint", payload: { sourceId: item.source.id }, dedupeKey: `${item.source.id}:${item.source.contentRevision}`, availableAt: enrichmentStart + enrichmentIndex * 10_000 });
+            enrichmentIndex += 1;
+          }
+        }
       }
       return scan;
     },
@@ -311,7 +341,8 @@ const jobsWorker = createJobsWorker({
       ? renditionPolicy.cleanup(payload, context)
       : ({ candidates: catalogRepository.listCleanupCandidates().length })
   }),
-  repository: jobsRepository
+  repository: jobsRepository,
+  concurrency: Math.max(1, Math.min(2, Number(process.env.NEBULA_MEDIA_JOB_CONCURRENCY) || 1))
 });
 const authGuard = createAuthGuard(accountStore, {
   audit: auditService,
@@ -374,6 +405,7 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
     scheduler: clusterScheduler, service: clusterService, sync: clusterSync
   } } : {}),
   jobs: jobsService,
+  mediaLocations,
   guestService,
   libraryPermissions,
   mediaLists,
@@ -388,7 +420,15 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   tailscaleEnrollment
 });
 jobsWorker.start();
-jobsService.enqueue({ type: "scan", payload: { rootId: catalogRoot.id }, dedupeKey: `startup:${catalogRoot.id}` });
+const enqueueScheduledScan = (reason) => jobsService.enqueue({
+  type: "scan",
+  payload: { reason, rootId: catalogRoot.id },
+  dedupeKey: `library:${catalogRoot.id}`,
+  availableAt: Date.now() + (reason === "startup" ? 120_000 : 0)
+});
+enqueueScheduledScan("startup");
+const libraryScanInterval = setInterval(() => enqueueScheduledScan("daily"), 24 * 60 * 60 * 1000);
+libraryScanInterval.unref?.();
 const renditionCleanupScheduler = createRenditionCleanupScheduler({ enqueue: renditionPolicy.enqueueCleanup, getPolicy: renditionPolicy.get });
 renditionPolicy.enqueueCleanup("startup");
 renditionCleanupScheduler.start();

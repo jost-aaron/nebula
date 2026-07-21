@@ -24,4 +24,5 @@ export interface MusicEntry extends CatalogCompatibilityIdentity {
 
 export interface MusicLibraryResponse {
   entries: MusicEntry[];
+  page: { hasMore: boolean; limit: number; nextOffset: number; offset: number; total: number };
 }

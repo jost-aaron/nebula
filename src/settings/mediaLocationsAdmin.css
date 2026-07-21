@@ -1,0 +1,24 @@
+.media-locations-admin { display: grid; gap: 18px; }
+.media-locations-heading { display: flex; align-items: start; justify-content: space-between; gap: 20px; }
+.media-locations-heading h3 { margin: 0; }
+.media-locations-heading p { max-width: 720px; margin: 7px 0 0; color: #8ca5a3; line-height: 1.5; }
+.media-locations-heading code, .media-location-row code { color: #c8fffa; }
+.media-location-groups { display: grid; gap: 14px; }
+.media-location-group { display: grid; gap: 14px; border: 1px solid rgba(139, 222, 216, .13); border-radius: 14px; padding: 16px; background: rgba(2, 10, 12, .32); }
+.media-location-group > header { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.media-location-group > header > div { display: flex; align-items: center; gap: 11px; }
+.media-location-group > header span { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; color: #071315; background: #74ddd6; font-weight: 900; }
+.media-location-group h4 { margin: 0; font-size: 1.05rem; }
+.media-location-group header small { color: #789290; }
+.media-location-list { display: grid; gap: 7px; }
+.media-location-list > p { margin: 0; color: #728b89; font-size: .84rem; }
+.media-location-row { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-radius: 10px; padding: 10px 11px; background: rgba(112, 218, 211, .055); }
+.media-location-row code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.media-location-row button[data-confirm="true"] { color: #ffd0a3; border-color: rgba(255, 174, 94, .45); }
+.media-location-group form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; }
+.media-location-group label { display: grid; gap: 7px; color: #91aaa8; font-size: .78rem; font-weight: 700; }
+.media-location-group label > div { min-width: 0; display: flex; align-items: center; border: 1px solid rgba(139, 222, 216, .17); border-radius: 10px; background: rgba(0, 5, 7, .38); overflow: hidden; }
+.media-location-group label > div > span { padding-left: 12px; color: #64817f; font-family: ui-monospace, monospace; white-space: nowrap; }
+.media-location-group input { min-width: 0; width: 100%; border: 0; background: transparent; }
+.media-locations-message { min-height: 20px; color: #9dc7c3; font-size: .85rem; }
+@media (max-width: 680px) { .media-location-group form { grid-template-columns: 1fr; } .media-location-group form button { width: 100%; } }

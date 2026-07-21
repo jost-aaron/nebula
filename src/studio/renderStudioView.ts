@@ -590,6 +590,11 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   let pendingResume: { entry: MusicEntry; state: PlaybackHistoryEntry } | null = null;
   const personalPlayback = options.personalPlayback !== false;
   const playbackDeviceId = createBrowserUuid();
+  let libraryHasMore = false;
+  let libraryOffset = 0;
+  let pageLoading = false;
+  let pageObserver: IntersectionObserver | null = null;
+  let searchTimer = 0;
 
   const visibleEntries = () =>
     query
@@ -1087,6 +1092,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   };
 
   const render = () => {
+    const previousLibraryScrollTop = !selected && !isScanning ? content.scrollTop : null;
     const visible = visibleEntries();
     const scopedEntries = libraryScope
       ? visible.filter((entry) => libraryScope?.tracks.some((track) => track.path === entry.path))
@@ -1134,6 +1140,18 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     renderTabState();
     renderFooter();
     syncPlayerUi();
+    pageObserver?.disconnect();
+    if (!selected && libraryHasMore) {
+      content.insertAdjacentHTML("beforeend", `<div data-studio-page-sentinel aria-label="Loading more tracks" style="height:1px"></div>`);
+      const sentinel = content.querySelector<HTMLElement>("[data-studio-page-sentinel]");
+      if (sentinel) {
+        pageObserver = new IntersectionObserver((observations) => {
+          if (observations.some((observation) => observation.isIntersecting)) void loadLibrary(false);
+        }, { root: content, rootMargin: "1200px 0px" });
+        pageObserver.observe(sentinel);
+      }
+    }
+    if (previousLibraryScrollTop !== null) content.scrollTop = previousLibraryScrollTop;
   };
 
   const closeResumePrompt = () => {
@@ -1183,24 +1201,35 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     }
   };
 
-  const loadLibrary = async () => {
-    isScanning = true;
-    loadError = "";
-    render();
+  const loadLibrary = async (reset = true) => {
+    if (pageLoading) return;
+    pageLoading = true;
+    if (reset) {
+      isScanning = true;
+      loadError = "";
+      entries = [];
+      libraryHasMore = false;
+      render();
+    }
 
     try {
       const [library, playbackHistory] = await Promise.all([
-        listMusicLibrary(),
+        listMusicLibrary({ limit: 100, offset: reset ? 0 : libraryOffset, query }),
         personalPlayback ? listStudioPlaybackHistory() : Promise.resolve({ entries: [] })
       ]);
-      entries = library.entries;
+      entries = reset ? library.entries : [...entries, ...library.entries];
+      libraryHasMore = library.page.hasMore;
+      libraryOffset = library.page.nextOffset;
       history = new Map(playbackHistory.entries.map((entry) => [entry.itemId, entry]));
       selected = selected ? entries.find((entry) => entry.path === selected?.path) ?? null : null;
     } catch (error) {
       loadError = error instanceof Error ? error.message : "Unable to scan content.";
     } finally {
       isScanning = false;
+      pageLoading = false;
+      const preservedScrollTop = reset ? null : content.scrollTop;
       render();
+      if (preservedScrollTop !== null) content.scrollTop = preservedScrollTop;
     }
   };
 
@@ -1349,8 +1378,11 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
 
     if (input) {
       query = input.value.trim();
+      libraryHasMore = false;
       selected = null;
       libraryScope = null;
+      window.clearTimeout(searchTimer);
+      searchTimer = window.setTimeout(() => void loadLibrary(true), 250);
       render();
       content.scrollTop = 0;
       input.focus();

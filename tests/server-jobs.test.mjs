@@ -39,6 +39,14 @@ test("manual service validates types and exposes enqueue, query, list, and cance
   assert.equal(service.cancel(first.job.id).state, "cancelled");
 });
 
+test("manual service preserves delayed availability for load-scheduled jobs", (t) => {
+  const { db, service } = fixture({ now: () => Date.parse("2026-07-20T00:00:00.000Z") });
+  t.after(() => db.close());
+  const availableAt = Date.parse("2026-07-20T00:05:00.000Z");
+  const result = service.enqueue({ availableAt, payload: { sourceId: "source-a" }, type: "probe" });
+  assert.equal(result.job.availableAt, "2026-07-20T00:05:00.000Z");
+});
+
 test("worker persists progress and successful results", async (t) => {
   const { db, repository } = fixture();
   t.after(() => db.close());

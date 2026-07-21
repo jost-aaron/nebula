@@ -7,6 +7,7 @@ import { isVideoFile, mimeType } from "./storage.mjs";
 import { parseByteRange } from "./ranges.mjs";
 import { createCinemaTmdbRoutes } from "./cinemaTmdb.mjs";
 import { canBrowseFederatedLibrary, projectUnifiedLibrary } from "./cluster/index.mjs";
+import { projectRepositoryItemsPage } from "./catalog/projections.mjs";
 
 const candidateWords = (value = "") =>
   value
@@ -78,10 +79,19 @@ const googleVisionWebDetection = async (frames) => {
 export const createCinemaRoutes = (storage, accountStore, options = {}) => {
   const libraryPermissions = options.libraryPermissions ?? null;
   const guestService = options.guestService ?? null;
+  const catalog = options.catalog ?? null;
   const handleTmdb = createCinemaTmdbRoutes(storage, accountStore, options);
   const listCinemaLibrary = async (request, response) => {
     const metadata = await readMetadata(storage.cinemaMetadataPath);
-    const scanned = await scanMediaLibrary(storage, metadata, { mediaKind: "video" });
+    const url = new URL(request.url ?? "/", "http://nebula.local");
+    const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
+    const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit")) || 60));
+    const query = url.searchParams.get("query") ?? "";
+    const category = url.searchParams.get("category");
+    const page = catalog?.repository?.listItemsPage
+      ? projectRepositoryItemsPage(catalog.repository, { availability: "available", itemType: category === "tv" ? "episode" : category === "movies" ? "movie" : undefined, limit, mediaKind: "video", offset, query })
+      : null;
+    const scanned = page?.entries ?? await scanMediaLibrary(storage, metadata, { mediaKind: "video" });
     const context = request.nebulaAuth;
     let entries = libraryPermissions ? scanned.filter((entry) => libraryPermissions.canAccessPath(context, entry.path, "video")) : scanned;
 
@@ -110,7 +120,7 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
       entries = projectUnifiedLibrary({ authorizeItem: authorizeFederatedItem, entries, federation: options.federation, mediaKind: "video" });
     }
     entries.sort((a, b) => (a.sortTitle || a.title).localeCompare(b.sortTitle || b.title));
-    json(response, 200, { entries });
+    json(response, 200, { entries, page: page ? { hasMore: page.offset + page.items.length < page.total, limit: page.limit, nextOffset: page.offset + page.items.length, offset: page.offset, total: page.total } : { hasMore: false, limit: entries.length, nextOffset: entries.length, offset: 0, total: entries.length } });
   };
 
   const updateCinemaMetadata = async (request, response) => {

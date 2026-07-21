@@ -2,6 +2,17 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+test("Studio pagination preserves its scroll container while appending pages", async () => {
+  const [source, styles] = await Promise.all([
+    readFile(new URL("../src/studio/renderStudioView.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/styles.css", import.meta.url), "utf8")
+  ]);
+  assert.match(source, /const preservedScrollTop = reset \? null : content\.scrollTop/);
+  assert.match(source, /if \(preservedScrollTop !== null\) content\.scrollTop = preservedScrollTop/);
+  assert.match(source, /const previousLibraryScrollTop = !selected && !isScanning \? content\.scrollTop : null/);
+  assert.match(styles, /\.studio-content \{[\s\S]*?overflow-anchor: none/);
+});
+
 test("Studio integrates personal playback history, lifecycle reporting, and an in-app resume dialog", async () => {
   const [studio, api, main, css] = await Promise.all([
     readFile(new URL("../src/studio/renderStudioView.ts", import.meta.url), "utf8"),

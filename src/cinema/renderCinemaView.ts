@@ -331,8 +331,10 @@ const renderCinemaCards = (entries: CinemaEntry[], category: CinemaCategory, pla
     .map(
       (entry) => {
         const state = entry.id ? playback.get(entry.id) : undefined;
+        const firstCharacter = (entry.sortTitle || displayTitle(entry)).trim().charAt(0).toUpperCase();
+        const sortLetter = /^[A-Z]$/.test(firstCharacter) ? firstCharacter : "#";
         return `
-        <button class="cinema-card" type="button" data-cinema-path="${escapeHtml(entry.path)}">
+        <button class="cinema-card" type="button" data-cinema-path="${escapeHtml(entry.path)}" data-cinema-sort-letter="${sortLetter}">
           <span class="cinema-poster" data-cinema-poster="${escapeHtml(entry.path)}"${posterStyle(entry)}>
             ${entry.posterUrl ? "" : renderPosterFallback(entry)}
             <span class="cinema-poster-scrim"></span>
@@ -445,6 +447,9 @@ const renderLibrary = (entries: CinemaEntry[], activeCategory: CinemaCategory, q
 
   return `
     <main class="cinema-library browsing" data-cinema-view="library">
+      <aside class="cinema-alphabet-rail" data-cinema-alphabet-rail aria-label="Current alphabetical position">
+        ${["#", ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"].map((letter) => `<span data-cinema-letter="${letter}" data-distance="4">${letter}</span>`).join("")}
+      </aside>
       ${!query ? renderContinueWatching(entries, playback) : ""}
       <div class="cinema-catalog-status">${renderCinemaIcon(catalogMessage.includes("fallback") ? "HardDrive" : "RefreshCw")}<span>${escapeHtml(catalogMessage)}</span><button type="button" data-cinema-action="scan-catalog">Scan library</button></div>
       <section class="cinema-library-row">
@@ -452,7 +457,7 @@ const renderLibrary = (entries: CinemaEntry[], activeCategory: CinemaCategory, q
           <div class="cinema-library-heading">
             <p class="eyebrow">Library</p>
             <h3>${escapeHtml(categoryLabel(activeCategory))}</h3>
-            <span>${visibleEntries.length} ${visibleEntries.length === 1 ? "title" : "titles"}</span>
+            <span data-cinema-loaded-count>${visibleEntries.length} ${visibleEntries.length === 1 ? "title" : "titles"}</span>
           </div>
           <div class="cinema-library-tools">
             <nav class="cinema-category-segments" aria-label="Media categories">
@@ -461,7 +466,7 @@ const renderLibrary = (entries: CinemaEntry[], activeCategory: CinemaCategory, q
                   (category) => `
                     <button class="${category.id === activeCategory ? "active" : ""}" type="button" data-cinema-category="${category.id}">
                       ${category.label}
-                      <span>${entries.filter((entry) => entry.category === category.id).length}</span>
+                      <span data-cinema-category-count="${category.id}">${entries.filter((entry) => entry.category === category.id).length}</span>
                     </button>
                   `
                 )
@@ -915,6 +920,14 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   let pendingPlayback: PendingCinemaPlayback | null = null;
   let qualityPreference: PlaybackQualityPreference = { mode: "auto" };
   let renditionProfiles = fallbackRenditionProfiles;
+  let libraryHasMore = false;
+  let libraryOffset = 0;
+  let pageLoading = false;
+  let posterObserver: IntersectionObserver | null = null;
+  let pageObserver: IntersectionObserver | null = null;
+  let alphabetScrollHost: HTMLElement | null = null;
+  let refreshAlphabetRail: (() => void) | null = null;
+  let searchTimer = 0;
 
   const deliveryCapabilities = (player: HTMLVideoElement) => {
     const mp4 = Boolean(player.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"'));
@@ -1055,14 +1068,72 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   };
 
   const hydratePosters = () => {
-    app.querySelectorAll<HTMLElement>("[data-cinema-poster], [data-cinema-backdrop]").forEach((poster) => {
+    const observerRoot = content.querySelector<HTMLElement>(".cinema-library.browsing") ?? content;
+    posterObserver?.disconnect();
+    posterObserver = new IntersectionObserver((observations) => observations.forEach((observation) => {
+      if (!observation.isIntersecting) return;
+      posterObserver?.unobserve(observation.target);
+      const poster = observation.target as HTMLElement;
       const path = poster.dataset.cinemaPoster ?? poster.dataset.cinemaBackdrop;
       const entry = entries.find((candidate) => candidate.path === path);
-
       if (entry) {
+        poster.dataset.cinemaHydrated = "true";
         void hydratePoster(entry, poster).catch(() => {});
       }
+    }), { root: observerRoot, rootMargin: "900px 0px" });
+    app.querySelectorAll<HTMLElement>("[data-cinema-poster]:not([data-cinema-hydrated]), [data-cinema-backdrop]:not([data-cinema-hydrated])").forEach((poster) => {
+      posterObserver?.observe(poster);
     });
+  };
+
+  const bindLibraryPageObserver = () => {
+    pageObserver?.disconnect();
+    content.querySelector("[data-cinema-page-sentinel]")?.remove();
+    if (view !== "library" || !libraryHasMore) return;
+    const scrollHost = content.querySelector<HTMLElement>(".cinema-library.browsing");
+    scrollHost?.insertAdjacentHTML("beforeend", `<div data-cinema-page-sentinel aria-label="Loading more titles" style="height:1px"></div>`);
+    const sentinel = scrollHost?.querySelector<HTMLElement>("[data-cinema-page-sentinel]");
+    if (!scrollHost || !sentinel) return;
+    pageObserver = new IntersectionObserver((observations) => {
+      if (observations.some((observation) => observation.isIntersecting)) void loadLibrary(false);
+    }, { root: scrollHost, rootMargin: "1200px 0px" });
+    pageObserver.observe(sentinel);
+  };
+
+  const bindAlphabetRail = () => {
+    const library = content.querySelector<HTMLElement>(".cinema-library.browsing");
+    const scrollHost = library;
+    const rail = library?.querySelector<HTMLElement>("[data-cinema-alphabet-rail]");
+    if (!scrollHost || !rail) return;
+    if (alphabetScrollHost === scrollHost && refreshAlphabetRail) {
+      refreshAlphabetRail();
+      return;
+    }
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const cards = Array.from(scrollHost.querySelectorAll<HTMLElement>(".cinema-card[data-cinema-sort-letter]"));
+      const hostBounds = scrollHost.getBoundingClientRect();
+      const marker = hostBounds.top + Math.min(150, hostBounds.height * 0.22);
+      const current = cards.find((card) => card.getBoundingClientRect().bottom >= marker) ?? cards.at(-1);
+      const activeLetter = current?.dataset.cinemaSortLetter ?? "#";
+      const letters = Array.from(rail.querySelectorAll<HTMLElement>("[data-cinema-letter]"));
+      const activeIndex = Math.max(0, letters.findIndex((letter) => letter.dataset.cinemaLetter === activeLetter));
+      letters.forEach((letter, index) => {
+        const distance = Math.min(4, Math.abs(index - activeIndex));
+        letter.dataset.distance = String(distance);
+        letter.classList.toggle("active", distance === 0);
+      });
+      rail.setAttribute("aria-label", `Current alphabetical position: ${activeLetter}`);
+    };
+    const schedule = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(update);
+    };
+    scrollHost.addEventListener("scroll", schedule, { passive: true });
+    alphabetScrollHost = scrollHost;
+    refreshAlphabetRail = update;
+    update();
   };
 
   const renderFooter = () => {
@@ -1077,6 +1148,9 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   };
 
   const render = () => {
+    const previousLibraryScrollTop = view === "library" && !isScanning
+      ? content.querySelector<HTMLElement>(".cinema-library.browsing")?.scrollTop ?? null
+      : null;
     topNav.innerHTML = renderTopNav(view);
     content.classList.toggle("scanning", isScanning);
 
@@ -1115,6 +1189,12 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
 
     renderFooter();
     hydratePosters();
+    bindLibraryPageObserver();
+    bindAlphabetRail();
+    if (previousLibraryScrollTop !== null) {
+      const scrollHost = content.querySelector<HTMLElement>(".cinema-library.browsing");
+      if (scrollHost) scrollHost.scrollTop = previousLibraryScrollTop;
+    }
     const subtitleSelect = content.querySelector<HTMLSelectElement>("[data-cinema-subtitle-select]");
     if (subtitleSelect && selected?.id && (selected.sourceId || selected.federation)) subtitleSelect.addEventListener("change", async () => {
       subtitleSelect.disabled = true;
@@ -1923,13 +2003,25 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     render();
   };
 
-  const loadLibrary = async () => {
-    isScanning = true;
-    render();
+  const loadLibrary = async (reset = true) => {
+    if (pageLoading) return;
+    pageLoading = true;
+    if (reset) {
+      isScanning = true;
+      entries = [];
+      libraryHasMore = false;
+      render();
+    }
 
+    let appendedEntries: CinemaEntry[] = [];
+    let failed = false;
     try {
-      entries = (await listCinemaLibrary()).entries;
-      try {
+      const library = await listCinemaLibrary({ category: activeCategory, limit: 60, offset: reset ? 0 : libraryOffset, query });
+      appendedEntries = library.entries;
+      entries = reset ? library.entries : [...entries, ...library.entries];
+      libraryHasMore = library.page.hasMore;
+      libraryOffset = library.page.nextOffset;
+      if (reset) try {
         const catalog = await listCinemaCatalog();
         const continuing = options.personalPlayback === false ? { entries: [] } : await listCinemaContinueWatching();
         const byPath = new Map(catalog.items.map((item) => [item.path ?? item.source?.path ?? "", item]));
@@ -1951,7 +2043,8 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       }
       selected = selected ? entries.find((entry) => entry.path === selected?.path) ?? selected : null;
     } catch (error) {
-      content.innerHTML = `
+      failed = true;
+      if (reset) content.innerHTML = `
         <div class="cinema-empty">
           <strong>Library unavailable</strong>
           <span>${escapeHtml(error instanceof Error ? error.message : "Unable to scan content.")}</span>
@@ -1959,6 +2052,20 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       `;
     } finally {
       isScanning = false;
+      pageLoading = false;
+      if (!reset && !failed) {
+        const grid = content.querySelector<HTMLElement>("[data-cinema-grid]");
+        grid?.insertAdjacentHTML("beforeend", renderCinemaCards(appendedEntries, activeCategory, playback));
+        const count = entries.filter((entry) => entry.category === activeCategory).length;
+        const loadedCount = content.querySelector<HTMLElement>("[data-cinema-loaded-count]");
+        if (loadedCount) loadedCount.textContent = `${count} ${count === 1 ? "title" : "titles"}`;
+        const categoryCount = content.querySelector<HTMLElement>(`[data-cinema-category-count="${activeCategory}"]`);
+        if (categoryCount) categoryCount.textContent = String(count);
+        hydratePosters();
+        bindLibraryPageObserver();
+        bindAlphabetRail();
+        return;
+      }
       render();
     }
   };
@@ -2033,7 +2140,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       activeCategory = (categoryButton.dataset.cinemaCategory as CinemaCategory | undefined) ?? "movies";
       selected = null;
       view = "library";
-      render();
+      void loadLibrary(true);
       return;
     }
 
@@ -2345,9 +2452,12 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
 
     if (input) {
       query = input.value.trim();
+      libraryHasMore = false;
       if (view !== "watchlist") {
         view = "library";
       }
+      window.clearTimeout(searchTimer);
+      searchTimer = window.setTimeout(() => void loadLibrary(true), 250);
       render();
       input.focus();
     }

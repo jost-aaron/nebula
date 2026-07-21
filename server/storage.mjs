@@ -42,7 +42,7 @@ export const createStorage = async ({ contentRoot, dataRoot = path.join(path.dir
 };
 
 export const audioExtensions = new Set([".aac", ".flac", ".m4a", ".mp3", ".ogg", ".wav"]);
-export const videoExtensions = new Set([".m4v", ".mov", ".mp4", ".webm"]);
+export const videoExtensions = new Set([".m4v", ".mkv", ".mov", ".mp4", ".webm"]);
 
 export const safeFileName = (name = "") => Boolean(name) && !name.includes("/") && !name.includes("\\");
 

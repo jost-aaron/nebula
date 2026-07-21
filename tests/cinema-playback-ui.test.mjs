@@ -2,6 +2,20 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+test("Cinema pagination appends into the real library scroller without rebuilding it", async () => {
+  const [source, styles] = await Promise.all([
+    readFile(new URL("../src/cinema/renderCinemaView.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/styles.css", import.meta.url), "utf8")
+  ]);
+  assert.match(source, /const observerRoot = content\.querySelector<HTMLElement>\("\.cinema-library\.browsing"\) \?\? content/);
+  assert.match(source, /root: scrollHost, rootMargin: "1200px 0px"/);
+  assert.match(source, /grid\?\.insertAdjacentHTML\("beforeend", renderCinemaCards\(appendedEntries, activeCategory, playback\)\)/);
+  assert.match(source, /bindLibraryPageObserver\(\);[\s\S]*?return;/);
+  assert.match(source, /const previousLibraryScrollTop = view === "library" && !isScanning/);
+  assert.doesNotMatch(source, /scrollHost\.scrollTop = preservedScrollTop/);
+  assert.match(styles, /\.cinema-library\.browsing,[\s\S]*?overflow-anchor: none/);
+});
+
 test("Cinema source loading cannot cancel its own delivery session", async () => {
   const [source, styles] = await Promise.all([
     readFile(new URL("../src/cinema/renderCinemaView.ts", import.meta.url), "utf8"),

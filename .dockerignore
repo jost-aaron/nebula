@@ -2,6 +2,9 @@ dist
 node_modules
 content
 data
+.env
+.env.*
+!.env.example
 *.sqlite*
 .git
 .DS_Store
