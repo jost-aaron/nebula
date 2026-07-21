@@ -1119,11 +1119,16 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       const activeLetter = current?.dataset.cinemaSortLetter ?? "#";
       const letters = Array.from(rail.querySelectorAll<HTMLElement>("[data-cinema-letter]"));
       const activeIndex = Math.max(0, letters.findIndex((letter) => letter.dataset.cinemaLetter === activeLetter));
+      const windowSize = 7;
+      const windowStart = Math.max(0, Math.min(activeIndex - 3, letters.length - windowSize));
+      const windowEnd = windowStart + windowSize;
       letters.forEach((letter, index) => {
-        const distance = Math.min(4, Math.abs(index - activeIndex));
+        const distance = Math.min(3, Math.abs(index - activeIndex));
+        letter.hidden = index < windowStart || index >= windowEnd;
         letter.dataset.distance = String(distance);
         letter.classList.toggle("active", distance === 0);
       });
+      rail.style.setProperty("--cinema-alphabet-scroll-offset", `${scrollHost.scrollTop}px`);
       rail.setAttribute("aria-label", `Current alphabetical position: ${activeLetter}`);
     };
     const schedule = () => {

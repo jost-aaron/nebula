@@ -26,7 +26,10 @@ test("cinema alphabet rail follows the real grid scroll surface without duplicat
   assert.match(cinema, /\^\[A-Z\]\$[\s\S]*?\? firstCharacter : "#"/);
   assert.match(cinema, /alphabetScrollHost === scrollHost && refreshAlphabetRail/);
   assert.match(cinema, /requestAnimationFrame\(update\)/);
-  assert.match(styles, /\.cinema-alphabet-rail span\.active[\s\S]*?transform: scale\(1\.35\)/);
-  assert.match(styles, /\.cinema-alphabet-rail \{[\s\S]*?position: sticky/);
+  assert.match(cinema, /const windowSize = 7/);
+  assert.match(cinema, /letter\.hidden = index < windowStart \|\| index >= windowEnd/);
+  assert.match(cinema, /--cinema-alphabet-scroll-offset/);
+  assert.match(styles, /\.cinema-alphabet-rail span\.active[\s\S]*?font-size: 1\.34rem/);
+  assert.match(styles, /\.cinema-alphabet-rail \{[\s\S]*?height: 100%[\s\S]*?justify-content: space-around/);
   assert.match(styles, /span\[data-distance="1"\]/);
 });
