@@ -6,3 +6,4 @@ export const addMediaLocation = (category: MediaLocationCategory, contentPath: s
   body: JSON.stringify({ category, contentPath }), headers: { "content-type": "application/json" }, method: "POST"
 });
 export const removeMediaLocation = (id: string) => apiJson<{ location: MediaLocation; scanQueued: boolean }>(`/api/admin/media-locations/${encodeURIComponent(id)}`, { method: "DELETE" });
+export const reindexMediaLibrary = () => apiJson<{ job: { id: string }; scanQueued: boolean }>("/api/admin/media-locations/reindex", { method: "POST" });

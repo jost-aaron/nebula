@@ -1,4 +1,4 @@
-import { addMediaLocation, listMediaLocations, removeMediaLocation } from "../api/mediaLocationsApi";
+import { addMediaLocation, listMediaLocations, reindexMediaLibrary, removeMediaLocation } from "../api/mediaLocationsApi";
 import type { MediaLocation, MediaLocationCategory } from "../shared/mediaLocationTypes";
 import "./mediaLocationsAdmin.css";
 
@@ -13,6 +13,7 @@ export const renderMediaLocationsAdmin = () => `
   <section class="media-locations-admin diagnostic-section" data-diagnostic-section="media-locations" aria-live="polite">
     <div class="media-locations-heading"><div><h3>Media Locations</h3><p>Choose one or more folders beneath <code>/app/content</code>. Nebula merges every folder into Movies, TV Shows, or Music. With no explicit folders, the complete content root is scanned for backward compatibility.</p></div><button type="button" data-media-locations-refresh>Refresh</button></div>
     <div data-media-locations-content><p>Loading media locations...</p></div>
+    <div class="media-library-reindex"><div><strong>Re-index entire library</strong><p>Rescan every configured folder and repair Movies, TV Shows, and Music classification. Accounts, playback history, settings, and media files are not changed.</p></div><button type="button" data-media-library-reindex>Re-index library</button></div>
     <span class="media-locations-message" data-media-locations-message></span>
   </section>`;
 
@@ -55,6 +56,25 @@ export const bindMediaLocationsAdmin = (container: ParentNode) => {
     } catch (error) { show(error instanceof Error ? error.message : "Media locations could not be loaded."); }
   };
   root.querySelector("[data-media-locations-refresh]")?.addEventListener("click", () => void load());
+  root.querySelector<HTMLButtonElement>("[data-media-library-reindex]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget as HTMLButtonElement;
+    if (button.dataset.confirm !== "true") {
+      button.dataset.confirm = "true";
+      button.textContent = "Confirm re-index";
+      show("Confirm a full library re-index. Account data and media files will be preserved.");
+      return;
+    }
+    button.disabled = true;
+    show("Scheduling a full library re-index...");
+    try {
+      const result = await reindexMediaLibrary();
+      show(result.scanQueued ? "Full library re-index queued. You can follow progress under Jobs." : "A library re-index is already queued or running.");
+      button.textContent = "Re-index scheduled";
+    } catch (error) {
+      show(error instanceof Error ? error.message : "Library re-index could not be scheduled.");
+      button.disabled = false;
+    }
+  });
   void load();
   return () => { disposed = true; };
 };

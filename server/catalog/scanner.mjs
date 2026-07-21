@@ -6,7 +6,7 @@ const defaultTitle = (fileName) => path.basename(fileName, path.extname(fileName
 
 const itemTypeFor = (contentPath, mediaKind) => {
   if (mediaKind === "audio") return "track";
-  return /(?:^|\/)(?:tv|shows|series)(?:\/|$)|\bs\d{1,2}e\d{1,3}\b|\b\d{1,2}x\d{1,3}\b/i.test(contentPath) ? "episode" : "movie";
+  return /(?:^|\/)(?:tv(?:[ ._-]*shows?)?|shows|series)(?:\/|$)|\bs\d{1,2}e\d{1,3}\b|\b\d{1,2}x\d{1,3}\b/i.test(contentPath) ? "episode" : "movie";
 };
 
 export const discoverLocalMedia = async ({ absoluteRoot, contentPathPrefix = "", itemTypeOverride = null, mediaKind = "mixed" }) => {

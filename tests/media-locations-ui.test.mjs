@@ -14,7 +14,10 @@ test("owner settings expose persistent multi-folder media location controls", as
   assert.match(admin, /Movies[\s\S]*TV Shows[\s\S]*Music/);
   assert.match(admin, /data-media-location-form/);
   assert.match(admin, /data-media-location-remove/);
+  assert.match(admin, /data-media-library-reindex/);
+  assert.match(admin, /Accounts, playback history, settings, and media files are not changed/);
   assert.match(api, /POST[\s\S]*DELETE/);
+  assert.match(api, /media-locations\/reindex/);
   assert.match(main, /bindMediaLocationsAdmin/);
 });
 

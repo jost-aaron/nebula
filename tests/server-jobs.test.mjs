@@ -47,6 +47,18 @@ test("manual service preserves delayed availability for load-scheduled jobs", (t
   assert.equal(result.job.availableAt, "2026-07-20T00:05:00.000Z");
 });
 
+test("deduplicated queued work can be expedited without creating another job", (t) => {
+  const clock = Date.parse("2026-07-20T12:00:00.000Z");
+  const { db, repository } = fixture({ now: () => clock });
+  t.after(() => db.close());
+  const first = repository.enqueue({ type: "scan", dedupeKey: "library", availableAt: clock + 60_000 });
+  const expedited = repository.enqueue({ type: "scan", dedupeKey: "library", availableAt: clock - 60_000 });
+  assert.equal(expedited.created, false);
+  assert.equal(expedited.job.id, first.job.id);
+  assert.equal(expedited.job.availableAt, "2026-07-20T11:59:00.000Z");
+  assert.equal(repository.claimNext().id, first.job.id);
+});
+
 test("worker persists progress and successful results", async (t) => {
   const { db, repository } = fixture();
   t.after(() => db.close());

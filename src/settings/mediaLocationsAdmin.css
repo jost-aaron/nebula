@@ -21,4 +21,9 @@
 .media-location-group label > div > span { padding-left: 12px; color: #64817f; font-family: ui-monospace, monospace; white-space: nowrap; }
 .media-location-group input { min-width: 0; width: 100%; border: 0; background: transparent; }
 .media-locations-message { min-height: 20px; color: #9dc7c3; font-size: .85rem; }
+.media-library-reindex { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px; border: 1px solid rgba(255, 183, 84, .2); border-radius: 14px; background: rgba(255, 166, 61, .045); }
+.media-library-reindex strong { color: #f5fbfa; }
+.media-library-reindex p { max-width: 720px; margin: 5px 0 0; color: #819b98; font-size: .84rem; line-height: 1.45; }
+.media-library-reindex button[data-confirm="true"] { border-color: rgba(255, 183, 84, .48); color: #ffd29d; }
 @media (max-width: 680px) { .media-location-group form { grid-template-columns: 1fr; } .media-location-group form button { width: 100%; } }
+@media (max-width: 680px) { .media-library-reindex { align-items: stretch; flex-direction: column; } .media-library-reindex button { width: 100%; } }

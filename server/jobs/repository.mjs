@@ -34,7 +34,15 @@ export const createJobsRepository = ({ db, migrate = false, now = () => Date.now
   const enqueue = ({ type, payload = {}, dedupeKey = null, maxAttempts = 3, availableAt = timestamp() }) => {
     const existing = dedupeKey === null ? null : db.prepare(`SELECT * FROM background_jobs
       WHERE type = ? AND dedupe_key = ? AND state IN ('queued', 'running')`).get(type, dedupeKey);
-    if (existing) return { created: false, job: fromRow(existing) };
+    if (existing) {
+      const requestedAt = iso(availableAt);
+      if (existing.state === "queued" && requestedAt < existing.available_at) {
+        db.prepare("UPDATE background_jobs SET available_at = ?, updated_at = ? WHERE id = ? AND state = 'queued'")
+          .run(requestedAt, timestamp(), existing.id);
+        return { created: false, job: get(existing.id) };
+      }
+      return { created: false, job: fromRow(existing) };
+    }
     const id = uuid();
     const createdAt = timestamp();
     try {

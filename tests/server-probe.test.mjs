@@ -169,3 +169,23 @@ test("adapter writes current revisions and atomically rejects stale probe result
   assert.throws(() => writer.putProbeResult("missing-source", first), /Unknown catalog source/);
   t.after(() => db.close());
 });
+
+test("probe reader contains legacy out-of-range integers instead of failing catalog scans", (t) => {
+  const db = new DatabaseSync(":memory:");
+  db.exec("PRAGMA foreign_keys = ON; CREATE TABLE media_sources (id TEXT PRIMARY KEY, content_revision INTEGER NOT NULL);");
+  db.prepare("INSERT INTO media_sources (id, content_revision) VALUES (?, ?)").run("source-1", 1);
+  for (const migration of probeMigrations) migration.apply(db);
+  db.exec(`INSERT INTO media_probe_results (source_id, source_content_revision, bitrate, size_bytes, probed_at)
+    VALUES ('source-1', 1, -8852738420458234880, 42, '2026-07-20T00:00:00.000Z');
+    INSERT INTO media_streams (id, source_id, stream_index, stream_type, bitrate)
+    VALUES ('stream-1', 'source-1', 0, 'video', -8852738420458234880);
+    INSERT INTO media_chapters (id, source_id, chapter_index, start_seconds, end_seconds)
+    VALUES ('chapter-1', 'source-1', -3450393740499089408, 0, 10);`);
+  const result = createProbeCatalogReader(db).get("source-1");
+  assert.equal(result.format.bitrate, null);
+  assert.equal(result.format.sizeBytes, 42);
+  assert.equal(result.streams[0].bitrate, null);
+  assert.equal(result.chapters[0].title, "Chapter 1");
+  assert.equal(result.sourceContentRevision, 1);
+  t.after(() => db.close());
+});

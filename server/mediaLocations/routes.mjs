@@ -6,6 +6,12 @@ export const createMediaLocationsRoutes = ({ audit = null, jobs, service }) => a
     json(response, 200, { locations: service.list() });
     return true;
   }
+  if (request.method === "POST" && url.pathname === "/api/admin/media-locations/reindex") {
+    const queued = jobs.enqueue({ type: "scan", payload: { reason: "owner-full-reindex" }, dedupeKey: "library:media-locations", availableAt: Date.now() - 86_400_000 });
+    audit?.recordBestEffort({ actor: actorFromContext(request.nebulaAuth), eventType: "media.library_reindex_requested", outcome: "success", target: { type: "media-library", id: "shared-content" } });
+    json(response, 202, { job: queued.job, scanQueued: queued.created });
+    return true;
+  }
   if (request.method === "POST" && url.pathname === "/api/admin/media-locations") {
     const location = await service.add(await readBody(request, { limit: 8 * 1024 }));
     const queued = jobs.enqueue({ type: "scan", payload: { reason: "media-location-added" }, dedupeKey: "library:media-locations", availableAt: Date.now() + 5_000 });

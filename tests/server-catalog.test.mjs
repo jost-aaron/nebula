@@ -112,6 +112,19 @@ test("catalog pages bound menu work and search across unloaded titles", async (t
   assert.deepEqual(searched.items.map(({ title }) => title), ["Charlie"]);
 });
 
+test("full scans reclassify legacy TV Shows paths without replacing stable identities", async (t) => {
+  const { contentRoot, repository, root } = await setup(t);
+  await mkdir(path.join(contentRoot, "TV Shows"));
+  await writeFile(path.join(contentRoot, "TV Shows", "Pilot.mp4"), "episode");
+  repository.reconcileScan({ files: [{ fileKey: null, itemType: "movie", mediaKind: "video", modifiedMs: 1, path: "TV Shows/Pilot.mp4", size: 7, sortTitle: "Pilot", title: "Pilot" }], rootId: root.id, scanType: "full" });
+  const before = repository.resolveContentPath("TV Shows/Pilot.mp4", root.id);
+  await scanLocalRoot({ absoluteRoot: contentRoot, repository, rootId: root.id });
+  const after = repository.resolveContentPath("TV Shows/Pilot.mp4", root.id);
+  assert.equal(repository.getItem(after.itemId).itemType, "episode");
+  assert.equal(after.id, before.id);
+  assert.equal(after.itemId, before.itemId);
+});
+
 test("inode-backed renames preserve source and item UUIDs", async (t) => {
   const { contentRoot, repository, root } = await setup(t);
   await mkdir(path.join(contentRoot, "Movies"));

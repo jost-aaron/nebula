@@ -62,6 +62,12 @@ const transaction = (database, action) => {
   }
 };
 
+const safeNonNegativeInteger = (value) => {
+  if (value === null || value === undefined) return null;
+  const numeric = Number(value);
+  return Number.isSafeInteger(numeric) && numeric >= 0 ? numeric : null;
+};
+
 export const createProbeCatalogWriter = (database, { now = () => new Date().toISOString(), uuid = randomUUID } = {}) => ({
   putProbeResult(sourceId, result, { expectedContentRevision } = {}) {
     return transaction(database, () => {
@@ -99,7 +105,7 @@ export const createProbeCatalogWriter = (database, { now = () => new Date().toIS
       }
       const insertChapter = database.prepare("INSERT INTO media_chapters (id, source_id, chapter_index, start_seconds, end_seconds, title) VALUES (?, ?, ?, ?, ?, ?)");
       for (const [index, chapter] of (result.chapters ?? []).entries()) {
-        insertChapter.run(uuid(), sourceId, chapter.id ?? index, chapter.startSeconds, chapter.endSeconds, chapter.title);
+        insertChapter.run(uuid(), sourceId, safeNonNegativeInteger(chapter.id) ?? index, chapter.startSeconds, chapter.endSeconds, chapter.title);
       }
       return result;
     });
@@ -108,21 +114,29 @@ export const createProbeCatalogWriter = (database, { now = () => new Date().toIS
 
 export const createProbeCatalogReader = (database) => ({
   get(sourceId) {
-    const format = database.prepare("SELECT * FROM media_probe_results WHERE source_id = ?").get(sourceId) ?? null;
-    const streams = database.prepare("SELECT * FROM media_streams WHERE source_id = ? ORDER BY stream_index").all(sourceId).map((row) => ({
-      bitrate: row.bitrate, bitDepth: row.bit_depth, channelLayout: row.channel_layout, channels: row.channels,
+    const format = database.prepare(`SELECT source_id, format_name, format_long_name, duration_seconds, probed_at,
+      CAST(bitrate AS TEXT) AS bitrate_text, CAST(size_bytes AS TEXT) AS size_bytes_text,
+      CAST(source_content_revision AS TEXT) AS source_content_revision_text
+      FROM media_probe_results WHERE source_id = ?`).get(sourceId) ?? null;
+    const streams = database.prepare(`SELECT id, source_id, stream_index, stream_type, codec, codec_long_name, title, language,
+      default_flag, forced_flag, hearing_impaired_flag, width, height, frame_rate, pixel_format, bit_depth, hdr_format,
+      color_primaries, color_space, color_transfer, channels, channel_layout, sample_rate, CAST(bitrate AS TEXT) AS bitrate_text
+      FROM media_streams WHERE source_id = ? ORDER BY stream_index`).all(sourceId).map((row) => ({
+      bitrate: safeNonNegativeInteger(row.bitrate_text), bitDepth: row.bit_depth, channelLayout: row.channel_layout, channels: row.channels,
       codec: row.codec, default: Boolean(row.default_flag), forced: Boolean(row.forced_flag), frameRate: row.frame_rate,
       hdrFormat: row.hdr_format, height: row.height, id: row.id, index: row.stream_index, language: row.language,
       sampleRate: row.sample_rate, title: row.title, type: row.stream_type, width: row.width
     }));
-    const chapters = database.prepare("SELECT * FROM media_chapters WHERE source_id = ? ORDER BY chapter_index").all(sourceId).map((row) => ({
-      endSeconds: row.end_seconds, id: row.id, sourceId, startSeconds: row.start_seconds, title: row.title ?? `Chapter ${row.chapter_index + 1}`
-    }));
+    const chapters = database.prepare(`SELECT id, source_id, CAST(chapter_index AS TEXT) AS chapter_index_text,
+      start_seconds, end_seconds, title FROM media_chapters WHERE source_id = ? ORDER BY chapter_index`).all(sourceId).map((row, index) => {
+      const chapterIndex = safeNonNegativeInteger(row.chapter_index_text) ?? index;
+      return { endSeconds: row.end_seconds, id: row.id, sourceId, startSeconds: row.start_seconds, title: row.title ?? `Chapter ${chapterIndex + 1}` };
+    });
     return {
       chapters,
-      format: format ? { bitrate: format.bitrate, durationSeconds: format.duration_seconds, name: format.format_name, probedAt: format.probed_at, sizeBytes: format.size_bytes } : null,
+      format: format ? { bitrate: safeNonNegativeInteger(format.bitrate_text), durationSeconds: format.duration_seconds, name: format.format_name, probedAt: format.probed_at, sizeBytes: safeNonNegativeInteger(format.size_bytes_text) } : null,
       probeState: format ? "ready" : "pending",
-      sourceContentRevision: format?.source_content_revision ?? null,
+      sourceContentRevision: format ? safeNonNegativeInteger(format.source_content_revision_text) : null,
       streams
     };
   }

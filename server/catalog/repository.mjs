@@ -161,6 +161,8 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
     const insertSource = database.prepare(`INSERT INTO media_sources
       (id, item_id, root_id, content_path, media_kind, file_key, size_bytes, modified_ms, first_seen_at, last_seen_at, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const updateItemClassification = database.prepare("UPDATE media_items SET item_type = ?, media_kind = ?, updated_at = ? WHERE id = ? AND (item_type != ? OR media_kind != ?)");
+    const updateSourceKind = database.prepare("UPDATE media_sources SET media_kind = ?, updated_at = ? WHERE id = ? AND media_kind != ?");
 
     for (const file of files) {
       if (seen.has(file.path)) throw new Error(`Scan contains duplicate path: ${file.path}`);
@@ -202,6 +204,10 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
         if (restored) counts.restored += 1;
         else if (changed) counts.changed += 1;
         else counts.unchanged += 1;
+      }
+      if (source.item_id) {
+        updateItemClassification.run(file.itemType, file.mediaKind, timestamp, source.item_id, file.itemType, file.mediaKind);
+        updateSourceKind.run(file.mediaKind, timestamp, source.id, file.mediaKind);
       }
     }
 
