@@ -21,7 +21,10 @@ CONFIG_UID=${NEBULA_UID:-${SUDO_UID:-$(id -u)}}
 CONFIG_GID=${NEBULA_GID:-${SUDO_GID:-$(id -g)}}
 CONFIG_BIND=${NEBULA_BIND_ADDRESS:-127.0.0.1}
 CONFIG_PORT=${NEBULA_PORT:-5173}
-CONFIG_TAILSCALE_HOSTNAME=${NEBULA_TAILSCALE_HOSTNAME:-nebula}
+SYSTEM_HOST_LABEL=${HOSTNAME:-$(hostname -s 2>/dev/null || printf server)}
+SYSTEM_HOST_LABEL=$(printf '%s' "$SYSTEM_HOST_LABEL" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9-]/-/g; s/^-*//; s/-*$//; s/--*/-/g' | cut -c1-56 | sed 's/-*$//')
+SYSTEM_HOST_LABEL=${SYSTEM_HOST_LABEL:-server}
+CONFIG_TAILSCALE_HOSTNAME=${NEBULA_TAILSCALE_HOSTNAME:-nebula-$SYSTEM_HOST_LABEL}
 CONFIG_TAILSCALE_FQDN=${NEBULA_TAILSCALE_FQDN:-}
 
 usage() {
@@ -53,7 +56,7 @@ Options:
   --port PORT           Generated host port (default: 5173)
   --tailscale           Preconfigure and validate private Tailscale Serve
   --tailscale-hostname NAME
-                        Generic Tailscale machine name (default: nebula)
+                        Tailscale machine name (default: nebula-<system-hostname>)
   --tailscale-fqdn HOST Exact assigned *.ts.net HTTPS hostname
   --timeout SECONDS     Readiness timeout (default: 180)
   --no-wait             Do not wait for /readyz after start/update

@@ -68,7 +68,7 @@ services:
     environment:
       TS_AUTH_ONCE: "true"
       TS_AUTHKEY: "file:/run/secrets/tailscale_authkey"
-      TS_HOSTNAME: "${NEBULA_TAILSCALE_HOSTNAME:-nebula}"
+      TS_HOSTNAME: "${NEBULA_TAILSCALE_HOSTNAME:-nebula-${HOSTNAME:-${COMPUTERNAME:-local}}}"
       TS_KUBE_SECRET: ""
       TS_SERVE_CONFIG: /config/serve.json
       TS_STATE_DIR: /var/lib/tailscale

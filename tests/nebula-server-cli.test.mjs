@@ -28,7 +28,7 @@ const fixture = async (t) => {
   await chmod(docker, 0o755);
   return {
     args: ["--base-dir", path.join(root, "server data"), "--env-file", envFile, "--compose-file", composeFile],
-    env: { NEBULA_DOCKER_BIN: docker, NEBULA_TEST_COMMAND_LOG: log }, envFile, log, root,
+    env: { HOSTNAME: "media-node", NEBULA_DOCKER_BIN: docker, NEBULA_TEST_COMMAND_LOG: log }, envFile, log, root,
   };
 };
 
@@ -90,7 +90,7 @@ test("explicit Tailscale mode preconfigures safely without changing the Compose 
   const generated = await readFile(scope.envFile, "utf8");
   assert.match(generated, /NEBULA_EXTERNAL_HTTPS="false"/);
   assert.match(generated, /NEBULA_VITE_ALLOWED_HOSTS="nebula\.example\.ts\.net"/);
-  assert.match(generated, /NEBULA_TAILSCALE_HOSTNAME="nebula"/);
+  assert.match(generated, /NEBULA_TAILSCALE_HOSTNAME="nebula-media-node"/);
   assert.match(generated, /NEBULA_TAILSCALE_FQDN="nebula\.example\.ts\.net"/);
   assert.match(generated, /NEBULA_TAILSCALE_UI_ENABLED="true"/);
   assert.match(generated, /NEBULA_TAILSCALE_INTERACTIVE_LOGIN="true"/);

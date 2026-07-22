@@ -156,13 +156,13 @@ services:
   tailscale:
     profiles: ["tailscale"]
     image: "${NEBULA_TAILSCALE_IMAGE:?set a reviewed pinned Tailscale image}"
-    hostname: "${NEBULA_TAILSCALE_HOSTNAME:-nebula}"
+    hostname: "${NEBULA_TAILSCALE_HOSTNAME:-nebula-${HOSTNAME:-local}}"
     network_mode: host
     restart: unless-stopped
     environment:
       TS_AUTH_ONCE: "true"
       TS_AUTHKEY: "${NEBULA_TAILSCALE_AUTHKEY:-}"
-      TS_HOSTNAME: "${NEBULA_TAILSCALE_HOSTNAME:-nebula}"
+      TS_HOSTNAME: "${NEBULA_TAILSCALE_HOSTNAME:-nebula-${HOSTNAME:-local}}"
       TS_SERVE_CONFIG: /config/serve.json
       TS_STATE_DIR: /var/lib/tailscale
       TS_USERSPACE: "${NEBULA_TAILSCALE_USERSPACE:-true}"
@@ -286,7 +286,7 @@ to:
 ```env
 # Optional Tailscale Compose profile. Leave unset for the normal deployment.
 NEBULA_TAILSCALE_IMAGE=tailscale/tailscale:<reviewed-version-or-digest>
-NEBULA_TAILSCALE_HOSTNAME=nebula
+NEBULA_TAILSCALE_HOSTNAME=nebula-media-host
 NEBULA_TAILSCALE_STATE_PATH=/srv/nebula/tailscale/state
 NEBULA_TAILSCALE_CONFIG_PATH=/srv/nebula/tailscale/config
 NEBULA_TAILSCALE_AUTHKEY=

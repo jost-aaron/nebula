@@ -14,6 +14,7 @@ test("Unix deployment CLI selects safe Linux and macOS storage defaults", async 
   assert.match(script, /NEBULA_BIND_ADDRESS=.*127\.0\.0\.1/);
   assert.match(script, /NEBULA_AUTH_ALLOW_LOCALHOST="false"/);
   assert.match(script, /NEBULA_FIRST_RUN_GUEST_ENABLED="false"/);
+  assert.match(script, /CONFIG_TAILSCALE_HOSTNAME=\$\{NEBULA_TAILSCALE_HOSTNAME:-nebula-\$SYSTEM_HOST_LABEL\}/);
 });
 
 test("Windows deployment CLI mirrors the safe lifecycle without host dependencies", async () => {
@@ -27,6 +28,7 @@ test("Windows deployment CLI mirrors the safe lifecycle without host dependencie
   assert.match(script, /NEBULA_AUTH_ALLOW_LOCALHOST=\"false\"/);
   assert.match(script, /NEBULA_FIRST_RUN_GUEST_ENABLED=\"false\"/);
   assert.match(script, /NEBULA_VITE_HMR=\"false\"/);
+  assert.match(script, /\$TailscaleHostname = "nebula-\$machineLabel"/);
   assert.match(script, /ConvertTo-DockerPath/);
   assert.match(script, /icacls \$Path \/inheritance:r \/grant:r/);
   assert.match(script, /private path grants broad write access/);

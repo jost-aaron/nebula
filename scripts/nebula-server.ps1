@@ -11,7 +11,8 @@ param(
   [ValidatePattern("^(?:[0-9A-Fa-f:.]+|localhost)$")]
   [string]$BindAddress = "127.0.0.1",
   [ValidatePattern("^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")]
-  [string]$TailscaleHostname = "nebula",
+  [AllowEmptyString()]
+  [string]$TailscaleHostname = "",
   [string]$TailscaleFqdn = "",
   [switch]$Tailscale,
   [ValidateRange(1, 3600)]
@@ -41,6 +42,14 @@ if ([string]::IsNullOrWhiteSpace($EnvFile)) {
 }
 if ([string]::IsNullOrWhiteSpace($ComposeFile)) {
   $ComposeFile = if ($env:NEBULA_SERVER_COMPOSE_FILE) { $env:NEBULA_SERVER_COMPOSE_FILE } else { Join-Path $RepositoryRoot "compose.deploy.yaml" }
+}
+if ([string]::IsNullOrWhiteSpace($TailscaleHostname)) {
+  $machineSource = if ([string]::IsNullOrWhiteSpace($env:COMPUTERNAME)) { "server" } else { $env:COMPUTERNAME }
+  $machineLabel = ($machineSource.ToLowerInvariant() -replace '[^a-z0-9-]', '-').Trim('-')
+  $machineLabel = $machineLabel -replace '-+', '-'
+  if ($machineLabel.Length -gt 56) { $machineLabel = $machineLabel.Substring(0, 56).TrimEnd('-') }
+  if ([string]::IsNullOrWhiteSpace($machineLabel)) { $machineLabel = "server" }
+  $TailscaleHostname = "nebula-$machineLabel"
 }
 
 $BaseDir = [IO.Path]::GetFullPath($BaseDir)
@@ -82,7 +91,7 @@ Common options:
   -BindAddress ADDRESS    Host bind address (default: 127.0.0.1)
   -Port PORT              Host port (default: 5173)
   -Tailscale              Validate private Tailscale Serve requirements
-  -TailscaleHostname NAME Generic Tailscale machine name
+  -TailscaleHostname NAME Tailscale name (default: nebula-<system-hostname>)
   -TailscaleFqdn HOST     Exact assigned *.ts.net hostname
   -NoWait                 Do not wait for readiness
 

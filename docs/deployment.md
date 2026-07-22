@@ -220,15 +220,16 @@ sessions, and media tickets remain mandatory.
 
 ### Bootstrap with the operator CLI
 
-Before enrollment, enable HTTPS certificates for the test/production tailnet and
-choose a generic machine name such as `nebula`. The assigned FQDN is published
-in Certificate Transparency logs even though the service is private, so never
-place a person's name or another secret in it.
+Before enrollment, enable HTTPS certificates for the test/production tailnet.
+The operator CLI derives a host-specific, recognizable machine name in the form
+`nebula-<system-hostname>`; use `--tailscale-hostname` only to override it. The
+assigned FQDN is published in Certificate Transparency logs even though the
+service is private, so do not use a sensitive system hostname.
 
 Initialize without starting containers:
 
 ```sh
-sudo ./scripts/nebula-server.sh --tailscale --tailscale-hostname nebula init
+sudo ./scripts/nebula-server.sh --tailscale init
 ```
 
 This creates `/srv/nebula/tailscale/state` as mode `0700`, creates an empty
@@ -578,7 +579,7 @@ Values are strings. Blank means unset unless stated otherwise.
 | `NEBULA_VITE_ALLOWED_HOSTS` | blank | No | Exact comma-separated hostnames Vite accepts in addition to defaults; needed behind some proxies. |
 | `NEBULA_VITE_HMR` | enabled unless exactly `false`; deployment `false` | No | Disables Vite HMR for deployed remote clients. Development remains enabled. |
 | `NEBULA_EXTERNAL_HTTPS` | `false` | No | Explicitly marks browser session create/rotate/clear cookies Secure when TLS terminates before Nebula. Forwarded headers do not affect it. |
-| `NEBULA_TAILSCALE_HOSTNAME` | `nebula` | No | Generic machine name used by the dormant companion. Avoid sensitive names because HTTPS FQDNs enter Certificate Transparency logs. |
+| `NEBULA_TAILSCALE_HOSTNAME` | `nebula-<system-hostname>` from operator CLI | No | Stable machine name used by the dormant companion. Override it when the system hostname is sensitive because HTTPS FQDNs enter Certificate Transparency logs. |
 | `NEBULA_TAILSCALE_STATE_PATH` | `/srv/nebula/tailscale/state` | **Yes** | Mode-0700 persistent node identity outside content. Protect as a credential. |
 | `NEBULA_TAILSCALE_AUTHKEY_FILE` | `/srv/nebula/tailscale/authkey` | **Yes** | Mode-0600 Docker secret source used for bootstrap. The key value never belongs in `.env`; empty after verified enrollment and revoke upstream. |
 | `NEBULA_AUDIT_RETENTION_DAYS` | `90` | No | Audit age; invalid values fall back to 90, then clamp to 1-3650 days. |
