@@ -12,6 +12,8 @@ network_status_file="$control_dir/network-status.json"
 status_group=${NEBULA_DASHBOARD_GID:-1000}
 child_pid=""
 reader_pid=""
+daemon_pid=""
+login_pid=""
 stopping=false
 
 mkdir -p "$control_dir"
@@ -87,6 +89,8 @@ publish_network_status() {
 stop_child() {
   [ -z "$child_pid" ] || kill -TERM "$child_pid" 2>/dev/null || true
   [ -z "$reader_pid" ] || kill -TERM "$reader_pid" 2>/dev/null || true
+  [ -z "$login_pid" ] || kill -TERM "$login_pid" 2>/dev/null || true
+  [ -z "$daemon_pid" ] || kill -TERM "$daemon_pid" 2>/dev/null || true
 }
 
 shutdown() {
@@ -97,12 +101,79 @@ shutdown() {
 
 trap shutdown INT TERM
 
+prepare_interactive_enrollment() {
+  case ${TS_AUTHKEY:-} in
+    file:*) auth_file=${TS_AUTHKEY#file:} ;;
+    *) return 0 ;;
+  esac
+  [ ! -s "$auth_file" ] || return 0
+
+  socket=/tmp/tailscaled.sock
+  rm -f "$socket" /var/run/tailscale/tailscaled.sock
+  /usr/local/bin/tailscaled \
+    --socket="$socket" \
+    --statedir="${TS_STATE_DIR:-/var/lib/tailscale}" \
+    --tun=userspace-networking \
+    --outbound-http-proxy-listen="${TS_OUTBOUND_HTTP_PROXY_LISTEN:-127.0.0.1:1055}" &
+  daemon_pid=$!
+
+  attempts=0
+  until /usr/local/bin/tailscale --socket="$socket" status --json >/dev/null 2>&1; do
+    kill -0 "$daemon_pid" 2>/dev/null || return 1
+    attempts=$((attempts + 1))
+    [ "$attempts" -lt 100 ] || return 1
+    sleep 0.1
+  done
+
+  /usr/local/bin/tailscale --socket="$socket" login \
+    --timeout=0s \
+    --hostname="${TS_HOSTNAME:-nebula}" \
+    --accept-dns=false > /proc/1/fd/1 2>&1 &
+  login_pid=$!
+
+  while kill -0 "$daemon_pid" 2>/dev/null; do
+    if [ ! -f "$enabled_file" ]; then
+      stop_child
+      break
+    fi
+    publish_login
+    backend_state=$(/usr/local/bin/tailscale --socket="$socket" status --json 2>/dev/null \
+      | sed -n 's/^[[:space:]]*"BackendState":[[:space:]]*"\([A-Za-z]*\)".*/\1/p' \
+      | head -n 1 || true)
+    [ "$backend_state" != Running ] || break
+    if ! kill -0 "$login_pid" 2>/dev/null; then
+      set +e
+      wait "$login_pid"
+      login_result=$?
+      set -e
+      login_pid=""
+      [ "$login_result" -eq 0 ] || return "$login_result"
+    fi
+    sleep 1
+  done
+
+  [ -z "$login_pid" ] || wait "$login_pid" 2>/dev/null || true
+  login_pid=""
+  [ -z "$daemon_pid" ] || kill -TERM "$daemon_pid" 2>/dev/null || true
+  [ -z "$daemon_pid" ] || wait "$daemon_pid" 2>/dev/null || true
+  daemon_pid=""
+  rm -f "$socket" /var/run/tailscale/tailscaled.sock
+}
+
 run_tailscale() {
   fifo="$control_dir/containerboot-output.$$"
   rm -f "$fifo" "$login_file" "$connected_file" "$fqdn_file" "$serve_ready_file" "$serve_error_file" "$network_status_file"
   mkfifo "$fifo"
   publish_output "$fifo" &
   reader_pid=$!
+  prepare_interactive_enrollment
+  if [ ! -f "$enabled_file" ]; then
+    kill -TERM "$reader_pid" 2>/dev/null || true
+    wait "$reader_pid" 2>/dev/null || true
+    reader_pid=""
+    rm -f "$fifo"
+    return 0
+  fi
   /usr/local/bin/containerboot > "$fifo" 2>&1 &
   child_pid=$!
   published=false

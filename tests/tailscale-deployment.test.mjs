@@ -29,6 +29,9 @@ test("supervisor starts only for the fixed marker and retains state when disable
   assert.match(supervisor, /enabled_file="\$control_dir\/enabled"/);
   assert.match(supervisor, /if \[ -f "\$enabled_file" \]/);
   assert.match(supervisor, /\/usr\/local\/bin\/containerboot/);
+  assert.match(supervisor, /\/usr\/local\/bin\/tailscaled/);
+  assert.match(supervisor, /tailscale.*login[\s\S]*?--timeout=0s/);
+  assert.ok(supervisor.indexOf("prepare_interactive_enrollment") < supervisor.indexOf("/usr/local/bin/containerboot >"));
   assert.match(supervisor, /kill -TERM "\$child_pid"/);
   assert.match(supervisor, /Docker's restart policy/);
   assert.doesNotMatch(supervisor, /rm -rf.*var\/lib\/tailscale|eval|docker\.sock|funnel/i);
@@ -50,7 +53,8 @@ test("companion publishes only sanitized enrollment and connection status", asyn
   assert.match(supervisor, /\.ts\\\.net/);
   assert.match(supervisor, /chmod 0640/);
   assert.doesNotMatch(compose, /tailscaled\.sock|docker\.sock|TS_ENABLE_METRICS/);
-  assert.doesNotMatch(supervisor, /eval|curl|oauth|authkey/i);
+  assert.doesNotMatch(supervisor, /eval|curl|oauth/i);
+  assert.doesNotMatch(supervisor, /(?:cat|printf|echo).*authkey|authkey.*(?:cat|printf|echo)/i);
 });
 
 test("reviewed Serve config fixes the loopback target and explicitly disables public Funnel", async () => {
