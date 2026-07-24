@@ -25,6 +25,17 @@ test("Cinema status shows the next rapidly scheduled metadata match between requ
   });
 });
 
+test("Cinema status prefers genuinely running artwork over a queued metadata match", () => {
+  const artwork = { counts: { queued: 12 }, next: { id: "next-artwork" }, running: { id: "active-artwork" } };
+  const metadata = { counts: { queued: 10 }, next: { id: "next-match" }, running: null };
+  assert.deepEqual(selectCinemaProcessingActivity({ artwork, metadata }), {
+    job: artwork.running,
+    kind: "artwork",
+    queued: 12,
+    state: "running"
+  });
+});
+
 test("Cinema status never presents a future artwork job as running", () => {
   const artwork = { counts: { queued: 12 }, next: { id: "future-artwork" }, running: null };
   assert.deepEqual(selectCinemaProcessingActivity({ artwork, metadata: empty() }), {

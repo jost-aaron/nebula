@@ -27,13 +27,12 @@ const imagePayload = (frame) => {
 };
 
 export const selectCinemaProcessingActivity = ({ artwork, metadata }) => {
-  const metadataJob = metadata.running ?? metadata.next;
-  if (metadataJob) {
+  if (metadata.running) {
     return {
-      job: metadataJob,
+      job: metadata.running,
       kind: "metadata",
       queued: Number(metadata.counts.queued ?? 0),
-      state: metadata.running ? "running" : "preparing"
+      state: "running"
     };
   }
   if (artwork.running) {
@@ -42,6 +41,14 @@ export const selectCinemaProcessingActivity = ({ artwork, metadata }) => {
       kind: "artwork",
       queued: Number(artwork.counts.queued ?? 0),
       state: "running"
+    };
+  }
+  if (metadata.next) {
+    return {
+      job: metadata.next,
+      kind: "metadata",
+      queued: Number(metadata.counts.queued ?? 0),
+      state: "preparing"
     };
   }
   return { job: null, kind: null, queued: Number(artwork.counts.queued ?? 0), state: null };

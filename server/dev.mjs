@@ -357,9 +357,11 @@ const jobsWorker = createJobsWorker({
           }
         }
       }
+      const metadataActivity = jobsService.activity("metadata");
+      const metadataPending = Number(metadataActivity.counts.queued ?? 0) + Number(metadataActivity.counts.running ?? 0) > 0;
       const artworkStart = payload?.refreshTmdb
         ? Date.now() + 30_000 + metadata.queued * metadata.intervalMs
-        : Date.now() + 30_000;
+        : metadataPending ? Date.now() + 60 * 60_000 : Date.now() + 30_000;
       const artwork = artworkScheduler.enqueueMissing(context.enqueue, { availableAt: artworkStart });
       return { ...scan, artworkQueued: artwork.queued, metadataQueued: metadata.queued, purged };
     },
