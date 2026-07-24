@@ -6,8 +6,8 @@ const remoteEntry = (item) => {
     backdropUrl: "", cast: "", category: item.itemKind === "episode" ? "tv" : video ? "movies" : "music",
     collection: "", episode: null, folder: "Remote shard", genres: [],
     id: item.id, mediaKind: item.mediaKind, modifiedAt: "", name: title,
-    artworkState: "missing", path: `federated:${item.id}`, playable: false, posterUrl: "", rating: "",
-    releaseYear: item.year ? String(item.year) : "", size: 0, sortTitle: title,
+    artworkState: "missing", path: `federated:${item.id}`, playable: false, posterUrl: "", rating: "", ratingVotes: null,
+    releaseYear: item.year ? String(item.year) : "", runtimeSeconds: item.durationSeconds ?? null, size: 0, sortTitle: title,
     sourceId: undefined, streamUrl: "", studio: "", summary: "",
     tagline: "", title, tmdbId: null, tmdbImportedAt: "", tmdbMediaType: "",
     watchlisted: false

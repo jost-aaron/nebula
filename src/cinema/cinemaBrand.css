@@ -263,6 +263,32 @@
   background: rgba(5, 6, 9, 0.74);
 }
 
+.cinema-card-facts {
+  position: absolute;
+  z-index: 1;
+  bottom: 12px;
+  left: 10px;
+  max-width: calc(100% - 68px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.cinema-card-facts span {
+  min-height: 24px;
+  border: 1px solid rgba(242, 235, 221, 0.18);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  color: var(--cinema-bone);
+  background: rgba(5, 6, 9, 0.78);
+  backdrop-filter: blur(12px);
+  font-size: 0.68rem;
+  font-weight: 850;
+  line-height: 1;
+}
+
 .cinema-card-progress i,
 .cinema-preview-timeline i {
   background: var(--cinema-amber);

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-const legacyFields = ["album", "artist", "backdropUrl", "cast", "collection", "episode", "genres", "posterUrl", "rating", "releaseYear", "sortTitle", "studio", "summary", "tagline", "title"];
+const legacyFields = ["album", "artist", "backdropUrl", "cast", "collection", "episode", "genres", "posterUrl", "rating", "ratingVotes", "releaseYear", "runtimeMinutes", "seriesRating", "seriesRatingVotes", "seriesRuntimeMinutes", "sortTitle", "studio", "summary", "tagline", "title"];
 
 export const importLegacyCinemaMetadata = async ({ metadataPath, repository, rootId }) => {
   const raw = await readFile(metadataPath, "utf8").catch((error) => error.code === "ENOENT" ? "{}" : Promise.reject(error));

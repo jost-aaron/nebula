@@ -21,19 +21,19 @@ test("TMDB search uses bearer auth and maps candidates without exposing credenti
   const calls = [];
   const client = createTmdbClient({ token: "test-secret-token", fetchImpl: async (url, options) => {
     calls.push({ options, url: String(url) });
-    return jsonResponse({ results: [{ id: 42, title: "Example", release_date: "2024-03-01", overview: "Plot", poster_path: "/poster.jpg", backdrop_path: null, vote_average: 7.25 }] });
+    return jsonResponse({ results: [{ id: 42, title: "Example", release_date: "2024-03-01", overview: "Plot", poster_path: "/poster.jpg", backdrop_path: null, vote_average: 7.25, vote_count: 1234 }] });
   }});
   const results = await client.search({ category: "movies", query: "Example", year: "2024" });
   assert.equal(calls[0].options.headers.authorization, "Bearer test-secret-token");
   assert.match(calls[0].url, /search\/movie/);
   assert.match(calls[0].url, /primary_release_year=2024/);
-  assert.deepEqual(results[0], { backdropUrl: "", episodeNumber: null, id: 42, mediaType: "movie", overview: "Plot", posterUrl: "https://image.tmdb.org/t/p/w342/poster.jpg", rating: "7.3", seasonNumber: null, title: "Example", year: "2024" });
+  assert.deepEqual(results[0], { backdropUrl: "", episodeNumber: null, id: 42, mediaType: "movie", overview: "Plot", posterUrl: "https://image.tmdb.org/t/p/w342/poster.jpg", rating: "7.3", ratingVotes: 1234, seasonNumber: null, title: "Example", year: "2024" });
   assert.equal(JSON.stringify(results).includes("test-secret-token"), false);
 });
 
 test("TMDB details maps bounded TV metadata", async () => {
   const client = createTmdbClient({ token: "token", fetchImpl: async () => jsonResponse({
-    id: 7, name: "Example Show", first_air_date: "2020-01-01", vote_average: 8, overview: "Summary", tagline: "Tag",
+    id: 7, name: "Example Show", first_air_date: "2020-01-01", vote_average: 8, vote_count: 456, episode_run_time: [52], overview: "Summary", tagline: "Tag",
     poster_path: "/p.jpg", backdrop_path: "/b.jpg", genres: [{ name: "Drama" }], networks: [{ name: "Network" }],
     production_companies: [], credits: { cast: Array.from({ length: 15 }, (_, index) => ({ name: `Actor ${index}` })) }
   }) });
@@ -43,6 +43,8 @@ test("TMDB details maps bounded TV metadata", async () => {
   assert.equal(result.studio, "Network");
   assert.equal(result.cast.split(", ").length, 12);
   assert.equal(result.backdropUrl, "https://image.tmdb.org/t/p/w1280/b.jpg");
+  assert.equal(result.ratingVotes, 456);
+  assert.equal(result.runtimeMinutes, 52);
 });
 
 test("TMDB episode details combine series and episode metadata", async () => {
@@ -50,14 +52,19 @@ test("TMDB episode details combine series and episode metadata", async () => {
   const client = createTmdbClient({ token: "token", fetchImpl: async (url) => {
     requests.push(String(url));
     return String(url).includes("/season/2/episode/3")
-      ? jsonResponse({ id: 203, name: "The Episode", air_date: "2025-02-03", overview: "Episode plot", still_path: "/still.jpg", vote_average: 8.4, credits: { cast: [{ name: "Guest" }] } })
-      : jsonResponse({ id: 7, name: "The Series", backdrop_path: "/series-bg.jpg", poster_path: "/series.jpg", genres: [{ name: "Drama" }], networks: [{ name: "Network" }], production_companies: [] });
+      ? jsonResponse({ id: 203, name: "The Episode", air_date: "2025-02-03", overview: "Episode plot", still_path: "/still.jpg", vote_average: 8.4, vote_count: 89, runtime: 48, credits: { cast: [{ name: "Guest" }] } })
+      : jsonResponse({ id: 7, name: "The Series", backdrop_path: "/series-bg.jpg", poster_path: "/series.jpg", vote_average: 9.1, vote_count: 2345, episode_run_time: [51], genres: [{ name: "Drama" }], networks: [{ name: "Network" }], production_companies: [] });
   }});
   const result = await client.episodeDetails(7, 2, 3);
   assert.equal(requests.some((url) => url.includes("/tv/7/season/2/episode/3")), true);
   assert.equal(result.title, "The Episode");
   assert.deepEqual(result.episode, { airDate: "2025-02-03", episodeNumber: 3, seasonNumber: 2, seriesTitle: "The Series" });
   assert.equal(result.backdropUrl, "https://image.tmdb.org/t/p/w1280/still.jpg");
+  assert.equal(result.ratingVotes, 89);
+  assert.equal(result.runtimeMinutes, 48);
+  assert.equal(result.seriesRating, "9.1");
+  assert.equal(result.seriesRatingVotes, 2345);
+  assert.equal(result.seriesRuntimeMinutes, 51);
 });
 
 test("TMDB safely maps missing configuration and upstream failures", async () => {

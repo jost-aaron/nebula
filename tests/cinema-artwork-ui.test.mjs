@@ -15,6 +15,10 @@ test("Cinema keeps queued titles visible and distinguishes active artwork proces
   assert.match(cinema, /entry\.artworkState === "processing"[\s\S]*Generating title card/);
   assert.match(cinema, /cinema-artwork-processing-overlay/);
   assert.match(cinema, /entry\.artworkState === "queued"[\s\S]*Queued for artwork/);
+  assert.match(cinema, /const tmdbUserScore[\s\S]*TMDB users \$\{entry\.rating\}\/10/);
+  assert.match(cinema, /const renderCardFacts[\s\S]*cinema-card-facts/);
+  assert.match(cinema, /TMDB user score[\s\S]*Runtime/);
+  assert.match(cinema, /series\.runtimeSeconds[\s\S]*total/);
   assert.match(cinema, /data-cinema-artwork-state="\$\{entry\.artworkState\}"/);
   assert.match(cinema, /getCinemaArtworkStatus\(sourceIds\)/);
   assert.match(cinema, /window\.setTimeout\(\(\) => void refreshArtworkStates\(\), 400\)/);
@@ -28,6 +32,7 @@ test("Cinema keeps queued titles visible and distinguishes active artwork proces
   assert.match(styles, /\.cinema-artwork-orbit::before[\s\S]*animation: cinema-artwork-spin/);
   assert.match(styles, /\.cinema-artwork-queued img[\s\S]*opacity:/);
   assert.match(styles, /\.cinema-poster \{[\s\S]*background-size: contain[\s\S]*background-repeat: no-repeat/);
+  assert.match(styles, /\.cinema-card-facts \{[\s\S]*position: absolute/);
   assert.match(styles, /\.cinema-artwork-activity \.cinema-artwork-orbit/);
   assert.match(styles, /\.cinema-artwork-activity \{[\s\S]*?position: sticky[\s\S]*?top: 0/);
   assert.match(styles, /@keyframes cinema-artwork-activity-sweep/);

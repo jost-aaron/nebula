@@ -26,7 +26,8 @@ const rowToSource = (row) => row ? {
   lastSeenAt: row.last_seen_at,
   missingSince: row.missing_since,
   missingScanCount: row.missing_scan_count,
-  cleanupEligibleAt: row.cleanup_eligible_at
+  cleanupEligibleAt: row.cleanup_eligible_at,
+  durationSeconds: Number.isFinite(Number(row.duration_seconds)) ? Number(row.duration_seconds) : null
 } : null;
 
 const rowToItem = (row) => row ? {
@@ -62,6 +63,11 @@ const sourceTitle = (contentPath) => {
 };
 
 export const createCatalogRepository = (database, { now = defaultClock, uuid = randomUUID, missingCleanupScans = 2, missingCleanupMs = 7 * 24 * 60 * 60 * 1000 } = {}) => {
+  const hasProbeResults = Boolean(database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'media_probe_results'").get());
+  const probeJoin = hasProbeResults
+    ? "LEFT JOIN media_probe_results p ON p.source_id = s.id AND p.source_content_revision = s.content_revision"
+    : "";
+  const probeDurationSelect = hasProbeResults ? "p.duration_seconds" : "NULL";
   const getLibrary = (id) => database.prepare("SELECT * FROM media_libraries WHERE id = ?").get(id) ?? null;
   const getRootByKey = (rootKey) => database.prepare("SELECT * FROM media_library_roots WHERE root_key = ?").get(rootKey) ?? null;
   const getItem = (id) => rowToItem(database.prepare("SELECT * FROM media_items WHERE id = ?").get(id));
@@ -88,8 +94,10 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
         s.modified_ms AS source_modified_ms, s.availability AS source_availability,
         s.content_revision AS source_content_revision, s.first_seen_at AS source_first_seen_at,
         s.last_seen_at AS source_last_seen_at, s.missing_since AS source_missing_since,
-        s.missing_scan_count AS source_missing_scan_count, s.cleanup_eligible_at AS source_cleanup_eligible_at
+        s.missing_scan_count AS source_missing_scan_count, s.cleanup_eligible_at AS source_cleanup_eligible_at,
+        ${probeDurationSelect} AS source_duration_seconds
       FROM media_items i JOIN media_sources s ON s.item_id = i.id AND s.availability != 'superseded'
+      ${probeJoin}
       ${where} ORDER BY i.sort_title, i.id
     `).all(...values);
     return rows.map((row) => ({
@@ -113,7 +121,8 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
     const boundedLimit = Math.max(1, Math.min(200, Number(limit) || 60));
     const boundedOffset = Math.max(0, Number(offset) || 0);
-    const from = `FROM media_items i JOIN media_sources s ON s.item_id = i.id AND s.availability != 'superseded' ${where}`;
+    const from = `FROM media_items i JOIN media_sources s ON s.item_id = i.id AND s.availability != 'superseded'
+      ${probeJoin} ${where}`;
     const total = Number(database.prepare(`SELECT COUNT(*) AS count ${from}`).get(...values)?.count ?? 0);
     const rows = database.prepare(`
       SELECT i.*, s.id AS source_id, s.item_id AS source_item_id, s.root_id AS source_root_id, s.content_path AS source_content_path,
@@ -122,7 +131,8 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
         s.modified_ms AS source_modified_ms, s.availability AS source_availability,
         s.content_revision AS source_content_revision, s.first_seen_at AS source_first_seen_at,
         s.last_seen_at AS source_last_seen_at, s.missing_since AS source_missing_since,
-        s.missing_scan_count AS source_missing_scan_count, s.cleanup_eligible_at AS source_cleanup_eligible_at
+        s.missing_scan_count AS source_missing_scan_count, s.cleanup_eligible_at AS source_cleanup_eligible_at,
+        ${probeDurationSelect} AS source_duration_seconds
       ${from} ORDER BY i.sort_title, i.id LIMIT ? OFFSET ?
     `).all(...values, boundedLimit, boundedOffset);
     const items = rows.map((row) => ({

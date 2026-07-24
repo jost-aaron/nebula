@@ -5,6 +5,8 @@ const REQUEST_TIMEOUT_MS = 8_000;
 const safeText = (value) => typeof value === "string" ? value.trim() : "";
 const validId = (value) => Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : null;
 const validType = (value) => value === "movie" || value === "tv" ? value : null;
+const positiveNumber = (value) => Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : null;
+const voteCount = (value) => Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : null;
 const yearFromDate = (value) => /^\d{4}/.exec(safeText(value))?.[0] ?? "";
 const imageUrl = (filePath, size) => safeText(filePath) ? `${IMAGE_BASE_URL}/${size}${safeText(filePath)}` : "";
 
@@ -82,6 +84,7 @@ export const createTmdbClient = ({
     overview: safeText(item.overview),
     posterUrl: imageUrl(item.poster_path, "w342"),
     rating: Number.isFinite(item.vote_average) ? item.vote_average.toFixed(1) : "",
+    ratingVotes: voteCount(item.vote_count),
     seasonNumber: null,
     title: safeText(mediaType === "movie" ? item.title : item.name),
     year: yearFromDate(mediaType === "movie" ? item.release_date : item.first_air_date)
@@ -120,7 +123,11 @@ export const createTmdbClient = ({
       genres: Array.isArray(item.genres) ? item.genres.map((genre) => safeText(genre.name)).filter(Boolean) : [],
       posterUrl: imageUrl(item.poster_path, "w500"),
       rating: Number.isFinite(item.vote_average) ? item.vote_average.toFixed(1) : "",
+      ratingVotes: voteCount(item.vote_count),
       releaseYear: yearFromDate(mediaType === "movie" ? item.release_date : item.first_air_date),
+      runtimeMinutes: mediaType === "movie"
+        ? positiveNumber(item.runtime)
+        : positiveNumber(item.episode_run_time?.[0] ?? item.last_episode_to_air?.runtime),
       sortTitle: title,
       studio: safeText(companies[0]?.name || networks[0]?.name),
       summary: safeText(item.overview),
@@ -157,7 +164,12 @@ export const createTmdbClient = ({
       genres: Array.isArray(series.genres) ? series.genres.map((genre) => safeText(genre.name)).filter(Boolean) : [],
       posterUrl: imageUrl(series.poster_path, "w500"),
       rating: Number.isFinite(episode.vote_average) ? episode.vote_average.toFixed(1) : "",
+      ratingVotes: voteCount(episode.vote_count),
       releaseYear: yearFromDate(episode.air_date),
+      runtimeMinutes: positiveNumber(episode.runtime ?? series.episode_run_time?.[0]),
+      seriesRating: Number.isFinite(series.vote_average) ? series.vote_average.toFixed(1) : "",
+      seriesRatingVotes: voteCount(series.vote_count),
+      seriesRuntimeMinutes: positiveNumber(series.episode_run_time?.[0] ?? series.last_episode_to_air?.runtime),
       sortTitle: `${seriesTitle} S${String(seasonNumber).padStart(2, "0")}E${String(episodeNumber).padStart(2, "0")}`,
       studio: safeText(companies[0]?.name || networks[0]?.name),
       summary: safeText(episode.overview),

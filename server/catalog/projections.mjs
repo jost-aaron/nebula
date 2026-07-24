@@ -53,7 +53,13 @@ export const projectCompatibilityEntry = ({ artwork = [], artworkJob = null, ext
     path: source.path,
     posterUrl: poster.posterUrl,
     rating: metadata.rating || "",
+    ratingVotes: Number.isFinite(Number(metadata.ratingVotes)) ? Number(metadata.ratingVotes) : null,
     releaseYear: metadata.releaseYear || "",
+    runtimeSeconds: source.durationSeconds
+      ?? (Number.isFinite(Number(metadata.runtimeMinutes)) && Number(metadata.runtimeMinutes) > 0 ? Number(metadata.runtimeMinutes) * 60 : null),
+    seriesRating: metadata.seriesRating || "",
+    seriesRatingVotes: Number.isFinite(Number(metadata.seriesRatingVotes)) ? Number(metadata.seriesRatingVotes) : null,
+    seriesRuntimeMinutes: Number.isFinite(Number(metadata.seriesRuntimeMinutes)) ? Number(metadata.seriesRuntimeMinutes) : null,
     size: source.size,
     sortTitle: item.sortTitle,
     sourceId: source.id,

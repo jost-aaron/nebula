@@ -96,12 +96,20 @@ export const groupTelevisionEntries = (entries) => {
     const representative = episodes.find((entry) => entry.posterUrl) ?? identified ?? episodes[0];
     const seasons = [...new Set(episodes.map((entry) => Number(entry.episode?.seasonNumber ?? 0)))].sort((a, b) => a - b);
     const seriesTitle = identified?.episode?.seriesTitle || inferredSeriesTitle(representative);
+    const knownRuntimeSeconds = episodes.reduce((total, entry) =>
+      total + (Number.isFinite(Number(entry.runtimeSeconds)) ? Number(entry.runtimeSeconds) : 0), 0);
+    const estimatedRuntimeSeconds = Number(representative.seriesRuntimeMinutes) > 0
+      ? Number(representative.seriesRuntimeMinutes) * 60 * episodes.length
+      : null;
     return {
       ...representative,
       episode: null,
       id: `series:${key}`,
       name: seriesTitle,
       playable: false,
+      rating: representative.seriesRating || representative.rating,
+      ratingVotes: representative.seriesRatingVotes ?? representative.ratingVotes,
+      runtimeSeconds: knownRuntimeSeconds || estimatedRuntimeSeconds,
       sortTitle: seriesTitle,
       title: seriesTitle,
       series: { episodeCount: episodes.length, key, seasonCount: seasons.length, seasons }

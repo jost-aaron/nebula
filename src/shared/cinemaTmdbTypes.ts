@@ -13,6 +13,7 @@ export interface CinemaTmdbCandidate {
   overview: string;
   posterUrl: string;
   rating: string;
+  ratingVotes: number | null;
   seasonNumber: number | null;
   title: string;
   year: string;

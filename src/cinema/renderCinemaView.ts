@@ -126,7 +126,35 @@ const qualityResultLabel = (preference: PlaybackQualityPreference, plan?: Playba
   return preference.mode === "auto" ? `Auto · ${result}` : result;
 };
 
-const estimateRuntime = (_entry: CinemaEntry) => "Runtime pending";
+const formatRuntimeSeconds = (seconds: number | null | undefined) => {
+  if (!Number.isFinite(Number(seconds)) || Number(seconds) <= 0) return "";
+  const minutes = Math.max(1, Math.round(Number(seconds) / 60));
+  const days = Math.floor(minutes / 1_440);
+  const hours = Math.floor((minutes % 1_440) / 60);
+  const remainder = minutes % 60;
+  if (days) return [days ? `${days}d` : "", hours ? `${hours}h` : "", remainder ? `${remainder}m` : ""].filter(Boolean).join(" ");
+  if (hours) return `${hours}h${remainder ? ` ${remainder}m` : ""}`;
+  return `${minutes}m`;
+};
+
+const estimateRuntime = (entry: CinemaEntry) => formatRuntimeSeconds(entry.runtimeSeconds) || "Runtime pending";
+
+const compactVoteCount = (votes: number | null | undefined) => {
+  if (!Number.isFinite(Number(votes)) || Number(votes) < 1) return "";
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: Number(votes) >= 10_000 ? 1 : 0, notation: "compact" }).format(Number(votes));
+};
+
+const tmdbUserScore = (entry: CinemaEntry, includeVotes = false) => {
+  if (!entry.rating) return "";
+  const votes = includeVotes ? compactVoteCount(entry.ratingVotes) : "";
+  return `TMDB users ${entry.rating}/10${votes ? ` · ${votes} votes` : ""}`;
+};
+
+const renderCardFacts = (entry: CinemaEntry) => {
+  const runtime = formatRuntimeSeconds(entry.runtimeSeconds);
+  if (!entry.rating && !runtime) return "";
+  return `<span class="cinema-card-facts">${entry.rating ? `<span aria-label="${escapeHtml(tmdbUserScore(entry, true))}">★ ${escapeHtml(entry.rating)}</span>` : ""}${runtime ? `<span>${escapeHtml(runtime)}</span>` : ""}</span>`;
+};
 
 const federationLabel = (federation: FederatedAvailabilitySummary) => {
   if (federation.availability === "offline") return "Offline";
@@ -159,7 +187,7 @@ const categoryLabel = (category: CinemaCategory) =>
 const searchUrl = (query: string) => `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 
 const metadataLine = (entry: CinemaEntry) =>
-  [entry.episode ? `S${entry.episode.seasonNumber} E${entry.episode.episodeNumber}` : "", entry.releaseYear, entry.rating, entry.genres.slice(0, 3).join(", "), estimateRuntime(entry)].filter(Boolean).join(" / ");
+  [entry.episode ? `S${entry.episode.seasonNumber} E${entry.episode.episodeNumber}` : "", entry.releaseYear, tmdbUserScore(entry, true), entry.genres.slice(0, 3).join(", "), estimateRuntime(entry)].filter(Boolean).join(" / ");
 
 const displayTitle = (entry: CinemaEntry) => entry.episode
   ? `${entry.episode.seriesTitle} · S${String(entry.episode.seasonNumber).padStart(2, "0")}E${String(entry.episode.episodeNumber).padStart(2, "0")} · ${entry.title}`
@@ -185,7 +213,7 @@ const renderSeriesDetail = (series: CinemaEntry, episodes: CinemaEntry[]) => {
           <span><small>Back to library</small><strong>TV Shows</strong></span>
         </button>
         <div><p class="eyebrow">Series</p><h2>${escapeHtml(series.title)}</h2>
-          <p>${series.series?.seasonCount ?? seasons.size} seasons · ${series.series?.episodeCount ?? episodes.length} episodes</p>
+          <p>${series.series?.seasonCount ?? seasons.size} seasons · ${series.series?.episodeCount ?? episodes.length} episodes${series.rating ? ` · ${escapeHtml(tmdbUserScore(series, true))}` : ""}${series.runtimeSeconds ? ` · ${escapeHtml(estimateRuntime(series))} total` : ""}</p>
         </div>
       </header>
       <section class="cinema-season-library">
@@ -437,6 +465,7 @@ const renderCinemaCards = (entries: CinemaEntry[], category: CinemaCategory, pla
             <span class="cinema-poster-scrim"></span>
             <span class="cinema-card-badge">${escapeHtml(entry.federation ? federationLabel(entry.federation) : entry.series ? `${entry.series.seasonCount} Seasons` : entry.category === "tv" ? "Episode" : "Movie")}</span>
             <span class="cinema-card-play${entry.playable === false ? " unavailable" : ""}">${renderCinemaIcon(entry.playable === false ? "ServerOff" : "Play", "cinema-play-icon")}</span>
+            ${renderCardFacts(entry)}
             ${state ? `<span class="cinema-card-progress"><i style="width:${Math.round(state.progress * 100)}%"></i></span>` : ""}
           </span>
           <span class="cinema-card-copy">
@@ -667,7 +696,8 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: C
           <span>Type <strong>Video</strong></span>
           ${entry.episode ? `<span>Episode <strong>S${entry.episode.seasonNumber} E${entry.episode.episodeNumber}</strong></span><span>Air date <strong>${escapeHtml(entry.episode.airDate || "Not set")}</strong></span>` : ""}
           <span>Year <strong>${escapeHtml(entry.releaseYear || "Not set")}</strong></span>
-          <span>Rating <strong>${escapeHtml(entry.rating || "Not set")}</strong></span>
+          <span>TMDB user score <strong>${escapeHtml(tmdbUserScore(entry, true).replace("TMDB users ", "") || "Not set")}</strong></span>
+          <span>Runtime <strong>${escapeHtml(estimateRuntime(entry))}</strong></span>
           <span>Genres <strong>${escapeHtml(entry.genres.join(", ") || "Not set")}</strong></span>
           <span>Studio <strong>${escapeHtml(entry.studio || "Not set")}</strong></span>
           <span>File <strong>${escapeHtml(entry.name)}</strong></span>
