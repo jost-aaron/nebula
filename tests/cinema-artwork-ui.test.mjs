@@ -33,6 +33,7 @@ test("Cinema keeps queued titles visible and distinguishes active artwork proces
   assert.match(styles, /\.cinema-artwork-orbit::before[\s\S]*animation: cinema-artwork-spin/);
   assert.match(styles, /\.cinema-artwork-queued img[\s\S]*opacity:/);
   assert.match(styles, /\.cinema-poster \{[\s\S]*background-size: contain[\s\S]*background-repeat: no-repeat/);
+  assert.match(styles, /\.cinema-player-frame\[data-cinema-backdrop\] \{[\s\S]*background-size: contain[\s\S]*background-repeat: no-repeat/);
   assert.match(styles, /\.cinema-card-facts \{[\s\S]*position: absolute/);
   assert.match(styles, /\.cinema-title-facts \{[\s\S]*display: flex/);
   assert.match(styles, /\.cinema-title-facts \.cinema-title-score strong \{[\s\S]*color: var\(--cinema-amber-bright\)/);

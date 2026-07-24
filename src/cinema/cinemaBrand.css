@@ -689,6 +689,13 @@
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.32);
 }
 
+.cinema-player-frame[data-cinema-backdrop] {
+  background-position: center;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-color: #030405;
+}
+
 .cinema-actions button:first-child:hover,
 .cinema-play-orb:hover,
 .cinema-play-orb:focus-visible,
