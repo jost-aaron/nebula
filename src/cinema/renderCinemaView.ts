@@ -652,6 +652,11 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: C
           <button type="button" data-cinema-action="more">${renderCinemaIcon("MoreHorizontal")} More</button>
           ${canOptimize && entry.id && entry.sourceId ? `<button type="button" data-cinema-action="optimize">${renderCinemaIcon("Gauge")} Optimize</button>` : ""}
         </div>
+      </aside>
+    </section>
+    <section class="cinema-detail-lower">
+      ${renderNextUpQueue(entries, entry)}
+      <aside class="cinema-title-controls" aria-label="Title playback and metadata controls">
         ${entry.sourceId ? `<button class="cinema-edit-command" type="button" data-cinema-action="edit">${renderCinemaIcon("Pencil")} Edit Details</button><button class="cinema-edit-command" type="button" data-cinema-action="tmdb">${renderCinemaIcon("Database")} ${entry.tmdbId ? "Incorrect match?" : entry.tmdbMatchCandidateCount ? `Review ${entry.tmdbMatchCandidateCount} possible matches` : "Identify with TMDB"}</button>` : ""}
         ${entry.sourceId && entry.tmdbId ? `<button class="cinema-edit-command" type="button" data-cinema-action="tmdb-refresh">${renderCinemaIcon("RefreshCw")} Refresh TMDB Metadata</button>` : ""}
         ${renderFederatedAvailability(entry)}
@@ -671,9 +676,6 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: C
           <span>Enrichment <strong>${escapeHtml(catalog?.probeState || (entry.posterUrl || entry.tmdbId ? "Metadata ready" : "Local fallback"))}</strong></span>
         </div>
       </aside>
-    </section>
-    <section class="cinema-detail-lower">
-      ${renderNextUpQueue(entries, entry)}
     </section>
   </main>
 `;

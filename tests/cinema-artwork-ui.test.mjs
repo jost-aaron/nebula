@@ -47,8 +47,8 @@ test("Cinema navigates television as series, then seasons, then episodes", async
 test("Cinema contains title actions and keeps chapter status in the metadata panel", async () => {
   const cinema = await readFile(new URL("../src/cinema/renderCinemaView.ts", import.meta.url), "utf8");
   const styles = await readFile(new URL("../src/cinema/cinemaBrand.css", import.meta.url), "utf8");
-  assert.match(cinema, /renderPlaybackSettings[\s\S]*renderChapterStrip[\s\S]*cinema-meta-list/);
-  assert.doesNotMatch(cinema, /cinema-detail-lower">\s*\$\{renderChapterStrip/);
+  assert.match(cinema, /cinema-detail-lower[\s\S]*renderNextUpQueue[\s\S]*cinema-title-controls[\s\S]*renderPlaybackSettings[\s\S]*renderChapterStrip[\s\S]*cinema-meta-list/);
   assert.match(styles, /max-width: 980px[\s\S]*cinema-title-panel \.cinema-actions[\s\S]*repeat\(2/);
-  assert.match(styles, /cinema-title-panel > \.cinema-catalog-note/);
+  assert.match(styles, /cinema-title-controls > \.cinema-catalog-note/);
+  assert.match(styles, /\.cinema-detail-lower \{[\s\S]*grid-template-columns: minmax\(0, 1\.95fr\) minmax\(340px, 0\.9fr\)/);
 });
