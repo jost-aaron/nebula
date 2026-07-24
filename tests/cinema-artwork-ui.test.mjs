@@ -49,6 +49,8 @@ test("Cinema contains title actions and keeps chapter status in the metadata pan
   const styles = await readFile(new URL("../src/cinema/cinemaBrand.css", import.meta.url), "utf8");
   assert.match(cinema, /cinema-detail-lower[\s\S]*renderNextUpQueue[\s\S]*cinema-title-controls[\s\S]*renderPlaybackSettings[\s\S]*renderChapterStrip[\s\S]*cinema-meta-list/);
   assert.match(styles, /max-width: 980px[\s\S]*cinema-title-panel \.cinema-actions[\s\S]*repeat\(2/);
+  assert.match(styles, /\.cinema-title-panel \.cinema-actions \{[\s\S]*repeat\(3, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /\.cinema-title-panel \.cinema-actions button \{[\s\S]*min-width: 0[\s\S]*white-space: normal[\s\S]*overflow-wrap: anywhere/);
   assert.match(styles, /cinema-title-controls > \.cinema-catalog-note/);
   assert.match(styles, /\.cinema-detail-lower \{[\s\S]*grid-template-columns: minmax\(0, 1\.95fr\) minmax\(340px, 0\.9fr\)/);
   assert.match(styles, /\.cinema-shell:has\(\[data-cinema-view="title-detail"\]\) \.cinema-content \{[\s\S]*overflow-y: auto/);
