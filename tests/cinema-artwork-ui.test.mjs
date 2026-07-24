@@ -51,4 +51,6 @@ test("Cinema contains title actions and keeps chapter status in the metadata pan
   assert.match(styles, /max-width: 980px[\s\S]*cinema-title-panel \.cinema-actions[\s\S]*repeat\(2/);
   assert.match(styles, /cinema-title-controls > \.cinema-catalog-note/);
   assert.match(styles, /\.cinema-detail-lower \{[\s\S]*grid-template-columns: minmax\(0, 1\.95fr\) minmax\(340px, 0\.9fr\)/);
+  assert.match(styles, /\.cinema-shell:has\(\[data-cinema-view="title-detail"\]\) \.cinema-content \{[\s\S]*overflow-y: auto/);
+  assert.match(styles, /\.cinema-title-detail \{[\s\S]*height: max-content[\s\S]*grid-template-rows: auto auto/);
 });

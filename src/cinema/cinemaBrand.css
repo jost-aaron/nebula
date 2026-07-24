@@ -798,6 +798,24 @@
   align-items: start;
 }
 
+.cinema-shell:has([data-cinema-view="title-detail"]) .cinema-content {
+  align-content: start;
+  overflow-y: auto;
+}
+
+.cinema-title-detail {
+  height: max-content;
+  align-self: start;
+  grid-template-rows: auto auto;
+  align-content: start;
+  overflow: visible;
+}
+
+.cinema-player-layout,
+.cinema-detail-lower {
+  height: max-content;
+}
+
 .cinema-title-controls {
   min-width: 0;
   padding: 14px 16px;
