@@ -17,7 +17,7 @@ export const normalizeMediaQuery = (value = "") => {
   const title = withoutExtension
     .replace(episodeMatch?.[0] ?? /$^/, " ")
     .replace(/(?:^|[. _\-(])(?:19|20)\d{2}(?=$|[. _\-)])/i, " ")
-    .replace(/(?:^|[. _-])(?:2160p|1080p|720p|480p|360p|240p|uhd|hdr10?|dv|bluray|brrip|web[ ._-]?dl|webrip|hdtv|x26[45]|h26[45]|hevc|aac|dts|remux)(?=$|[. _-]).*$/i, " ")
+    .replace(/(?:^|[. _-])(?:2160p|1080p|720p|480p|360p|240p|uhd|hdr10?|dv|bluray|brrip|bdmux|webmux|web[ ._-]?dl|webrip|hdtv|x26[45]|h26[45]|hevc|aac|dts|remux)(?=$|[. _-]).*$/i, " ")
     .replace(/[._]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();

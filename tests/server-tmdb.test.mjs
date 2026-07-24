@@ -14,6 +14,7 @@ test("TMDB filename normalization extracts titles, years, and episode markers", 
   assert.deepEqual(normalizeMediaQuery("South.Park.The.Streaming.Wars.2022.1080p.WEB-DL.x264.mp4"), { episodeNumber: null, query: "South Park The Streaming Wars", seasonNumber: null, year: "2022" });
   assert.deepEqual(normalizeMediaQuery("Severance.S02E03.2160p.WEB-DL.mkv"), { episodeNumber: 3, query: "Severance", seasonNumber: 2, year: "" });
   assert.deepEqual(normalizeMediaQuery("The.Bear.3x07.1080p.mkv"), { episodeNumber: 7, query: "The Bear", seasonNumber: 3, year: "" });
+  assert.deepEqual(normalizeMediaQuery("Breaking.Bad.S02e08.BDMux.H264.SD.by.Fratposa.mkv"), { episodeNumber: 8, query: "Breaking Bad", seasonNumber: 2, year: "" });
 });
 
 test("TMDB search uses bearer auth and maps candidates without exposing credentials", async () => {
