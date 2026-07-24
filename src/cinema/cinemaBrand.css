@@ -493,6 +493,40 @@
   font-size: 1.6rem;
 }
 
+.cinema-navigation-loading {
+  min-height: clamp(280px, 48vh, 520px);
+  border: 1px solid var(--cinema-border);
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  padding: 30px;
+  color: var(--cinema-bone);
+  text-align: center;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(231, 169, 64, 0.1), transparent 34%),
+    rgba(255, 255, 255, 0.018);
+}
+
+.cinema-navigation-loading .cinema-library-spinner {
+  margin-bottom: 6px;
+}
+
+.cinema-navigation-loading small {
+  color: var(--cinema-bone-muted);
+}
+
+.cinema-navigation-error button {
+  min-height: 40px;
+  margin-top: 8px;
+  border: 1px solid rgba(231, 169, 64, 0.52);
+  border-radius: 10px;
+  padding: 8px 16px;
+  color: var(--cinema-bone);
+  background: rgba(231, 169, 64, 0.1);
+}
+
 .cinema-season-library .cinema-grid {
   grid-auto-flow: row;
   grid-auto-columns: unset;

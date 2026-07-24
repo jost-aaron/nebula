@@ -213,7 +213,23 @@ const groupEpisodesBySeason = (episodes: CinemaEntry[]) => {
   return seasons;
 };
 
-const renderSeriesDetail = (series: CinemaEntry, episodes: CinemaEntry[]) => {
+const renderNavigationLoading = (title: string, detail: string) => `
+  <div class="cinema-navigation-loading" role="status" aria-live="polite" aria-busy="true">
+    <span class="cinema-library-spinner" aria-hidden="true"></span>
+    <strong>${escapeHtml(title)}</strong>
+    <small>${escapeHtml(detail)}</small>
+  </div>
+`;
+
+const renderNavigationError = (title: string, detail: string) => `
+  <div class="cinema-navigation-loading cinema-navigation-error" role="alert">
+    <strong>${escapeHtml(title)}</strong>
+    <small>${escapeHtml(detail)}</small>
+    <button type="button" data-cinema-action="retry-series">Try again</button>
+  </div>
+`;
+
+const renderSeriesDetail = (series: CinemaEntry, episodes: CinemaEntry[], loading = false, error = "") => {
   const seasons = groupEpisodesBySeason(episodes);
   return `
     <section class="cinema-series-detail">
@@ -228,7 +244,11 @@ const renderSeriesDetail = (series: CinemaEntry, episodes: CinemaEntry[]) => {
       </header>
       <section class="cinema-season-library">
         <header><div><p class="eyebrow">Library</p><h3>Seasons</h3></div><span>${seasons.size} available</span></header>
-        <div class="cinema-grid">
+        ${loading
+          ? renderNavigationLoading("Loading seasons…", `Organizing ${series.title}`)
+          : error
+            ? renderNavigationError("Seasons could not be loaded", error)
+            : `<div class="cinema-grid">
           ${[...seasons.entries()].sort(([left], [right]) => left - right).map(([season, seasonEpisodes]) => {
             const representative = seasonEpisodes.find((entry) => entry.posterUrl) ?? seasonEpisodes[0];
             const label = season === 0 ? "Specials" : `Season ${season}`;
@@ -244,13 +264,13 @@ const renderSeriesDetail = (series: CinemaEntry, episodes: CinemaEntry[]) => {
               </button>
             `;
           }).join("")}
-        </div>
+        </div>`}
       </section>
     </section>
   `;
 };
 
-const renderSeasonDetail = (series: CinemaEntry, episodes: CinemaEntry[], season: number, playback: Map<string, ContinueWatchingEntry>) => {
+const renderSeasonDetail = (series: CinemaEntry, episodes: CinemaEntry[], season: number, playback: Map<string, ContinueWatchingEntry>, loading = false) => {
   const seasonEpisodes = episodes
     .filter((episode) => Number(episode.episode?.seasonNumber ?? 0) === season)
     .sort((left, right) => Number(left.episode?.episodeNumber ?? 0) - Number(right.episode?.episodeNumber ?? 0));
@@ -266,7 +286,9 @@ const renderSeasonDetail = (series: CinemaEntry, episodes: CinemaEntry[], season
       </header>
       <section class="cinema-season-library">
         <header><div><p class="eyebrow">Library</p><h3>Episodes</h3></div><span>${seasonEpisodes.length} available</span></header>
-        <div class="cinema-grid">${renderCinemaCards(seasonEpisodes, "tv", playback)}</div>
+        ${loading
+          ? renderNavigationLoading("Loading episodes…", `Preparing ${label}`)
+          : `<div class="cinema-grid">${renderCinemaCards(seasonEpisodes, "tv", playback)}</div>`}
       </section>
     </section>
   `;
@@ -1065,7 +1087,11 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   let categoryTotals: Record<CinemaCategory, number | null> = { movies: null, tv: null };
   let activeCategory: CinemaCategory = "movies";
   let seriesEpisodes: CinemaEntry[] = [];
+  let seriesLoading = false;
+  let seriesLoadError = "";
   let selectedSeason: number | null = null;
+  let seasonLoading = false;
+  let seasonRenderGeneration = 0;
   let selected: CinemaEntry | null = null;
   const subtitleState = new Map<string, SubtitleTracksResponse>();
   let subtitlePreference: SubtitlePreference | undefined;
@@ -1422,11 +1448,13 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       content.innerHTML = selected ? renderTitleHero(selected, entries, selected.id ? playback.get(selected.id) : undefined, selected.id ? catalogState.get(selected.id) : undefined, selected.id ? subtitleState.get(selected.id) : undefined, subtitlePreference, options.canManageRenditions) : renderLibrary(entries, categoryTotals, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
     }
     if (view === "series-detail") {
-      content.innerHTML = selected ? renderSeriesDetail(selected, seriesEpisodes) : renderLibrary(entries, categoryTotals, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
+      content.innerHTML = selected
+        ? renderSeriesDetail(selected, seriesEpisodes, seriesLoading, seriesLoadError)
+        : renderLibrary(entries, categoryTotals, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
     }
     if (view === "season-detail") {
       content.innerHTML = selected && selectedSeason !== null
-        ? renderSeasonDetail(selected, seriesEpisodes, selectedSeason, playback)
+        ? renderSeasonDetail(selected, seriesEpisodes, selectedSeason, playback, seasonLoading)
         : renderLibrary(entries, categoryTotals, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
     }
 
@@ -1514,23 +1542,41 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     }
   };
 
+  const loadSeriesEpisodes = async (entry: CinemaEntry) => {
+    if (!entry.series) return;
+    seriesLoading = true;
+    seriesLoadError = "";
+    seriesEpisodes = [];
+    render();
+    try {
+      const library = await listCinemaLibrary({ category: "tv", limit: 200, seriesKey: entry.series.key });
+      if (selected?.path !== entry.path || view !== "series-detail") return;
+      seriesEpisodes = library.entries;
+      seriesLoading = false;
+      render();
+    } catch (error) {
+      if (selected?.path !== entry.path || view !== "series-detail") return;
+      seriesLoading = false;
+      seriesLoadError = error instanceof Error ? error.message : "The seasons request could not be completed.";
+      render();
+    }
+  };
+
   const openTitle = (entry: CinemaEntry) => {
     if (entry.series) {
       selected = entry;
       selectedSeason = null;
+      seasonLoading = false;
+      seasonRenderGeneration += 1;
       activeCategory = "tv";
-      seriesEpisodes = [];
       view = "series-detail";
-      render();
-      void listCinemaLibrary({ category: "tv", limit: 200, seriesKey: entry.series.key }).then((library) => {
-        if (selected?.id !== entry.id) return;
-        seriesEpisodes = library.entries;
-        render();
-      }).catch(() => {
-        if (selected?.id === entry.id) render();
-      });
+      void loadSeriesEpisodes(entry);
       return;
     }
+    seriesLoading = false;
+    seriesLoadError = "";
+    seasonLoading = false;
+    seasonRenderGeneration += 1;
     selected = entry;
     activeCategory = entry.category;
     view = "title-detail";
@@ -2416,6 +2462,10 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
 
     if (categoryButton) {
       activeCategory = (categoryButton.dataset.cinemaCategory as CinemaCategory | undefined) ?? "movies";
+      seriesLoading = false;
+      seriesLoadError = "";
+      seasonLoading = false;
+      seasonRenderGeneration += 1;
       selected = null;
       view = "library";
       void loadLibrary(true);
@@ -2423,9 +2473,19 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     }
 
     if (seasonButton && selected?.series) {
-      selectedSeason = Number(seasonButton.dataset.cinemaSeason);
+      const season = Number(seasonButton.dataset.cinemaSeason);
+      const generation = ++seasonRenderGeneration;
+      selectedSeason = season;
+      seasonLoading = true;
       view = "season-detail";
       render();
+      window.requestAnimationFrame(() => {
+        window.setTimeout(() => {
+          if (generation !== seasonRenderGeneration || view !== "season-detail" || selectedSeason !== season) return;
+          seasonLoading = false;
+          render();
+        }, 110);
+      });
       return;
     }
 
@@ -2479,6 +2539,10 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     if (action === "library") {
       stopActivePlayback?.();
       stopActivePlayback = null;
+      seriesLoading = false;
+      seriesLoadError = "";
+      seasonLoading = false;
+      seasonRenderGeneration += 1;
       selected = null;
       closeSheet();
       view = "library";
@@ -2486,12 +2550,22 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     }
 
     if (action === "series" && selected?.series) {
+      seasonLoading = false;
+      seasonRenderGeneration += 1;
       selectedSeason = null;
       view = "series-detail";
       render();
     }
 
+    if (action === "retry-series" && selected?.series) {
+      void loadSeriesEpisodes(selected);
+    }
+
     if (action === "watchlist") {
+      seriesLoading = false;
+      seriesLoadError = "";
+      seasonLoading = false;
+      seasonRenderGeneration += 1;
       selected = null;
       closeSheet();
       view = "watchlist";
