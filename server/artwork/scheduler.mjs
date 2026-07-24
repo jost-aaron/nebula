@@ -1,4 +1,4 @@
-import { artworkJobDedupeKey, currentGeneratedArtwork } from "./paths.mjs";
+import { artworkJobDedupeKey, currentCachedArtwork, currentLocalArtwork } from "./paths.mjs";
 
 export const createArtworkScheduler = ({ repository }) => {
   if (typeof repository?.listItems !== "function" || typeof repository?.listArtwork !== "function") {
@@ -10,9 +10,11 @@ export const createArtworkScheduler = ({ repository }) => {
     let queued = 0;
     for (const item of repository.listItems({ availability: "available", mediaKind: "video" })) {
       const artwork = repository.listArtwork(item.id);
-      const hasPoster = Boolean(item.metadata?.posterUrl)
-        || artwork.some((entry) => entry.type === "poster" && entry.remoteUrl)
-        || Boolean(currentGeneratedArtwork(artwork, item.source));
+      const hasRemotePoster = Boolean(item.metadata?.posterUrl)
+        || artwork.some((entry) => entry.type === "poster" && entry.remoteUrl);
+      const hasPoster = hasRemotePoster
+        ? Boolean(currentCachedArtwork(artwork, item.source))
+        : Boolean(currentLocalArtwork(artwork, item.source));
       if (hasPoster) continue;
       enqueue({
         availableAt: availableAt + queued * intervalMs,

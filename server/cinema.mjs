@@ -7,8 +7,8 @@ import { isVideoFile, mimeType } from "./storage.mjs";
 import { parseByteRange } from "./ranges.mjs";
 import { createCinemaTmdbRoutes } from "./cinemaTmdb.mjs";
 import { canBrowseFederatedLibrary, projectUnifiedLibrary } from "./cluster/index.mjs";
-import { projectRepositoryItemsPage } from "./catalog/projections.mjs";
-import { artworkJobDedupeKey, currentGeneratedArtwork } from "./artwork/index.mjs";
+import { projectCompatibilityEntry, projectRepositoryItemsPage } from "./catalog/projections.mjs";
+import { artworkJobDedupeKey, currentLocalArtwork } from "./artwork/index.mjs";
 
 const candidateWords = (value = "") =>
   value
@@ -52,6 +52,39 @@ export const selectCinemaProcessingActivity = ({ artwork, metadata }) => {
     };
   }
   return { job: null, kind: null, queued: Number(artwork.counts.queued ?? 0), state: null };
+};
+
+const televisionSeriesKey = (entry) => entry.episode
+  ? entry.tmdbId ? `tmdb:${entry.tmdbId}` : `title:${String(entry.episode.seriesTitle ?? "").toLowerCase()}`
+  : `item:${entry.id}`;
+
+export const groupTelevisionEntries = (entries) => {
+  const groups = new Map();
+  for (const entry of entries) {
+    const key = televisionSeriesKey(entry);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(entry);
+  }
+  return [...groups.entries()].map(([key, episodes]) => {
+    if (!episodes[0]?.episode) return episodes[0];
+    episodes.sort((left, right) =>
+      Number(left.episode?.seasonNumber ?? 0) - Number(right.episode?.seasonNumber ?? 0)
+      || Number(left.episode?.episodeNumber ?? 0) - Number(right.episode?.episodeNumber ?? 0)
+    );
+    const representative = episodes.find((entry) => entry.posterUrl) ?? episodes[0];
+    const seasons = [...new Set(episodes.map((entry) => Number(entry.episode?.seasonNumber ?? 0)))].sort((a, b) => a - b);
+    const seriesTitle = representative.episode.seriesTitle;
+    return {
+      ...representative,
+      episode: null,
+      id: `series:${key}`,
+      name: seriesTitle,
+      playable: false,
+      sortTitle: seriesTitle,
+      title: seriesTitle,
+      series: { episodeCount: episodes.length, key, seasonCount: seasons.length, seasons }
+    };
+  }).sort((left, right) => left.sortTitle.localeCompare(right.sortTitle));
 };
 
 const googleVisionWebDetection = async (frames) => {
@@ -118,7 +151,38 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
     const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit")) || 60));
     const query = url.searchParams.get("query") ?? "";
     const category = url.searchParams.get("category");
-    const page = catalog?.repository?.listItemsPage
+    const requestedSeriesKey = url.searchParams.get("seriesKey") ?? "";
+    const context = request.nebulaAuth;
+    const allTelevisionEntries = category === "tv" && catalog?.repository?.listItems
+      ? catalog.repository.listItems({ availability: "available", mediaKind: "video" })
+        .filter((item) => item.itemType === "episode")
+        .map((item) => projectCompatibilityEntry({
+          artwork: catalog.repository.listArtwork(item.id),
+          artworkJob: jobs?.findByDedupe?.("artwork", artworkJobDedupeKey(item.source)) ?? null,
+          externalIds: catalog.repository.listExternalIds(item.id),
+          item,
+          source: item.source
+        }))
+        .filter((entry) => !libraryPermissions || libraryPermissions.canAccessPath(context, entry.path, "video"))
+      : null;
+    const normalizedQuery = query.trim().toLowerCase();
+    const televisionEntries = category === "tv" && allTelevisionEntries
+      ? requestedSeriesKey
+        ? allTelevisionEntries.filter((entry) => televisionSeriesKey(entry) === requestedSeriesKey)
+        : groupTelevisionEntries(allTelevisionEntries).filter((entry) =>
+            !normalizedQuery || [entry.title, entry.sortTitle, entry.path].some((value) => String(value).toLowerCase().includes(normalizedQuery))
+          )
+      : null;
+    const televisionPage = televisionEntries
+      ? {
+          entries: televisionEntries.slice(offset, offset + limit),
+          items: televisionEntries.slice(offset, offset + limit),
+          limit,
+          offset,
+          total: televisionEntries.length
+        }
+      : null;
+    const page = televisionPage ?? (catalog?.repository?.listItemsPage
       ? projectRepositoryItemsPage(catalog.repository, {
           availability: "available",
           artworkJobForSource: (source) => jobs?.findByDedupe?.("artwork", artworkJobDedupeKey(source)) ?? null,
@@ -128,18 +192,17 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
           offset,
           query
         })
-      : null;
+      : null);
     const scanned = page?.entries ?? await scanMediaLibrary(storage, metadata, { mediaKind: "video" });
     const totals = catalog?.repository?.listItemsPage
       ? {
           movies: catalog.repository.listItemsPage({ availability: "available", itemType: "movie", limit: 1, mediaKind: "video" }).total,
-          tv: catalog.repository.listItemsPage({ availability: "available", itemType: "episode", limit: 1, mediaKind: "video" }).total
+          tv: catalog.repository.countTelevisionSeries?.() ?? (allTelevisionEntries ? groupTelevisionEntries(allTelevisionEntries).length : catalog.repository.listItemsPage({ availability: "available", itemType: "episode", limit: 1, mediaKind: "video" }).total)
         }
       : {
           movies: scanned.filter((entry) => entry.category === "movies").length,
           tv: scanned.filter((entry) => entry.category === "tv").length
         };
-    const context = request.nebulaAuth;
     let entries = libraryPermissions ? scanned.filter((entry) => libraryPermissions.canAccessPath(context, entry.path, "video")) : scanned;
 
     if (context?.user) {
@@ -180,7 +243,7 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
       json(response, 404, { error: "Artwork not found." });
       return;
     }
-    const artwork = currentGeneratedArtwork(catalog.repository.listArtwork(source.itemId), source);
+    const artwork = currentLocalArtwork(catalog.repository.listArtwork(source.itemId), source);
     if (!artwork?.localPath) {
       json(response, 404, { error: "Artwork not found." });
       return;
@@ -228,14 +291,14 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
     const activeItem = activeSource?.itemId ? catalog?.repository?.getItem?.(activeSource.itemId) : null;
     const entries = sources.map((source) => {
       const artwork = catalog.repository.listArtwork(source.itemId);
-      const generated = currentGeneratedArtwork(artwork, source);
+      const generated = currentLocalArtwork(artwork, source);
       const job = jobsByDedupe.get(artworkJobDedupeKey(source));
-      if (activity.running?.id === job?.id) return { artworkState: "processing", posterUrl: "", sourceId: source.id };
       if (generated) return {
-        artworkState: "ready",
+        artworkState: activity.running?.id === job?.id ? "processing" : "ready",
         posterUrl: `/api/cinema/artwork?sourceId=${encodeURIComponent(source.id)}&revision=${source.contentRevision}`,
         sourceId: source.id
       };
+      if (activity.running?.id === job?.id) return { artworkState: "processing", posterUrl: "", sourceId: source.id };
       return {
         artworkState: job?.state === "failed" || job?.state === "cancelled" ? "failed" : job?.state === "queued" ? "queued" : "missing",
         posterUrl: "",

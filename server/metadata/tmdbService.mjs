@@ -1,5 +1,6 @@
 import path from "node:path";
 import { normalizeMediaQuery } from "../tmdb.mjs";
+import { artworkJobDedupeKey } from "../artwork/paths.mjs";
 
 const canonicalTitle = (value) => String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 
@@ -184,6 +185,13 @@ export const createTmdbMetadataService = ({ repository, tmdb, readLegacyMetadata
       externalIds: [{ id: match.id, mediaType: match.mediaType, provider: "tmdb" }],
       fields: { ...fields, ...matchFields },
       mode: "provider"
+    });
+    context.enqueue?.({
+      availableAt: 0,
+      dedupeKey: artworkJobDedupeKey(source),
+      maxAttempts: 2,
+      payload: { contentRevision: source.contentRevision, sourceId: source.id },
+      type: "artwork"
     });
 
     if (readLegacyMetadata && writeLegacyMetadata) {

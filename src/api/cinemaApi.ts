@@ -37,7 +37,7 @@ export interface CinemaCatalogScanResponse {
   };
 }
 
-export const listCinemaLibrary = ({ category, limit = 60, offset = 0, query = "" }: { category?: "movies" | "tv"; limit?: number; offset?: number; query?: string } = {}) => apiJson<CinemaLibraryResponse>(`/api/cinema/library?limit=${limit}&offset=${offset}${category ? `&category=${category}` : ""}${query ? `&query=${encodeURIComponent(query)}` : ""}`).then((library) => ({
+export const listCinemaLibrary = ({ category, limit = 60, offset = 0, query = "", seriesKey = "" }: { category?: "movies" | "tv"; limit?: number; offset?: number; query?: string; seriesKey?: string } = {}) => apiJson<CinemaLibraryResponse>(`/api/cinema/library?limit=${limit}&offset=${offset}${category ? `&category=${category}` : ""}${query ? `&query=${encodeURIComponent(query)}` : ""}${seriesKey ? `&seriesKey=${encodeURIComponent(seriesKey)}` : ""}`).then((library) => ({
   entries: library.entries.map((entry) => ({ ...entry, streamUrl: entry.streamUrl ? apiUrl(entry.streamUrl) : "" })),
   page: library.page,
   totals: library.totals

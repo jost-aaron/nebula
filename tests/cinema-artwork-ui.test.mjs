@@ -13,6 +13,7 @@ test("Cinema keeps queued titles visible and distinguishes active artwork proces
 
   assert.match(types, /artworkState: "failed" \| "missing" \| "processing" \| "queued" \| "ready"/);
   assert.match(cinema, /entry\.artworkState === "processing"[\s\S]*Generating title card/);
+  assert.match(cinema, /cinema-artwork-processing-overlay/);
   assert.match(cinema, /entry\.artworkState === "queued"[\s\S]*Queued for artwork/);
   assert.match(cinema, /data-cinema-artwork-state="\$\{entry\.artworkState\}"/);
   assert.match(cinema, /getCinemaArtworkStatus\(sourceIds\)/);

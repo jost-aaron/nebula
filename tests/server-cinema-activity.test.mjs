@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { selectCinemaProcessingActivity } from "../server/cinema.mjs";
+import { groupTelevisionEntries, selectCinemaProcessingActivity } from "../server/cinema.mjs";
 
 const empty = () => ({ counts: {}, next: null, running: null });
 
@@ -43,5 +43,30 @@ test("Cinema status never presents a future artwork job as running", () => {
     kind: null,
     queued: 12,
     state: null
+  });
+});
+
+test("identified television episodes collapse into series with ordered seasons", () => {
+  const episode = (id, seasonNumber, episodeNumber) => ({
+    category: "tv",
+    episode: { episodeNumber, seasonNumber, seriesTitle: "Breaking Bad" },
+    id,
+    path: `${id}.mkv`,
+    posterUrl: "",
+    sortTitle: id,
+    title: id,
+    tmdbId: 1396
+  });
+  const grouped = groupTelevisionEntries([
+    episode("second", 2, 1),
+    episode("pilot", 1, 1)
+  ]);
+  assert.equal(grouped.length, 1);
+  assert.equal(grouped[0].title, "Breaking Bad");
+  assert.deepEqual(grouped[0].series, {
+    episodeCount: 2,
+    key: "tmdb:1396",
+    seasonCount: 2,
+    seasons: [1, 2]
   });
 });

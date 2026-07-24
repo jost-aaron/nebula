@@ -106,15 +106,11 @@ test("artwork scheduler queues only videos without current posters and staggers 
     intervalMs: 2_500
   });
 
-  assert.deepEqual(result, { queued: 1 });
-  assert.deepEqual(queued, [{
-    availableAt: 10_000,
-    dedupeKey: "source-missing:2",
-    maxAttempts: 2,
-    payload: { contentRevision: 2, sourceId: "source-missing" },
-    reuseTerminal: true,
-    type: "artwork"
-  }]);
+  assert.deepEqual(result, { queued: 2 });
+  assert.deepEqual(queued.map(({ availableAt, dedupeKey }) => ({ availableAt, dedupeKey })), [
+    { availableAt: 10_000, dedupeKey: "source-missing:2" },
+    { availableAt: 12_500, dedupeKey: "source-remote:1" }
+  ]);
 });
 
 test("catalog projection exposes queued, processing, and ready artwork states", async (t) => {
@@ -137,8 +133,37 @@ test("catalog projection exposes queued, processing, and ready artwork states", 
     width: 320
   });
   const ready = project("running");
-  assert.equal(ready.artworkState, "ready");
+  assert.equal(ready.artworkState, "processing");
   assert.equal(ready.posterUrl, `/api/cinema/artwork?sourceId=${item.source.id}&revision=1`);
+});
+
+test("artwork service downloads and publishes a TMDB poster for offline use", async (t) => {
+  const { contentRoot, dataRoot, repository, root } = await setup(t);
+  await writeFile(path.join(contentRoot, "Film.mp4"), "video fixture");
+  await scanLocalRoot({ absoluteRoot: contentRoot, repository, rootId: root.id });
+  const item = repository.listItems({ mediaKind: "video" })[0];
+  repository.putExternalMetadata(item.id, {
+    fields: { posterUrl: "https://image.tmdb.org/t/p/w500/example.jpg" },
+    mode: "provider"
+  });
+  const service = createArtworkService({
+    contentRoot,
+    dataRoot,
+    fetchImpl: async () => new Response(Buffer.alloc(512, 9), {
+      headers: { "content-type": "image/jpeg" },
+      status: 200
+    }),
+    repository,
+    resolveSource: (sourceId) => repository.getSource(sourceId)
+  });
+  const result = await service.generate({
+    contentRevision: item.source.contentRevision,
+    sourceId: item.source.id
+  });
+  assert.equal(result.cached, true);
+  const cached = repository.listArtwork(item.id).find(({ provider }) => provider === "tmdb-cache");
+  assert.ok(cached?.localPath.endsWith(".tmdb.jpg"));
+  assert.equal((await readFile(path.join(dataRoot, ...cached.localPath.split("/")))).length, 512);
 });
 
 test("FFmpeg title-card arguments capture one bounded portrait frame without a shell", () => {

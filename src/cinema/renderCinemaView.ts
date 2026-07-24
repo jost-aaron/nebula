@@ -53,7 +53,7 @@ const cinemaBrandMarkUrl = new URL(
   import.meta.url
 ).href;
 
-type CinemaView = "library" | "watchlist" | "title-detail" | "player" | "metadata-editor" | "servers" | "identify";
+type CinemaView = "library" | "watchlist" | "series-detail" | "title-detail" | "player" | "metadata-editor" | "servers" | "identify";
 
 interface CinemaServerInfo {
   address: string;
@@ -165,6 +165,31 @@ const displayTitle = (entry: CinemaEntry) => entry.episode
   ? `${entry.episode.seriesTitle} · S${String(entry.episode.seasonNumber).padStart(2, "0")}E${String(entry.episode.episodeNumber).padStart(2, "0")} · ${entry.title}`
   : entry.title;
 
+const renderSeriesDetail = (series: CinemaEntry, episodes: CinemaEntry[], playback: Map<string, ContinueWatchingEntry>) => {
+  const seasons = new Map<number, CinemaEntry[]>();
+  episodes.forEach((episode) => {
+    const seasonNumber = Number(episode.episode?.seasonNumber ?? 0);
+    if (!seasons.has(seasonNumber)) seasons.set(seasonNumber, []);
+    seasons.get(seasonNumber)!.push(episode);
+  });
+  return `
+    <section class="cinema-series-detail">
+      <header class="cinema-series-header"${backdropStyle(series)}>
+        <button type="button" data-cinema-action="library">← TV Shows</button>
+        <div><p class="eyebrow">Series</p><h2>${escapeHtml(series.title)}</h2>
+          <p>${series.series?.seasonCount ?? seasons.size} seasons · ${series.series?.episodeCount ?? episodes.length} episodes</p>
+        </div>
+      </header>
+      ${[...seasons.entries()].sort(([left], [right]) => left - right).map(([season, seasonEpisodes]) => `
+        <section class="cinema-season-group">
+          <header><h3>${season === 0 ? "Specials" : `Season ${season}`}</h3><span>${seasonEpisodes.length} episodes</span></header>
+          <div class="cinema-grid">${renderCinemaCards(seasonEpisodes, "tv", playback)}</div>
+        </section>
+      `).join("")}
+    </section>
+  `;
+};
+
 const currentServerInfo = (): CinemaServerInfo => ({
   address: getEffectiveApiBaseUrl() || "No server URL",
   authState: getApiToken() ? "Token saved" : "Local unauthenticated",
@@ -196,6 +221,13 @@ const renderPosterFallback = (entry: CinemaEntry) => {
     </div>
   `;
 };
+
+const renderArtworkProcessingOverlay = (entry: CinemaEntry) => entry.artworkState === "processing" ? `
+  <span class="cinema-artwork-processing-overlay" aria-label="Processing title">
+    <span class="cinema-artwork-orbit"><i></i><img src="${cinemaBrandMarkUrl}" alt="" /></span>
+    <small>Processing</small>
+  </span>
+` : "";
 
 const posterStyle = (entry: CinemaEntry) =>
   entry.posterUrl ? ` style="background-image: url('${escapeHtml(entry.posterUrl)}')"` : "";
@@ -357,8 +389,9 @@ const renderCinemaCards = (entries: CinemaEntry[], category: CinemaCategory, pla
         <button class="cinema-card" type="button" data-cinema-path="${escapeHtml(entry.path)}" data-cinema-sort-letter="${sortLetter}">
           <span class="cinema-poster" data-cinema-poster="${escapeHtml(entry.path)}" data-cinema-artwork-state="${entry.artworkState}"${posterStyle(entry)}>
             ${entry.posterUrl ? "" : renderPosterFallback(entry)}
+            ${entry.posterUrl ? renderArtworkProcessingOverlay(entry) : ""}
             <span class="cinema-poster-scrim"></span>
-            <span class="cinema-card-badge">${escapeHtml(entry.federation ? federationLabel(entry.federation) : entry.category === "tv" ? "Series" : "Movie")}</span>
+            <span class="cinema-card-badge">${escapeHtml(entry.federation ? federationLabel(entry.federation) : entry.series ? `${entry.series.seasonCount} Seasons` : entry.category === "tv" ? "Episode" : "Movie")}</span>
             <span class="cinema-card-play${entry.playable === false ? " unavailable" : ""}">${renderCinemaIcon(entry.playable === false ? "ServerOff" : "Play", "cinema-play-icon")}</span>
             ${state ? `<span class="cinema-card-progress"><i style="width:${Math.round(state.progress * 100)}%"></i></span>` : ""}
           </span>
@@ -944,6 +977,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   let entries: CinemaEntry[] = [];
   let categoryTotals: Record<CinemaCategory, number | null> = { movies: null, tv: null };
   let activeCategory: CinemaCategory = "movies";
+  let seriesEpisodes: CinemaEntry[] = [];
   let selected: CinemaEntry | null = null;
   const subtitleState = new Map<string, SubtitleTracksResponse>();
   let subtitlePreference: SubtitlePreference | undefined;
@@ -1121,7 +1155,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       posterObserver?.unobserve(observation.target);
       const poster = observation.target as HTMLElement;
       const path = poster.dataset.cinemaPoster ?? poster.dataset.cinemaBackdrop;
-      const entry = entries.find((candidate) => candidate.path === path);
+      const entry = [...seriesEpisodes, ...entries].find((candidate) => candidate.path === path);
       if (entry) {
         poster.dataset.cinemaHydrated = "true";
         void hydratePoster(entry, poster).catch(() => {});
@@ -1176,10 +1210,12 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       if (poster.dataset.cinemaPoster !== entry.path) return;
       poster.dataset.cinemaArtworkState = entry.artworkState;
       const fallback = poster.querySelector<HTMLElement>(".cinema-poster-fallback");
+      poster.querySelector<HTMLElement>(".cinema-artwork-processing-overlay")?.remove();
       if (entry.posterUrl) {
         poster.style.backgroundImage = `url("${entry.posterUrl.replaceAll('"', '\\"')}")`;
         poster.classList.add("ready");
         fallback?.remove();
+        if (entry.artworkState === "processing") poster.insertAdjacentHTML("afterbegin", renderArtworkProcessingOverlay(entry));
         return;
       }
       poster.style.backgroundImage = "";
@@ -1297,6 +1333,9 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     if (view === "title-detail") {
       content.innerHTML = selected ? renderTitleHero(selected, entries, selected.id ? playback.get(selected.id) : undefined, selected.id ? catalogState.get(selected.id) : undefined, selected.id ? subtitleState.get(selected.id) : undefined, subtitlePreference, options.canManageRenditions) : renderLibrary(entries, categoryTotals, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
     }
+    if (view === "series-detail") {
+      content.innerHTML = selected ? renderSeriesDetail(selected, seriesEpisodes, playback) : renderLibrary(entries, categoryTotals, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
+    }
 
     if (view === "player") {
       content.innerHTML = selected ? renderPlayerView(selected, entries, selected.id ? subtitleState.get(selected.id) : undefined, qualityPreference, renditionProfiles) : renderLibrary(entries, categoryTotals, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
@@ -1383,6 +1422,21 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   };
 
   const openTitle = (entry: CinemaEntry) => {
+    if (entry.series) {
+      selected = entry;
+      activeCategory = "tv";
+      seriesEpisodes = [];
+      view = "series-detail";
+      render();
+      void listCinemaLibrary({ category: "tv", limit: 200, seriesKey: entry.series.key }).then((library) => {
+        if (selected?.id !== entry.id) return;
+        seriesEpisodes = library.entries;
+        render();
+      }).catch(() => {
+        if (selected?.id === entry.id) render();
+      });
+      return;
+    }
     selected = entry;
     activeCategory = entry.category;
     view = "title-detail";
@@ -2274,7 +2328,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     }
 
     if (pathButton) {
-      const entry = entries.find((candidate) => candidate.path === pathButton.dataset.cinemaPath);
+      const entry = [...seriesEpisodes, ...entries].find((candidate) => candidate.path === pathButton.dataset.cinemaPath);
 
       if (entry) {
         closeSheet();

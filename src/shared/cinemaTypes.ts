@@ -24,6 +24,12 @@ export interface CinemaEntry extends CatalogCompatibilityIdentity {
   posterUrl: string;
   rating: string;
   releaseYear: string;
+  series?: {
+    episodeCount: number;
+    key: string;
+    seasonCount: number;
+    seasons: number[];
+  };
   size: number;
   sortTitle: string;
   streamUrl: string;

@@ -1,12 +1,10 @@
-import { currentGeneratedArtwork, generatedArtworkUrl } from "../artwork/paths.mjs";
+import { currentLocalArtwork, generatedArtworkUrl } from "../artwork/paths.mjs";
 
 const remoteArtworkUrl = (artwork, type) => artwork.find((entry) => entry.type === type && entry.remoteUrl)?.remoteUrl ?? "";
 
 const artworkProjection = ({ artwork, job = null, item, source }) => {
-  const remotePoster = item.metadata?.posterUrl || remoteArtworkUrl(artwork, "poster");
-  if (remotePoster) return { artworkState: "ready", posterUrl: remotePoster };
-  const generated = currentGeneratedArtwork(artwork, source);
-  if (generated) return { artworkState: "ready", posterUrl: generatedArtworkUrl(source) };
+  const local = currentLocalArtwork(artwork, source);
+  if (local) return { artworkState: job?.state === "running" ? "processing" : "ready", posterUrl: generatedArtworkUrl(source) };
   if (job?.state === "running") return { artworkState: "processing", posterUrl: "" };
   if (job?.state === "queued") return { artworkState: "queued", posterUrl: "" };
   if (job?.state === "failed" || job?.state === "cancelled") return { artworkState: "failed", posterUrl: "" };
