@@ -26,6 +26,27 @@ const imagePayload = (frame) => {
   return match?.[1] ?? image;
 };
 
+export const selectCinemaProcessingActivity = ({ artwork, metadata }) => {
+  const metadataJob = metadata.running ?? metadata.next;
+  if (metadataJob) {
+    return {
+      job: metadataJob,
+      kind: "metadata",
+      queued: Number(metadata.counts.queued ?? 0),
+      state: metadata.running ? "running" : "preparing"
+    };
+  }
+  if (artwork.running) {
+    return {
+      job: artwork.running,
+      kind: "artwork",
+      queued: Number(artwork.counts.queued ?? 0),
+      state: "running"
+    };
+  }
+  return { job: null, kind: null, queued: Number(artwork.counts.queued ?? 0), state: null };
+};
+
 const googleVisionWebDetection = async (frames) => {
   const apiKey = process.env.GOOGLE_VISION_API_KEY;
 
@@ -185,11 +206,13 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
       .filter((source) => source?.mediaKind === "video" && source.availability === "available"
         && (!libraryPermissions || libraryPermissions.canAccessPath(request.nebulaAuth, source.path, "video")));
     const activity = jobs?.activity?.("artwork") ?? { counts: {}, next: null, running: null };
+    const metadataActivity = jobs?.activity?.("metadata") ?? { counts: {}, next: null, running: null };
     const jobsByDedupe = new Map((jobs?.findByDedupeMany?.(
       "artwork",
       sources.map((source) => artworkJobDedupeKey(source))
     ) ?? []).map((job) => [job.dedupeKey, job]));
-    const activeJob = activity.running ?? activity.next;
+    const processing = selectCinemaProcessingActivity({ artwork: activity, metadata: metadataActivity });
+    const activeJob = processing.job;
     const candidateActiveSource = activeJob?.payload?.sourceId ? catalog?.repository?.getSource?.(activeJob.payload.sourceId) : null;
     const activeSource = candidateActiveSource
       && (!libraryPermissions || libraryPermissions.canAccessPath(request.nebulaAuth, candidateActiveSource.path, "video"))
@@ -200,7 +223,7 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
       const artwork = catalog.repository.listArtwork(source.itemId);
       const generated = currentGeneratedArtwork(artwork, source);
       const job = jobsByDedupe.get(artworkJobDedupeKey(source));
-      if (activeJob?.id === job?.id) return { artworkState: "processing", posterUrl: "", sourceId: source.id };
+      if (activity.running?.id === job?.id) return { artworkState: "processing", posterUrl: "", sourceId: source.id };
       if (generated) return {
         artworkState: "ready",
         posterUrl: `/api/cinema/artwork?sourceId=${encodeURIComponent(source.id)}&revision=${source.contentRevision}`,
@@ -216,11 +239,12 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
       activity: {
         failed: Number(activity.counts.failed ?? 0),
         processing: activeJob && activeSource ? {
+          kind: processing.kind,
           sourceId: activeSource?.id ?? "",
           title: activeItem?.title ?? "Title card",
-          state: activity.running ? "running" : "preparing"
+          state: processing.state
         } : null,
-        queued: Number(activity.counts.queued ?? 0),
+        queued: processing.queued,
         ready: Number(activity.counts.succeeded ?? 0)
       },
       entries

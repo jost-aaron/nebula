@@ -1152,10 +1152,14 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     status.dataset.artworkSignature = signature;
     if (activity.processing) {
       status.classList.add("processing");
+      const matching = activity.processing.kind === "metadata";
+      const action = matching
+        ? activity.processing.state === "running" ? "Matching with TMDB" : "Next TMDB match"
+        : "Generating title card";
       status.innerHTML = `
         <span class="cinema-artwork-orbit" aria-hidden="true"><i></i><img src="${cinemaBrandMarkUrl}" alt="" /></span>
-        <span><strong>${activity.processing.state === "running" ? "Generating" : "Preparing"} title card</strong><small>${escapeHtml(activity.processing.title)}</small></span>
-        <b>${activity.queued} queued</b>
+        <span><strong>${action}</strong><small>${escapeHtml(activity.processing.title)}</small></span>
+        <b>${activity.queued} ${matching ? "matches" : "artwork"} queued</b>
       `;
       return;
     }

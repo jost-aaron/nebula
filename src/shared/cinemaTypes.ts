@@ -47,6 +47,7 @@ export interface CinemaArtworkStatusResponse {
   activity: {
     failed: number;
     processing: null | {
+      kind: "artwork" | "metadata";
       sourceId: string;
       state: "preparing" | "running";
       title: string;
