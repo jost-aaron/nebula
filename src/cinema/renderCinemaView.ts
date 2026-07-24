@@ -657,6 +657,7 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: C
         ${renderFederatedAvailability(entry)}
         ${entry.sourceId ? renderServerCard(currentServerInfo(), true) : ""}
         ${entry.sourceId || entry.federation ? renderPlaybackSettings(entry, subtitles, preference) : ""}
+        ${renderChapterStrip(entry, catalog?.chapters ?? [])}
         <div class="cinema-meta-list">
           <span>Type <strong>Video</strong></span>
           ${entry.episode ? `<span>Episode <strong>S${entry.episode.seasonNumber} E${entry.episode.episodeNumber}</strong></span><span>Air date <strong>${escapeHtml(entry.episode.airDate || "Not set")}</strong></span>` : ""}
@@ -672,7 +673,6 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: C
       </aside>
     </section>
     <section class="cinema-detail-lower">
-      ${renderChapterStrip(entry, catalog?.chapters ?? [])}
       ${renderNextUpQueue(entries, entry)}
     </section>
   </main>

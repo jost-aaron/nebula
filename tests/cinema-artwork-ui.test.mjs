@@ -43,3 +43,12 @@ test("Cinema navigates television as series, then seasons, then episodes", async
   assert.match(cinema, /cinema-hero-back/);
   assert.match(styles, /\.cinema-season-library \.cinema-grid[\s\S]*grid-auto-flow: row[\s\S]*repeat\(auto-fill/);
 });
+
+test("Cinema contains title actions and keeps chapter status in the metadata panel", async () => {
+  const cinema = await readFile(new URL("../src/cinema/renderCinemaView.ts", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../src/cinema/cinemaBrand.css", import.meta.url), "utf8");
+  assert.match(cinema, /renderPlaybackSettings[\s\S]*renderChapterStrip[\s\S]*cinema-meta-list/);
+  assert.doesNotMatch(cinema, /cinema-detail-lower">\s*\$\{renderChapterStrip/);
+  assert.match(styles, /max-width: 980px[\s\S]*cinema-title-panel \.cinema-actions[\s\S]*repeat\(2/);
+  assert.match(styles, /cinema-title-panel > \.cinema-catalog-note/);
+});
