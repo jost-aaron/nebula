@@ -343,6 +343,9 @@
 }
 
 .cinema-artwork-activity {
+  position: sticky;
+  top: 0;
+  z-index: 12;
   display: flex;
   align-items: center;
   gap: 11px;
@@ -352,6 +355,8 @@
   border-radius: 12px;
   color: var(--cinema-bone-muted);
   background: rgba(231, 169, 64, 0.055);
+  box-shadow: 0 10px 26px rgba(3, 5, 8, 0.72);
+  backdrop-filter: blur(16px);
 }
 
 .cinema-artwork-activity[hidden] {
@@ -399,6 +404,24 @@
   font-weight: 600;
 }
 
+.cinema-artwork-activity.processing {
+  border-color: rgba(231, 169, 64, 0.72);
+  background: linear-gradient(110deg, rgba(231, 169, 64, 0.2), rgba(16, 19, 24, 0.96), rgba(231, 169, 64, 0.13));
+  background-size: 220% 100%;
+  animation: cinema-artwork-activity-sweep 2.4s ease-in-out infinite;
+}
+
+@keyframes cinema-artwork-activity-sweep {
+  0%, 100% {
+    background-position: 100% 50%;
+    box-shadow: 0 10px 26px rgba(3, 5, 8, 0.72), 0 0 0 rgba(231, 169, 64, 0);
+  }
+  50% {
+    background-position: 0 50%;
+    box-shadow: 0 10px 26px rgba(3, 5, 8, 0.72), 0 0 22px rgba(231, 169, 64, 0.24);
+  }
+}
+
 @keyframes cinema-artwork-spin {
   to { transform: rotate(360deg); }
 }
@@ -410,7 +433,8 @@
 @media (prefers-reduced-motion: reduce) {
   .cinema-artwork-orbit::before,
   .cinema-artwork-orbit::after,
-  .cinema-artwork-orbit i {
+  .cinema-artwork-orbit i,
+  .cinema-artwork-activity.processing {
     animation: none;
   }
 }

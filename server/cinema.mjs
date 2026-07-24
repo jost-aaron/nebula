@@ -189,9 +189,7 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
       "artwork",
       sources.map((source) => artworkJobDedupeKey(source))
     ) ?? []).map((job) => [job.dedupeKey, job]));
-    const activeJob = activity.running ?? (
-      activity.next && Date.parse(activity.next.availableAt) <= Date.now() + 1_500 ? activity.next : null
-    );
+    const activeJob = activity.running ?? activity.next;
     const candidateActiveSource = activeJob?.payload?.sourceId ? catalog?.repository?.getSource?.(activeJob.payload.sourceId) : null;
     const activeSource = candidateActiveSource
       && (!libraryPermissions || libraryPermissions.canAccessPath(request.nebulaAuth, candidateActiveSource.path, "video"))

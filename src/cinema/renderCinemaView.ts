@@ -1143,7 +1143,13 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     const status = content.querySelector<HTMLElement>("[data-cinema-artwork-activity]");
     if (!status) return;
     status.hidden = activity.queued === 0 && !activity.processing;
-    if (status.hidden) return;
+    if (status.hidden) {
+      delete status.dataset.artworkSignature;
+      return;
+    }
+    const signature = JSON.stringify(activity);
+    if (status.dataset.artworkSignature === signature) return;
+    status.dataset.artworkSignature = signature;
     if (activity.processing) {
       status.classList.add("processing");
       status.innerHTML = `
