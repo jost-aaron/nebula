@@ -36,7 +36,7 @@ export const createApiHandler = (storage, accountStore, authGuard, options = {})
     ...(options.playback ? [createPlaybackRoutes(options.playback, options.playbackPlanner, options.playbackDelivery)] : []),
     ...(options.jobs ? [createJobsRoutes(options.jobs, options.audit)] : []),
     ...(options.mediaLocations && options.jobs ? [createMediaLocationsRoutes({ audit: options.audit, jobs: options.jobs, service: options.mediaLocations })] : []),
-    createCinemaRoutes(storage, accountStore, { ...options.cinema, catalog: options.catalog, federation: options.cluster?.federation, federationAuthorization: options.cluster?.federationAuthorization, guestService: options.guestService, libraryPermissions: options.libraryPermissions }),
+    createCinemaRoutes(storage, accountStore, { ...options.cinema, catalog: options.catalog, federation: options.cluster?.federation, federationAuthorization: options.cluster?.federationAuthorization, guestService: options.guestService, jobs: options.jobs, libraryPermissions: options.libraryPermissions }),
     createMusicRoutes(storage, accountStore, { catalog: options.catalog, federation: options.cluster?.federation, federationAuthorization: options.cluster?.federationAuthorization, guestService: options.guestService, libraryPermissions: options.libraryPermissions }),
     createFilesRoutes(storage)
   ];

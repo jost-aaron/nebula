@@ -1,0 +1,23 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+const read = (file) => readFile(new URL(file, import.meta.url), "utf8");
+
+test("Cinema keeps queued titles visible and distinguishes active artwork processing", async () => {
+  const [cinema, styles, types] = await Promise.all([
+    read("../src/cinema/renderCinemaView.ts"),
+    read("../src/cinema/cinemaBrand.css"),
+    read("../src/shared/cinemaTypes.ts")
+  ]);
+
+  assert.match(types, /artworkState: "failed" \| "missing" \| "processing" \| "queued" \| "ready"/);
+  assert.match(cinema, /entry\.artworkState === "processing"[\s\S]*Generating title card/);
+  assert.match(cinema, /entry\.artworkState === "queued"[\s\S]*Queued for artwork/);
+  assert.match(cinema, /data-cinema-artwork-state="\$\{entry\.artworkState\}"/);
+  assert.match(cinema, /window\.setTimeout\(\(\) => void refreshArtworkStates\(\), 3_000\)/);
+  assert.match(cinema, /if \(poster\.dataset\.cinemaPoster\) return/);
+  assert.match(styles, /\.cinema-artwork-orbit::before[\s\S]*animation: cinema-artwork-spin/);
+  assert.match(styles, /\.cinema-artwork-queued img[\s\S]*opacity:/);
+  assert.match(styles, /prefers-reduced-motion: reduce[\s\S]*animation: none/);
+});

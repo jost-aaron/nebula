@@ -1,15 +1,30 @@
-const artworkUrl = (artwork, type) => artwork.find((entry) => entry.type === type)?.remoteUrl ?? "";
+import { currentGeneratedArtwork, generatedArtworkUrl } from "../artwork/paths.mjs";
 
-export const projectCompatibilityEntry = ({ artwork = [], externalIds = [], item, source, watchlisted = false }) => {
+const remoteArtworkUrl = (artwork, type) => artwork.find((entry) => entry.type === type && entry.remoteUrl)?.remoteUrl ?? "";
+
+const artworkProjection = ({ artwork, job = null, item, source }) => {
+  const remotePoster = item.metadata?.posterUrl || remoteArtworkUrl(artwork, "poster");
+  if (remotePoster) return { artworkState: "ready", posterUrl: remotePoster };
+  const generated = currentGeneratedArtwork(artwork, source);
+  if (generated) return { artworkState: "ready", posterUrl: generatedArtworkUrl(source) };
+  if (job?.state === "running") return { artworkState: "processing", posterUrl: "" };
+  if (job?.state === "queued") return { artworkState: "queued", posterUrl: "" };
+  if (job?.state === "failed" || job?.state === "cancelled") return { artworkState: "failed", posterUrl: "" };
+  return { artworkState: "missing", posterUrl: "" };
+};
+
+export const projectCompatibilityEntry = ({ artwork = [], artworkJob = null, externalIds = [], item, source, watchlisted = false }) => {
   const metadata = item.metadata ?? {};
   const tmdb = externalIds.find((entry) => entry.provider === "tmdb");
   const folder = source.path.includes("/") ? source.path.slice(0, source.path.lastIndexOf("/")) : "";
   const name = source.path.slice(source.path.lastIndexOf("/") + 1);
+  const poster = artworkProjection({ artwork, item, job: artworkJob, source });
   return {
     album: metadata.album || metadata.collection || "",
     artist: metadata.artist || metadata.studio || "",
+    artworkState: poster.artworkState,
     availability: source.availability,
-    backdropUrl: metadata.backdropUrl || artworkUrl(artwork, "backdrop"),
+    backdropUrl: metadata.backdropUrl || remoteArtworkUrl(artwork, "backdrop"),
     category: item.mediaKind === "audio" ? "music" : item.itemType === "episode" ? "tv" : "movies",
     cast: metadata.cast || "",
     collection: metadata.collection || "",
@@ -21,7 +36,7 @@ export const projectCompatibilityEntry = ({ artwork = [], externalIds = [], item
     modifiedAt: new Date(source.modifiedMs).toISOString(),
     name,
     path: source.path,
-    posterUrl: metadata.posterUrl || artworkUrl(artwork, "poster"),
+    posterUrl: poster.posterUrl,
     rating: metadata.rating || "",
     releaseYear: metadata.releaseYear || "",
     size: source.size,
@@ -52,6 +67,7 @@ export const projectRepositoryItemsPage = (repository, query = {}) => {
     ...page,
     entries: page.items.map((item) => projectCompatibilityEntry({
       artwork: repository.listArtwork(item.id),
+      artworkJob: query.artworkJobForSource?.(item.source) ?? null,
       externalIds: repository.listExternalIds(item.id),
       item,
       source: item.source

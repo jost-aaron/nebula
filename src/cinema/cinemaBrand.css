@@ -272,6 +272,92 @@
     linear-gradient(145deg, #e8dfcf, #bc7d28);
 }
 
+.cinema-artwork-queued,
+.cinema-artwork-processing {
+  position: relative;
+  align-content: center;
+  gap: 14px;
+  padding: 24px;
+  color: var(--cinema-bone);
+  background:
+    radial-gradient(circle at 50% 38%, rgba(231, 169, 64, 0.16), transparent 42%),
+    linear-gradient(160deg, #14100b, #07090c 68%);
+}
+
+.cinema-artwork-queued img {
+  width: 58px;
+  opacity: 0.42;
+  filter: grayscale(0.35) sepia(0.2);
+}
+
+.cinema-artwork-queued small,
+.cinema-artwork-processing small {
+  color: rgba(242, 235, 221, 0.62);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.cinema-artwork-orbit {
+  position: relative;
+  width: 82px;
+  height: 82px;
+  display: grid;
+  place-items: center;
+}
+
+.cinema-artwork-orbit::before,
+.cinema-artwork-orbit::after,
+.cinema-artwork-orbit i {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+}
+
+.cinema-artwork-orbit::before {
+  inset: 0;
+  border: 1px solid rgba(231, 169, 64, 0.16);
+  border-top-color: rgba(255, 225, 166, 0.92);
+  animation: cinema-artwork-spin 1.8s linear infinite;
+}
+
+.cinema-artwork-orbit::after {
+  inset: 9px;
+  border: 1px dashed rgba(242, 235, 221, 0.3);
+  animation: cinema-artwork-spin 3.2s linear infinite reverse;
+}
+
+.cinema-artwork-orbit i {
+  inset: 18px;
+  background: rgba(231, 169, 64, 0.08);
+  box-shadow: 0 0 28px rgba(231, 169, 64, 0.18);
+  animation: cinema-artwork-pulse 1.4s ease-in-out infinite;
+}
+
+.cinema-artwork-orbit img {
+  position: relative;
+  z-index: 1;
+  width: 40px;
+}
+
+@keyframes cinema-artwork-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes cinema-artwork-pulse {
+  50% { transform: scale(1.12); opacity: 0.62; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cinema-artwork-orbit::before,
+  .cinema-artwork-orbit::after,
+  .cinema-artwork-orbit i {
+    animation: none;
+  }
+}
+
 .cinema-library.browsing .cinema-empty,
 .cinema-watchlist-view.browsing .cinema-empty,
 .cinema-chapter-strip,

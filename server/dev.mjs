@@ -34,6 +34,7 @@ import { createSubtitleService, subtitleMigration } from "./subtitles/index.mjs"
 import { createRenditionService, createRenditionStore, renditionsMigration } from "./renditions/index.mjs";
 import { createRenditionCleanupScheduler, createRenditionPolicyRepository, createRenditionPolicyService, renditionPolicyMigrations } from "./renditionPolicy/index.mjs";
 import { createTailscaleEnrollmentService } from "./tailscaleEnrollment.mjs";
+import { createArtworkScheduler, createArtworkService } from "./artwork/index.mjs";
 import {
   clusterKeyRotationMigration, clusterMigration, clusterOperationsMigration, clusterFederationMigration, createClusterIngressRoutes, createClusterManifestClient,
   createClusterManifestService, createClusterPairingClient, createClusterRepository, createClusterSyncService,
@@ -298,6 +299,13 @@ const probeService = createProbeService({
 });
 const jobsRepository = createJobsRepository({ db: database });
 const jobsService = createJobsService({ repository: jobsRepository });
+const artworkService = createArtworkService({
+  contentRoot: storage.contentRoot,
+  dataRoot: storage.dataRoot,
+  repository: catalogRepository,
+  resolveSource: (sourceId) => catalogRepository.getSource(sourceId)
+});
+const artworkScheduler = createArtworkScheduler({ repository: catalogRepository });
 const renditionPolicy = createRenditionPolicyService({ audit: auditService, jobs: jobsService,
   repository: renditionPolicyRepository, store: renditionStore });
 const renditionService = createRenditionService({
@@ -330,13 +338,16 @@ const jobsWorker = createJobsWorker({
           }
         }
       }
-      return scan;
+      const artwork = artworkScheduler.enqueueMissing(context.enqueue, { availableAt: Date.now() + 30_000 });
+      return { ...scan, artworkQueued: artwork.queued };
     },
     probeSource: async ({ sourceId }) => { const result = await probeService.probeSource(sourceId); await syncLocalProjection(); return result; },
     fingerprintSource: async ({ sourceId }, context) => { const result = await fingerprintService.fingerprintSource(sourceId, context); await syncLocalProjection(); return result; },
     buildRendition: async (payload, context) => { const result = await renditionService.build(payload, context); await syncLocalProjection(); return result; },
     refreshMetadata: async () => ({ skipped: "metadata orchestration pending" }),
-    cacheArtwork: async () => ({ skipped: "artwork cache pending" }),
+    cacheArtwork: async (payload, context) => payload?.sourceId
+      ? artworkService.generate(payload, context)
+      : artworkScheduler.enqueueMissing(context.enqueue, { availableAt: Date.now() + 1_000 }),
     cleanup: (payload, context) => payload?.scope === "renditions"
       ? renditionPolicy.cleanup(payload, context)
       : ({ candidates: catalogRepository.listCleanupCandidates().length })
@@ -420,6 +431,14 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   tailscaleEnrollment
 });
 jobsWorker.start();
+jobsService.enqueue({
+  availableAt: Date.now() + 15_000,
+  dedupeKey: "artwork-backfill:v1",
+  maxAttempts: 1,
+  payload: { reason: "startup", scope: "missing" },
+  reuseTerminal: true,
+  type: "artwork"
+});
 const enqueueScheduledScan = (reason) => jobsService.enqueue({
   type: "scan",
   payload: { reason, rootId: catalogRoot.id },

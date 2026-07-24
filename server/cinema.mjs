@@ -8,6 +8,7 @@ import { parseByteRange } from "./ranges.mjs";
 import { createCinemaTmdbRoutes } from "./cinemaTmdb.mjs";
 import { canBrowseFederatedLibrary, projectUnifiedLibrary } from "./cluster/index.mjs";
 import { projectRepositoryItemsPage } from "./catalog/projections.mjs";
+import { artworkJobDedupeKey, currentGeneratedArtwork } from "./artwork/index.mjs";
 
 const candidateWords = (value = "") =>
   value
@@ -80,6 +81,7 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
   const libraryPermissions = options.libraryPermissions ?? null;
   const guestService = options.guestService ?? null;
   const catalog = options.catalog ?? null;
+  const jobs = options.jobs ?? null;
   const handleTmdb = createCinemaTmdbRoutes(storage, accountStore, options);
   const listCinemaLibrary = async (request, response) => {
     const metadata = await readMetadata(storage.cinemaMetadataPath);
@@ -89,7 +91,15 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
     const query = url.searchParams.get("query") ?? "";
     const category = url.searchParams.get("category");
     const page = catalog?.repository?.listItemsPage
-      ? projectRepositoryItemsPage(catalog.repository, { availability: "available", itemType: category === "tv" ? "episode" : category === "movies" ? "movie" : undefined, limit, mediaKind: "video", offset, query })
+      ? projectRepositoryItemsPage(catalog.repository, {
+          availability: "available",
+          artworkJobForSource: (source) => jobs?.findByDedupe?.("artwork", artworkJobDedupeKey(source)) ?? null,
+          itemType: category === "tv" ? "episode" : category === "movies" ? "movie" : undefined,
+          limit,
+          mediaKind: "video",
+          offset,
+          query
+        })
       : null;
     const scanned = page?.entries ?? await scanMediaLibrary(storage, metadata, { mediaKind: "video" });
     const totals = catalog?.repository?.listItemsPage
@@ -130,6 +140,42 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
     }
     entries.sort((a, b) => (a.sortTitle || a.title).localeCompare(b.sortTitle || b.title));
     json(response, 200, { entries, page: page ? { hasMore: page.offset + page.items.length < page.total, limit: page.limit, nextOffset: page.offset + page.items.length, offset: page.offset, total: page.total } : { hasMore: false, limit: entries.length, nextOffset: entries.length, offset: 0, total: entries.length }, totals });
+  };
+
+  const streamCinemaArtwork = async (request, response, url) => {
+    const sourceId = url.searchParams.get("sourceId") ?? "";
+    const revision = Number(url.searchParams.get("revision"));
+    const source = catalog?.repository?.getSource?.(sourceId);
+    if (!source || source.mediaKind !== "video" || source.availability !== "available"
+      || source.contentRevision !== revision
+      || (libraryPermissions && !libraryPermissions.canAccessPath(request.nebulaAuth, source.path, "video"))) {
+      json(response, 404, { error: "Artwork not found." });
+      return;
+    }
+    const artwork = currentGeneratedArtwork(catalog.repository.listArtwork(source.itemId), source);
+    if (!artwork?.localPath) {
+      json(response, 404, { error: "Artwork not found." });
+      return;
+    }
+    const artworkRoot = path.resolve(storage.dataRoot, "artwork");
+    const absolutePath = path.resolve(storage.dataRoot, artwork.localPath);
+    if (absolutePath !== artworkRoot && !absolutePath.startsWith(`${artworkRoot}${path.sep}`)) {
+      json(response, 404, { error: "Artwork not found." });
+      return;
+    }
+    const details = await stat(absolutePath).catch(() => null);
+    if (!details?.isFile()) {
+      json(response, 404, { error: "Artwork not found." });
+      return;
+    }
+    response.writeHead(200, {
+      "cache-control": "private, max-age=31536000, immutable",
+      "content-length": details.size,
+      "content-type": "image/jpeg",
+      etag: `"artwork-${source.id}-${source.contentRevision}"`
+    });
+    if (request.method === "HEAD") response.end();
+    else createReadStream(absolutePath).pipe(response);
   };
 
   const updateCinemaMetadata = async (request, response) => {
@@ -307,6 +353,11 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
 
     if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/cinema/media") {
       await streamCinemaMedia(request, response, url);
+      return true;
+    }
+
+    if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/cinema/artwork") {
+      await streamCinemaArtwork(request, response, url);
       return true;
     }
 

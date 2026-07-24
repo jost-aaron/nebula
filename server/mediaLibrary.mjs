@@ -93,6 +93,7 @@ export const scanMediaLibrary = async (storage, metadata, { mediaKind }, folder 
     entries.push({
       album: mediaMetadata.album || mediaMetadata.collection,
       artist: mediaMetadata.artist || mediaMetadata.studio,
+      artworkState: mediaMetadata.posterUrl ? "ready" : "missing",
       backdropUrl: mediaMetadata.backdropUrl,
       category: isVideo ? videoCategory(contentPath) : "music",
       cast: mediaMetadata.cast,

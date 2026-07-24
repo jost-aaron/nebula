@@ -19,10 +19,11 @@ export const createJobsService = ({ repository, allowedTypes = JOB_TYPES } = {})
     });
   };
   const get = (id) => repository.get(id);
+  const findByDedupe = (type, dedupeKey) => repository.findByDedupe(type, dedupeKey);
   const list = (query = {}) => repository.list({ ...query, limit: Math.min(200, positiveInteger(query.limit, 50)) });
   const cancel = (id) => repository.requestCancellation(id);
   const cancelAll = () => repository.requestCancellationAll();
-  return { cancel, cancelAll, enqueue, get, list, types: [...types] };
+  return { cancel, cancelAll, enqueue, findByDedupe, get, list, types: [...types] };
 };
 
 export { JOB_TYPES };

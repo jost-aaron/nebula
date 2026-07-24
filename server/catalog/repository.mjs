@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { GENERATED_ARTWORK_PROVIDER } from "../artwork/paths.mjs";
 
 const parseJson = (value, fallback) => {
   try {
@@ -275,10 +276,28 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
     return getItem(itemId);
   });
 
+  const putGeneratedArtwork = (sourceId, { expectedContentRevision, height, localPath, width }) => transaction(database, () => {
+    const source = database.prepare("SELECT * FROM media_sources WHERE id = ?").get(sourceId);
+    if (!source || source.availability !== "available") {
+      throw Object.assign(new Error(`Unknown or unavailable catalog source: ${sourceId}`), { code: "ARTWORK_SOURCE_MISSING" });
+    }
+    if (source.content_revision !== expectedContentRevision) {
+      throw Object.assign(new Error("Media changed before generated artwork could be published."), { code: "ARTWORK_SOURCE_CHANGED" });
+    }
+    const timestamp = now();
+    database.prepare("DELETE FROM media_artwork WHERE media_item_id = ? AND provider = ?")
+      .run(source.item_id, GENERATED_ARTWORK_PROVIDER);
+    database.prepare(`INSERT INTO media_artwork
+      (id, media_item_id, artwork_type, provider, remote_url, local_path, width, height, created_at, updated_at)
+      VALUES (?, ?, 'poster', ?, '', ?, ?, ?, ?, ?)`)
+      .run(uuid(), source.item_id, GENERATED_ARTWORK_PROVIDER, localPath, width ?? null, height ?? null, timestamp, timestamp);
+    return listArtwork(source.item_id);
+  });
+
   const putProbeResult = () => { throw new Error("Probe persistence is reserved for the Wave 2 catalog migration."); };
   const listExternalIds = (itemId) => database.prepare("SELECT provider, provider_item_id AS id, media_type AS mediaType FROM media_external_ids WHERE media_item_id = ? ORDER BY provider").all(itemId).map((row) => ({ ...row }));
   const listArtwork = (itemId) => database.prepare("SELECT id, artwork_type AS type, provider, remote_url AS remoteUrl, local_path AS localPath, width, height FROM media_artwork WHERE media_item_id = ? ORDER BY artwork_type, id").all(itemId).map((row) => ({ ...row }));
   const listCleanupCandidates = () => database.prepare("SELECT * FROM media_sources WHERE availability = 'missing' AND cleanup_eligible_at IS NOT NULL ORDER BY cleanup_eligible_at").all().map(rowToSource);
 
-  return { ensureLibrary, ensureRoot, getItem, getLibrary, getRootByKey, getSource, listArtwork, listCleanupCandidates, listExternalIds, listItems, listItemsPage, putExternalMetadata, putProbeResult, reconcileScan, recordScanFailure, resolveContentPath };
+  return { ensureLibrary, ensureRoot, getItem, getLibrary, getRootByKey, getSource, listArtwork, listCleanupCandidates, listExternalIds, listItems, listItemsPage, putExternalMetadata, putGeneratedArtwork, putProbeResult, reconcileScan, recordScanFailure, resolveContentPath };
 };

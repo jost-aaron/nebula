@@ -171,11 +171,29 @@ const currentServerInfo = (): CinemaServerInfo => ({
   online: getApiConnectionMode() !== "Needs server URL"
 });
 
-const renderPosterFallback = (entry: CinemaEntry) => `
-  <div class="cinema-poster-fallback">
-    <span>${escapeHtml(entry.title.slice(0, 1).toUpperCase())}</span>
-  </div>
-`;
+const renderPosterFallback = (entry: CinemaEntry) => {
+  if (entry.artworkState === "processing") {
+    return `
+      <div class="cinema-poster-fallback cinema-artwork-processing" aria-label="Generating title card">
+        <span class="cinema-artwork-orbit"><i></i><img src="${cinemaBrandMarkUrl}" alt="" /></span>
+        <small>Generating title card</small>
+      </div>
+    `;
+  }
+  if (entry.artworkState === "queued") {
+    return `
+      <div class="cinema-poster-fallback cinema-artwork-queued" aria-label="Title card queued">
+        <img src="${cinemaBrandMarkUrl}" alt="" />
+        <small>Queued for artwork</small>
+      </div>
+    `;
+  }
+  return `
+    <div class="cinema-poster-fallback">
+      <span>${escapeHtml(entry.title.slice(0, 1).toUpperCase())}</span>
+    </div>
+  `;
+};
 
 const posterStyle = (entry: CinemaEntry) =>
   entry.posterUrl ? ` style="background-image: url('${escapeHtml(entry.posterUrl)}')"` : "";
@@ -335,7 +353,7 @@ const renderCinemaCards = (entries: CinemaEntry[], category: CinemaCategory, pla
         const sortLetter = /^[A-Z]$/.test(firstCharacter) ? firstCharacter : "#";
         return `
         <button class="cinema-card" type="button" data-cinema-path="${escapeHtml(entry.path)}" data-cinema-sort-letter="${sortLetter}">
-          <span class="cinema-poster" data-cinema-poster="${escapeHtml(entry.path)}"${posterStyle(entry)}>
+          <span class="cinema-poster" data-cinema-poster="${escapeHtml(entry.path)}" data-cinema-artwork-state="${entry.artworkState}"${posterStyle(entry)}>
             ${entry.posterUrl ? "" : renderPosterFallback(entry)}
             <span class="cinema-poster-scrim"></span>
             <span class="cinema-card-badge">${escapeHtml(entry.federation ? federationLabel(entry.federation) : entry.category === "tv" ? "Series" : "Movie")}</span>
@@ -945,6 +963,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   let pageLoading = false;
   let posterObserver: IntersectionObserver | null = null;
   let pageObserver: IntersectionObserver | null = null;
+  let artworkRefreshTimer = 0;
   let alphabetScrollHost: HTMLElement | null = null;
   let refreshAlphabetRail: (() => void) | null = null;
   let searchTimer = 0;
@@ -1054,6 +1073,9 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     if (entry.mediaKind !== "video") {
       return;
     }
+    // Library title cards are generated once by the background artwork worker.
+    // Client frame capture remains only for transient detail/backdrop previews.
+    if (poster.dataset.cinemaPoster) return;
 
     const remoteUrl = poster.dataset.cinemaBackdrop ? entry.backdropUrl || entry.posterUrl : entry.posterUrl;
     if (remoteUrl && !Number.isFinite(explicitTime)) {
@@ -1104,6 +1126,60 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     app.querySelectorAll<HTMLElement>("[data-cinema-poster]:not([data-cinema-hydrated]), [data-cinema-backdrop]:not([data-cinema-hydrated])").forEach((poster) => {
       posterObserver?.observe(poster);
     });
+  };
+
+  const scheduleArtworkRefresh = () => {
+    window.clearTimeout(artworkRefreshTimer);
+    if (!app.isConnected || view !== "library"
+      || !entries.some((entry) => entry.artworkState === "queued" || entry.artworkState === "processing")) return;
+    artworkRefreshTimer = window.setTimeout(() => void refreshArtworkStates(), 3_000);
+  };
+
+  const applyArtworkCardState = (entry: CinemaEntry) => {
+    app.querySelectorAll<HTMLElement>("[data-cinema-poster]").forEach((poster) => {
+      if (poster.dataset.cinemaPoster !== entry.path) return;
+      poster.dataset.cinemaArtworkState = entry.artworkState;
+      const fallback = poster.querySelector<HTMLElement>(".cinema-poster-fallback");
+      if (entry.posterUrl) {
+        poster.style.backgroundImage = `url("${entry.posterUrl.replaceAll('"', '\\"')}")`;
+        poster.classList.add("ready");
+        fallback?.remove();
+        return;
+      }
+      poster.style.backgroundImage = "";
+      poster.classList.remove("ready");
+      if (fallback) fallback.outerHTML = renderPosterFallback(entry);
+      else poster.insertAdjacentHTML("afterbegin", renderPosterFallback(entry));
+    });
+  };
+
+  const refreshArtworkStates = async () => {
+    if (!app.isConnected || view !== "library") return;
+    try {
+      const refreshed: CinemaEntry[] = [];
+      const loaded = Math.max(60, entries.filter((entry) => entry.category === activeCategory).length);
+      for (let offset = 0; offset < loaded; offset += 200) {
+        const page = await listCinemaLibrary({
+          category: activeCategory,
+          limit: Math.min(200, loaded - offset),
+          offset,
+          query
+        });
+        refreshed.push(...page.entries);
+      }
+      const byPath = new Map(refreshed.map((entry) => [entry.path, entry]));
+      entries = entries.map((entry) => {
+        const update = byPath.get(entry.path);
+        if (!update || (update.artworkState === entry.artworkState && update.posterUrl === entry.posterUrl)) return entry;
+        const next = { ...entry, artworkState: update.artworkState, posterUrl: update.posterUrl };
+        applyArtworkCardState(next);
+        return next;
+      });
+    } catch {
+      // Keep the current placeholders and retry; library browsing remains usable.
+    } finally {
+      scheduleArtworkRefresh();
+    }
   };
 
   const bindLibraryPageObserver = () => {
@@ -1213,6 +1289,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
 
     renderFooter();
     hydratePosters();
+    scheduleArtworkRefresh();
     bindLibraryPageObserver();
     bindAlphabetRail();
     if (previousLibraryScrollTop !== null) {
@@ -2081,6 +2158,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         const loadedCount = content.querySelector<HTMLElement>("[data-cinema-loaded-count]");
         if (loadedCount) loadedCount.textContent = `${count} ${count === 1 ? "title" : "titles"}`;
         hydratePosters();
+        scheduleArtworkRefresh();
         bindLibraryPageObserver();
         bindAlphabetRail();
         return;

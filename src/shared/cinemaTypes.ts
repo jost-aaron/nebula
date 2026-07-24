@@ -7,6 +7,7 @@ export type CinemaCategory = "movies" | "tv";
 export type CinemaMediaKind = "video";
 
 export interface CinemaEntry extends CatalogCompatibilityIdentity {
+  artworkState: "failed" | "missing" | "processing" | "queued" | "ready";
   backdropUrl: string;
   cast: string;
   category: CinemaCategory;

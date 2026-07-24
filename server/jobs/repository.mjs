@@ -30,6 +30,10 @@ export const createJobsRepository = ({ db, migrate = false, now = () => Date.now
   if (migrate) migrateJobsSchema(db);
   const timestamp = () => iso(now());
   const get = (id) => fromRow(db.prepare("SELECT * FROM background_jobs WHERE id = ?").get(id));
+  const findByDedupe = (type, dedupeKey) => fromRow(db.prepare(`SELECT * FROM background_jobs
+    WHERE type = ? AND dedupe_key = ?
+    ORDER BY CASE state WHEN 'running' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END, updated_at DESC, rowid DESC LIMIT 1`)
+    .get(type, dedupeKey));
 
   const enqueue = ({ type, payload = {}, dedupeKey = null, maxAttempts = 3, availableAt = timestamp(), reuseTerminal = false }) => {
     const existing = dedupeKey === null ? null : db.prepare(`SELECT * FROM background_jobs
@@ -172,6 +176,6 @@ export const createJobsRepository = ({ db, migrate = false, now = () => Date.now
     WHERE (? IS NULL OR state = ?) AND (? IS NULL OR type = ?)
     ORDER BY created_at DESC, id DESC LIMIT ?`).all(state, state, type, type, limit).map(fromRow);
 
-  return { cancelRunning, claimNext, enqueue, failAttempt, get, isCancellationRequested, list,
+  return { cancelRunning, claimNext, enqueue, failAttempt, findByDedupe, get, isCancellationRequested, list,
     recoverInterrupted, requestCancellation, requestCancellationAll, succeed, updateProgress };
 };
