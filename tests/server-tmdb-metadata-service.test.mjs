@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createTmdbMetadataService, selectCandidate } from "../server/metadata/tmdbService.mjs";
+import { createTmdbMetadataService, queryVariantsForSource, rankCandidates, selectCandidate } from "../server/metadata/tmdbService.mjs";
 
 const movieFields = {
   backdropUrl: "https://image.example/backdrop.jpg",
@@ -11,7 +11,7 @@ const movieFields = {
   tmdbMediaType: "movie"
 };
 
-test("candidate selection requires an exact normalized title and prefers the requested year", () => {
+test("candidate selection accepts a dominant partial-title result and rejects ambiguity", () => {
   const candidates = [
     { id: 1, title: "Example", year: "1999" },
     { id: 2, title: "Example", year: "2001" },
@@ -19,6 +19,21 @@ test("candidate selection requires an exact normalized title and prefers the req
   ];
   assert.equal(selectCandidate(candidates, "Example", "2001").id, 2);
   assert.equal(selectCandidate(candidates, "Unrelated", "2001"), null);
+  const ranked = rankCandidates([[
+    { id: 1573, mediaType: "movie", rating: "7.0", title: "Die Hard 2", year: "1990" },
+    { id: 99, mediaType: "movie", rating: "6.0", title: "Die Hard", year: "1988" }
+  ]], ["Die Hard 2 Die Harder", "Die Hard 2"], "1990");
+  assert.equal(selectCandidate(ranked, ["Die Hard 2 Die Harder", "Die Hard 2"], "1990").id, 1573);
+});
+
+test("query variants recover a bounded clean title from a noisy filename", () => {
+  const normalized = queryVariantsForSource(
+    "Movies/Die Hard Collection/02 Die Hard 2 Die Harder - Bruce Willis Action 1990 Eng Subs 1080p [H264-mp4].mp4",
+    { title: "02 Die Hard 2 Die Harder" }
+  );
+  assert.equal(normalized.year, "1990");
+  assert.equal(normalized.queries.includes("Die Hard 2"), true);
+  assert.equal(normalized.queries.length <= 5, true);
 });
 
 test("TMDB metadata service imports a conservative movie match into catalog and legacy metadata", async () => {
@@ -77,8 +92,11 @@ test("TMDB metadata service preserves unmatched titles and schedules one bounded
   const queued = [];
   const schedule = service.enqueueAll((job) => queued.push(job), { availableAt: 1_000, batchId: "batch", intervalMs: 2_000 });
 
-  assert.deepEqual(result, { matched: false, query: "Unknown File", reason: "no_confident_match", sourceId: source.id });
-  assert.equal(writes, 0);
+  assert.equal(result.matched, false);
+  assert.equal(result.query, "Unknown File");
+  assert.equal(result.reason, "no_confident_match");
+  assert.equal(result.candidateCount, 1);
+  assert.equal(writes, 1);
   assert.deepEqual(schedule, { intervalMs: 2_000, queued: 1 });
   assert.equal(queued[0].availableAt, 1_000);
   assert.equal(queued[0].dedupeKey, "batch:source-2:2");

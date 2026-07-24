@@ -49,6 +49,8 @@ export const projectCompatibilityEntry = ({ artwork = [], artworkJob = null, ext
     title: item.title,
     tmdbId: tmdb?.id ?? null,
     tmdbImportedAt: metadata.tmdbImportedAt || "",
+    tmdbMatchCandidateCount: Array.isArray(metadata.tmdbMatchCandidates) ? metadata.tmdbMatchCandidates.length : 0,
+    tmdbMatchStatus: metadata.tmdbMatchStatus || "",
     tmdbMediaType: tmdb?.mediaType ?? "",
     watchlisted: Boolean(watchlisted)
   };

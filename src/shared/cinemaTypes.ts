@@ -33,6 +33,8 @@ export interface CinemaEntry extends CatalogCompatibilityIdentity {
   title: string;
   tmdbId: number | null;
   tmdbImportedAt: string;
+  tmdbMatchCandidateCount?: number;
+  tmdbMatchStatus?: "identified" | "needs-review" | "not-found" | "";
   tmdbMediaType: "movie" | "tv" | "";
   watchlisted: boolean;
 }

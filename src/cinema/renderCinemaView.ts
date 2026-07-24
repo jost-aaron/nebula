@@ -575,7 +575,7 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: C
           <button type="button" data-cinema-action="more">${renderCinemaIcon("MoreHorizontal")} More</button>
           ${canOptimize && entry.id && entry.sourceId ? `<button type="button" data-cinema-action="optimize">${renderCinemaIcon("Gauge")} Optimize</button>` : ""}
         </div>
-        ${entry.sourceId ? `<button class="cinema-edit-command" type="button" data-cinema-action="edit">${renderCinemaIcon("Pencil")} Edit Details</button><button class="cinema-edit-command" type="button" data-cinema-action="tmdb">${renderCinemaIcon("Database")} Match with TMDB</button>` : ""}
+        ${entry.sourceId ? `<button class="cinema-edit-command" type="button" data-cinema-action="edit">${renderCinemaIcon("Pencil")} Edit Details</button><button class="cinema-edit-command" type="button" data-cinema-action="tmdb">${renderCinemaIcon("Database")} ${entry.tmdbId ? "Incorrect match?" : entry.tmdbMatchCandidateCount ? `Review ${entry.tmdbMatchCandidateCount} possible matches` : "Identify with TMDB"}</button>` : ""}
         ${entry.sourceId && entry.tmdbId ? `<button class="cinema-edit-command" type="button" data-cinema-action="tmdb-refresh">${renderCinemaIcon("RefreshCw")} Refresh TMDB Metadata</button>` : ""}
         ${renderFederatedAvailability(entry)}
         ${entry.sourceId ? renderServerCard(currentServerInfo(), true) : ""}
@@ -795,7 +795,7 @@ const renderMoreSheet = (entry: CinemaEntry) =>
         <button type="button" data-cinema-action="view-chapters">${renderCinemaIcon("ListVideo")} View Chapters</button>
         <button type="button" data-cinema-action="view-queue">${renderCinemaIcon("ListOrdered")} View Queue</button>
         <button type="button" data-cinema-action="identify-nav">${renderCinemaIcon("ScanSearch")} Identify Title</button>
-        <button type="button" data-cinema-action="tmdb">${renderCinemaIcon("Database")} Match with TMDB</button>
+        <button type="button" data-cinema-action="tmdb">${renderCinemaIcon("Database")} ${entry.tmdbId ? "Incorrectly identified" : entry.tmdbMatchCandidateCount ? "Review possible matches" : "Identify with TMDB"}</button>
       </div>
       <div class="cinema-expanded-meta">
         <span>File <strong>${escapeHtml(entry.name)}</strong></span>

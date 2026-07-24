@@ -94,7 +94,22 @@ test("Cinema TMDB routes require explicit apply before writing matched metadata"
     details: async (mediaType, id) => ({ title: "Matched Example", sortTitle: "Matched Example", releaseYear: "2024", rating: "7.0", genres: ["Drama"], studio: "Studio", collection: "", posterUrl: "", backdropUrl: "", tagline: "", cast: "Actor", summary: "Imported", tmdbId: id, tmdbMediaType: mediaType, tmdbImportedAt: "2026-01-01T00:00:00.000Z" }),
     episodeDetails: async (id, seasonNumber, episodeNumber) => ({ title: "Episode Three", sortTitle: "Example Show S02E03", releaseYear: "2025", rating: "8.0", genres: ["Drama"], studio: "Studio", collection: "Example Show", posterUrl: "", backdropUrl: "", tagline: "", cast: "Guest", summary: "Episode import", episode: { airDate: "2025-02-03", episodeNumber, seasonNumber, seriesTitle: "Example Show" }, tmdbId: id, tmdbMediaType: "tv", tmdbImportedAt: "2026-01-01T00:00:00.000Z" })
   };
-  const handler = createApiHandler(storage, undefined, undefined, { cinema: { tmdbClient } });
+  const catalogItems = new Map([
+    ["Example.2024.mp4", { id: "item-movie", metadata: {} }],
+    ["Example.Show.S02E03.mp4", { id: "item-episode", metadata: {} }]
+  ]);
+  const catalogRepository = {
+    putExternalMetadata: (itemId, update) => {
+      const item = [...catalogItems.values()].find((candidate) => candidate.id === itemId);
+      item.metadata = { ...item.metadata, ...update.fields };
+      item.externalIds = update.externalIds ?? item.externalIds ?? [];
+    },
+    resolveContentPath: (contentPath) => {
+      const item = catalogItems.get(contentPath);
+      return item ? { item, path: contentPath } : null;
+    }
+  };
+  const handler = createApiHandler(storage, undefined, undefined, { catalog: { repository: catalogRepository }, cinema: { tmdbClient } });
   const server = createServer(async (request, response) => { if (!(await handler(request, response))) response.writeHead(404).end(); });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(async () => { await new Promise((resolve) => server.close(resolve)); await rm(root, { force: true, recursive: true }); });
@@ -104,6 +119,10 @@ test("Cinema TMDB routes require explicit apply before writing matched metadata"
   const search = await post("/api/cinema/tmdb/search", { category: "movies", path: "Example.2024.mp4", query: "Example.2024.mp4" });
   assert.equal(search.status, 200);
   assert.equal((await search.json()).candidates.length, 1);
+  assert.equal(catalogItems.get("Example.2024.mp4").metadata.tmdbMatchCandidates.length, 1);
+  const savedCandidates = await fetch(`${base}/api/cinema/tmdb/candidates?path=${encodeURIComponent("Example.2024.mp4")}`);
+  assert.equal(savedCandidates.status, 200);
+  assert.equal((await savedCandidates.json()).candidates[0].id, 42);
   await assert.rejects(() => readFile(storage.cinemaMetadataPath, "utf8"), { code: "ENOENT" });
 
   const apply = await post("/api/cinema/tmdb/apply", { mediaType: "movie", path: "Example.2024.mp4", tmdbId: 42 });
@@ -111,6 +130,8 @@ test("Cinema TMDB routes require explicit apply before writing matched metadata"
   const saved = JSON.parse(await readFile(storage.cinemaMetadataPath, "utf8"));
   assert.equal(saved["Example.2024.mp4"].title, "Matched Example");
   assert.equal(saved["Example.2024.mp4"].tmdbId, 42);
+  assert.equal(catalogItems.get("Example.2024.mp4").externalIds[0].id, 42);
+  assert.equal(catalogItems.get("Example.2024.mp4").metadata.tmdbMatchStatus, "identified");
 
   const episodeSearch = await post("/api/cinema/tmdb/search", { category: "tv", path: "Example.Show.S02E03.mp4", query: "Example.Show.S02E03.mp4" });
   const episodeCandidate = (await episodeSearch.json()).candidates[0];

@@ -1,6 +1,6 @@
 import type { CinemaEntry } from "../shared/cinemaTypes";
 import type { CinemaTmdbCandidate, CinemaTmdbStatusResponse } from "../shared/cinemaTmdbTypes";
-import { applyCinemaTmdbMatch, getCinemaTmdbStatus, refreshCinemaTmdbMetadata, searchCinemaTmdb } from "../api/cinemaApi";
+import { applyCinemaTmdbMatch, getCinemaTmdbCandidates, getCinemaTmdbStatus, refreshCinemaTmdbMetadata, searchCinemaTmdb } from "../api/cinemaApi";
 
 const escapeHtml = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 
@@ -16,8 +16,8 @@ export const renderTmdbPanel = (entry: CinemaEntry, status: CinemaTmdbStatusResp
     <div class="cinema-tmdb-results">${candidates.map((candidate) => `
       <article class="cinema-tmdb-candidate">
         <span class="cinema-tmdb-art">${candidate.posterUrl ? `<img src="${escapeHtml(candidate.posterUrl)}" alt="" loading="lazy" onerror="this.remove()" />` : `<span>${escapeHtml(candidate.title.slice(0, 1).toUpperCase())}</span>`}</span>
-        <div><small>${candidate.mediaType === "movie" ? "Movie" : "TV Show"}${candidate.year ? ` / ${escapeHtml(candidate.year)}` : ""}${candidate.seasonNumber !== null ? ` / S${candidate.seasonNumber} E${candidate.episodeNumber}` : ""}${candidate.rating ? ` / ${escapeHtml(candidate.rating)}` : ""}</small><strong>${escapeHtml(candidate.title)}</strong><p>${escapeHtml(candidate.overview || "No overview available.")}</p></div>
-        <button type="button" data-cinema-action="tmdb-apply" data-tmdb-id="${candidate.id}" data-tmdb-type="${candidate.mediaType}" data-tmdb-season="${candidate.seasonNumber ?? ""}" data-tmdb-episode="${candidate.episodeNumber ?? ""}">Use This Match</button>
+        <div><small>${candidate.mediaType === "movie" ? "Movie" : "TV Show"}${candidate.year ? ` / ${escapeHtml(candidate.year)}` : ""}${candidate.seasonNumber !== null ? ` / S${candidate.seasonNumber} E${candidate.episodeNumber}` : ""}${candidate.rating ? ` / ${escapeHtml(candidate.rating)}` : ""}${candidate.confidence !== undefined ? ` / ${Math.round(candidate.confidence * 100)}% match` : ""}</small><strong>${escapeHtml(candidate.title)}</strong><p>${escapeHtml(candidate.overview || "No overview available.")}</p></div>
+        <button type="button" data-cinema-action="tmdb-apply" data-tmdb-id="${candidate.id}" data-tmdb-type="${candidate.mediaType}" data-tmdb-season="${candidate.seasonNumber ?? ""}" data-tmdb-episode="${candidate.episodeNumber ?? ""}"${entry.tmdbId === candidate.id && entry.tmdbMediaType === candidate.mediaType ? " disabled" : ""}>${entry.tmdbId === candidate.id && entry.tmdbMediaType === candidate.mediaType ? "Current Match" : "Use This Match"}</button>
       </article>`).join("")}</div>
     <footer class="cinema-tmdb-attribution"><a href="https://www.themoviedb.org" target="_blank" rel="noreferrer">TMDB</a><span>This product uses the TMDB API but is not endorsed or certified by TMDB.</span></footer>
   </div>`;
@@ -37,12 +37,20 @@ export const createCinemaTmdbController = (options: TmdbControllerOptions) => {
     const selected = options.getSelected();
     if (!selected) return;
     options.openSheet(options.renderSheet(selected, status, [], "Checking TMDB configuration…"));
-    try {
-      status = await getCinemaTmdbStatus();
-      options.openSheet(options.renderSheet(selected, status));
-    } catch (error) {
-      options.openSheet(options.renderSheet(selected, status, [], error instanceof Error ? error.message : "TMDB status is unavailable."));
-    }
+    const [statusResult, candidatesResult] = await Promise.allSettled([
+      getCinemaTmdbStatus(),
+      getCinemaTmdbCandidates(selected.path)
+    ]);
+    if (statusResult.status === "fulfilled") status = statusResult.value;
+    const candidates = candidatesResult.status === "fulfilled" ? candidatesResult.value.candidates : [];
+    const message = candidates.length
+      ? selected.tmdbId
+        ? "If this title is identified incorrectly, choose the correct alternative below."
+        : "Nebula saved these possible matches during library processing. Choose the correct title."
+      : statusResult.status === "rejected"
+        ? statusResult.reason instanceof Error ? statusResult.reason.message : "TMDB status is unavailable."
+        : "No saved alternatives are available. Search TMDB by title or partial title.";
+    options.openSheet(options.renderSheet(selected, status, candidates, message));
   };
   const apply = async (button: HTMLButtonElement) => {
     const selected = options.getSelected();

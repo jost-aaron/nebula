@@ -16,6 +16,9 @@ export interface CinemaTmdbCandidate {
   seasonNumber: number | null;
   title: string;
   year: string;
+  confidence?: number;
+  matchedQuery?: string;
+  reasons?: string[];
 }
 
 export interface CinemaTmdbStatusResponse {
@@ -27,5 +30,11 @@ export interface CinemaTmdbStatusResponse {
 export interface CinemaTmdbSearchResponse {
   candidates: CinemaTmdbCandidate[];
   normalizedQuery: string;
+  provider: "TMDB";
+  stored?: boolean;
+}
+
+export interface CinemaTmdbCandidatesResponse {
+  candidates: CinemaTmdbCandidate[];
   provider: "TMDB";
 }

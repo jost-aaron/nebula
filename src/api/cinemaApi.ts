@@ -9,7 +9,7 @@ import type {
   CinemaWatchlistUpdateRequest,
   CinemaWatchlistUpdateResponse
 } from "../shared/cinemaTypes";
-import type { CinemaTmdbSearchResponse, CinemaTmdbStatusResponse } from "../shared/cinemaTmdbTypes";
+import type { CinemaTmdbCandidatesResponse, CinemaTmdbSearchResponse, CinemaTmdbStatusResponse } from "../shared/cinemaTmdbTypes";
 import type { CatalogItemResponse, MediaChapter } from "../shared/catalogTypes";
 import type { ContinueWatchingResponse, PlaybackEventRequest, PlaybackEventResponse } from "../shared/playbackTypes";
 import type { PlaybackWatchedRequest, PlaybackState } from "../shared/playbackTypes";
@@ -116,6 +116,9 @@ export const updateCinemaWatchlist = (body: CinemaWatchlistUpdateRequest) =>
   });
 
 export const getCinemaTmdbStatus = () => apiJson<CinemaTmdbStatusResponse>("/api/cinema/tmdb/status");
+
+export const getCinemaTmdbCandidates = (path: string) =>
+  apiJson<CinemaTmdbCandidatesResponse>(`/api/cinema/tmdb/candidates?path=${encodeURIComponent(path)}`);
 
 export const searchCinemaTmdb = (body: { category: "movies" | "tv"; path: string; query: string; year?: string }) =>
   apiJson<CinemaTmdbSearchResponse>("/api/cinema/tmdb/search", {

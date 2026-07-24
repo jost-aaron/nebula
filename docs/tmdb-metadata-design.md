@@ -20,11 +20,14 @@ playback, local metadata, accounts, and watchlists do not depend on TMDB.
 
 ## Matching
 
-Search begins with the file name or current local title. Normalization removes
-the extension, separators, a detected year, season/episode tokens, and common
-release/codec suffixes. The year is sent as `primary_release_year` for movies or
-`first_air_date_year` for TV. Cinema's existing category selects `/search/movie`
-or `/search/tv`; the UI can also let the user choose either kind.
+Search begins with a bounded set of variants derived from the file name, current
+local title, and useful parent-folder name. Normalization removes the extension,
+leading disc/index numbers, separators, a detected year, season/episode tokens,
+and common release/codec suffixes. Noisy names are progressively shortened at
+title separators and token boundaries. The year is sent as
+`primary_release_year` for movies or `first_air_date_year` for TV, with a
+bounded no-year fallback only when every year-constrained variant returns no
+results. Cinema's existing category selects `/search/movie` or `/search/tv`.
 
 For TV filenames containing `S02E03` or `2x03`, Nebula retains the coordinates
 while searching for the series. After the user selects the series, the server
@@ -32,10 +35,15 @@ fetches both `/tv/{series_id}` and
 `/tv/{series_id}/season/{season}/episode/{episode}`. Files without recognizable
 coordinates continue to import series-level metadata.
 
-Nebula does not silently apply search results. It displays candidates with type,
-year, overview, rating, and artwork, and requires the user to select one. This
-explicit confirmation is the ambiguity boundary; popularity or title similarity
-alone is not treated as proof.
+The scheduled metadata worker scores TMDB's ranked candidates using normalized
+title similarity, year agreement, result order, and the margin over the
+runner-up. It automatically applies only a high-confidence, clearly dominant
+match. Otherwise it leaves local metadata unchanged and persists up to eight
+ranked candidates for review. A title's detail view exposes **Incorrect match?**
+for identified titles and **Review possible matches** for unresolved titles.
+The picker marks the current match and lets a media manager select an
+alternative or run a partial-title search. Popularity/rating is only a
+tiebreaker and is never sufficient proof by itself.
 
 ## Imported fields and storage
 
@@ -48,10 +56,11 @@ It stores the TMDB ID, media type, and import timestamp beside these fields in
 the existing ignored `content/.cinema-metadata.json`. Watchlists remain per-user
 in SQLite and are not touched.
 
-Applying a match and refreshing are explicit mutations. Normal scans and
-searches never replace metadata. Manual editing remains available after import;
-refresh warns that it replaces provider-managed display fields with current TMDB
-details. No raw TMDB response or unnecessary personal data is stored.
+Applying a manual match and refreshing are explicit mutations. A scheduled scan
+may replace provider-managed fields only after the conservative automatic
+confidence boundary is met; uncertain scans store candidates without replacing
+display metadata. Manual editing remains available after import. No raw TMDB
+response or unnecessary personal data is stored.
 
 ## Images and caching
 
