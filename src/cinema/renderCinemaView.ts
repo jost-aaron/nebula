@@ -2254,7 +2254,12 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     renderSheet: renderTmdbSheet,
     updateEntry: (entry, metadata) => {
       const updated = updateEntryFromMetadata(entry, metadata);
-      entries = entries.map((candidate) => candidate.path === updated.path ? updated : candidate);
+      entries = entries.map((candidate) =>
+        candidate.path === updated.path && !candidate.series ? updated : candidate
+      );
+      seriesEpisodes = seriesEpisodes.map((candidate) =>
+        candidate.path === updated.path ? updated : candidate
+      );
       selected = updated;
       return updated;
     }
@@ -2330,7 +2335,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     render();
   };
 
-  const loadLibrary = async (reset = true) => {
+  const loadLibrary = async (reset = true, preserveSelected = false) => {
     if (pageLoading) return;
     pageLoading = true;
     if (reset) {
@@ -2370,7 +2375,9 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       } catch {
         catalogMessage = "Local fallback · catalog or personal playback state is unavailable";
       }
-      selected = selected ? entries.find((entry) => entry.path === selected?.path) ?? selected : null;
+      if (!preserveSelected) {
+        selected = selected ? entries.find((entry) => entry.path === selected?.path) ?? selected : null;
+      }
     } catch (error) {
       failed = true;
       if (reset) libraryError = error instanceof Error ? error.message : "Unable to scan content.";
@@ -2490,7 +2497,10 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     }
 
     if (pathButton) {
-      const entry = [...seriesEpisodes, ...entries].find((candidate) => candidate.path === pathButton.dataset.cinemaPath);
+      const pathCandidates = view === "library" || view === "watchlist"
+        ? [...entries, ...seriesEpisodes]
+        : [...seriesEpisodes, ...entries];
+      const entry = pathCandidates.find((candidate) => candidate.path === pathButton.dataset.cinemaPath);
 
       if (entry) {
         closeSheet();
@@ -2676,7 +2686,11 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     }
 
     if (action === "tmdb-apply" && selected) {
-      void tmdbController.apply(actionButton).then((updated) => { if (updated) render(); });
+      void tmdbController.apply(actionButton).then((updated) => {
+        if (!updated) return;
+        render();
+        void loadLibrary(true, true);
+      });
     }
 
     if (action === "tmdb-refresh" && active) {

@@ -19,6 +19,11 @@ test("Cinema exposes saved TMDB alternatives and an incorrect-match correction f
   assert.match(controller, /getCinemaTmdbCandidates\(selected\.path\)/);
   assert.match(controller, /If this title is identified incorrectly/);
   assert.match(controller, /Current Match/);
+  assert.match(cinema, /candidate\.path === updated\.path && !candidate\.series/);
+  assert.match(cinema, /seriesEpisodes = seriesEpisodes\.map/);
+  assert.match(cinema, /const loadLibrary = async \(reset = true, preserveSelected = false\)/);
+  assert.match(cinema, /tmdbController\.apply\(actionButton\)[\s\S]*loadLibrary\(true, true\)/);
+  assert.match(cinema, /view === "library" \|\| view === "watchlist"[\s\S]*\[\.\.\.entries, \.\.\.seriesEpisodes\]/);
   assert.match(projection, /tmdbMatchCandidateCount/);
   assert.match(types, /tmdbMatchStatus\?: "identified" \| "needs-review" \| "not-found"/);
 });
