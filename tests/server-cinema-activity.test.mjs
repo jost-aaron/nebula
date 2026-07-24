@@ -47,26 +47,27 @@ test("Cinema status never presents a future artwork job as running", () => {
 });
 
 test("identified television episodes collapse into series with ordered seasons", () => {
-  const episode = (id, seasonNumber, episodeNumber) => ({
+  const episode = (id, seasonNumber, episodeNumber, tmdbId = 1396) => ({
     category: "tv",
     episode: { episodeNumber, seasonNumber, seriesTitle: "Breaking Bad" },
     id,
-    path: `${id}.mkv`,
+    path: `TV Shows/Breaking Bad/${id}.mkv`,
     posterUrl: "",
     sortTitle: id,
     title: id,
-    tmdbId: 1396
+    tmdbId
   });
   const grouped = groupTelevisionEntries([
     episode("second", 2, 1),
-    episode("pilot", 1, 1)
+    episode("pilot", 1, 1),
+    episode("unmatched", 3, 1, null)
   ]);
   assert.equal(grouped.length, 1);
   assert.equal(grouped[0].title, "Breaking Bad");
   assert.deepEqual(grouped[0].series, {
-    episodeCount: 2,
+    episodeCount: 3,
     key: "tmdb:1396",
-    seasonCount: 2,
-    seasons: [1, 2]
+    seasonCount: 3,
+    seasons: [1, 2, 3]
   });
 });

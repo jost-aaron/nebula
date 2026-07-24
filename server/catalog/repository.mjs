@@ -134,13 +134,17 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
 
   const countTelevisionSeries = () => Number(database.prepare(`
     SELECT COUNT(DISTINCT CASE
+      WHEN instr(s.content_path, '/') > 0 THEN LOWER(CASE
+        WHEN instr(substr(s.content_path, instr(s.content_path, '/') + 1), '/') > 0
+          THEN substr(substr(s.content_path, instr(s.content_path, '/') + 1), 1, instr(substr(s.content_path, instr(s.content_path, '/') + 1), '/') - 1)
+        ELSE substr(s.content_path, instr(s.content_path, '/') + 1)
+      END)
       WHEN json_extract(i.metadata_json, '$.episode.seriesTitle') IS NOT NULL
-        THEN COALESCE('tmdb:' || e.provider_item_id, 'title:' || LOWER(json_extract(i.metadata_json, '$.episode.seriesTitle')))
-      ELSE 'item:' || i.id
+        THEN LOWER(json_extract(i.metadata_json, '$.episode.seriesTitle'))
+      ELSE i.id
     END) AS count
     FROM media_items i
     JOIN media_sources s ON s.item_id = i.id AND s.availability = 'available'
-    LEFT JOIN media_external_ids e ON e.media_item_id = i.id AND e.provider = 'tmdb'
     WHERE i.media_kind = 'video' AND i.item_type = 'episode'
   `).get()?.count ?? 0);
 

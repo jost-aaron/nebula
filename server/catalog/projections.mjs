@@ -2,6 +2,23 @@ import { currentLocalArtwork, generatedArtworkUrl } from "../artwork/paths.mjs";
 
 const remoteArtworkUrl = (artwork, type) => artwork.find((entry) => entry.type === type && entry.remoteUrl)?.remoteUrl ?? "";
 
+const inferredEpisode = (item, source) => {
+  if (item.itemType !== "episode") return null;
+  const marker = /(?:^|[. _-])(?:s(\d{1,2})e(\d{1,3})|(\d{1,2})x(\d{1,3}))(?=$|[. _-])/i.exec(source.path);
+  const parts = source.path.split("/").filter(Boolean);
+  const categoryIndex = parts.findIndex((part) => /^(?:tv(?:[ ._-]*shows?)?|shows|series)$/i.test(part));
+  const parent = parts.at(-2) ?? "";
+  const seriesTitle = categoryIndex >= 0 && parts[categoryIndex + 1]
+    ? parts[categoryIndex + 1]
+    : /^season[ ._-]*\d+$/i.test(parent) ? parts.at(-3) ?? parent : parent || item.title;
+  return {
+    airDate: "",
+    episodeNumber: Number(marker?.[2] ?? marker?.[4] ?? 0),
+    seasonNumber: Number(marker?.[1] ?? marker?.[3] ?? 0),
+    seriesTitle
+  };
+};
+
 const artworkProjection = ({ artwork, job = null, item, source }) => {
   const local = currentLocalArtwork(artwork, source);
   if (local) return { artworkState: job?.state === "running" ? "processing" : "ready", posterUrl: generatedArtworkUrl(source) };
@@ -26,7 +43,7 @@ export const projectCompatibilityEntry = ({ artwork = [], artworkJob = null, ext
     category: item.mediaKind === "audio" ? "music" : item.itemType === "episode" ? "tv" : "movies",
     cast: metadata.cast || "",
     collection: metadata.collection || "",
-    episode: metadata.episode && typeof metadata.episode === "object" ? metadata.episode : null,
+    episode: metadata.episode && typeof metadata.episode === "object" ? metadata.episode : inferredEpisode(item, source),
     folder,
     genres: Array.isArray(metadata.genres) ? metadata.genres : [],
     id: item.id,

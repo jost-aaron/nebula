@@ -53,7 +53,7 @@ const cinemaBrandMarkUrl = new URL(
   import.meta.url
 ).href;
 
-type CinemaView = "library" | "watchlist" | "series-detail" | "title-detail" | "player" | "metadata-editor" | "servers" | "identify";
+type CinemaView = "library" | "watchlist" | "series-detail" | "season-detail" | "title-detail" | "player" | "metadata-editor" | "servers" | "identify";
 
 interface CinemaServerInfo {
   address: string;
@@ -165,13 +165,18 @@ const displayTitle = (entry: CinemaEntry) => entry.episode
   ? `${entry.episode.seriesTitle} · S${String(entry.episode.seasonNumber).padStart(2, "0")}E${String(entry.episode.episodeNumber).padStart(2, "0")} · ${entry.title}`
   : entry.title;
 
-const renderSeriesDetail = (series: CinemaEntry, episodes: CinemaEntry[], playback: Map<string, ContinueWatchingEntry>) => {
+const groupEpisodesBySeason = (episodes: CinemaEntry[]) => {
   const seasons = new Map<number, CinemaEntry[]>();
   episodes.forEach((episode) => {
     const seasonNumber = Number(episode.episode?.seasonNumber ?? 0);
     if (!seasons.has(seasonNumber)) seasons.set(seasonNumber, []);
     seasons.get(seasonNumber)!.push(episode);
   });
+  return seasons;
+};
+
+const renderSeriesDetail = (series: CinemaEntry, episodes: CinemaEntry[]) => {
+  const seasons = groupEpisodesBySeason(episodes);
   return `
     <section class="cinema-series-detail">
       <header class="cinema-series-header"${backdropStyle(series)}>
@@ -180,12 +185,45 @@ const renderSeriesDetail = (series: CinemaEntry, episodes: CinemaEntry[], playba
           <p>${series.series?.seasonCount ?? seasons.size} seasons · ${series.series?.episodeCount ?? episodes.length} episodes</p>
         </div>
       </header>
-      ${[...seasons.entries()].sort(([left], [right]) => left - right).map(([season, seasonEpisodes]) => `
-        <section class="cinema-season-group">
-          <header><h3>${season === 0 ? "Specials" : `Season ${season}`}</h3><span>${seasonEpisodes.length} episodes</span></header>
-          <div class="cinema-grid">${renderCinemaCards(seasonEpisodes, "tv", playback)}</div>
-        </section>
-      `).join("")}
+      <section class="cinema-season-library">
+        <header><div><p class="eyebrow">Library</p><h3>Seasons</h3></div><span>${seasons.size} available</span></header>
+        <div class="cinema-grid">
+          ${[...seasons.entries()].sort(([left], [right]) => left - right).map(([season, seasonEpisodes]) => {
+            const representative = seasonEpisodes.find((entry) => entry.posterUrl) ?? seasonEpisodes[0];
+            const label = season === 0 ? "Specials" : `Season ${season}`;
+            return `
+              <button class="cinema-card cinema-season-card" type="button" data-cinema-season="${season}">
+                <span class="cinema-poster"${posterStyle(representative)}>
+                  ${representative.posterUrl ? "" : renderPosterFallback(representative)}
+                  <span class="cinema-poster-scrim"></span>
+                  <span class="cinema-card-badge">${seasonEpisodes.length} Episodes</span>
+                  <span class="cinema-card-play">${renderCinemaIcon("Rows3", "cinema-play-icon")}</span>
+                </span>
+                <span class="cinema-card-copy"><strong>${label}</strong><small>${escapeHtml(series.title)}</small></span>
+              </button>
+            `;
+          }).join("")}
+        </div>
+      </section>
+    </section>
+  `;
+};
+
+const renderSeasonDetail = (series: CinemaEntry, episodes: CinemaEntry[], season: number, playback: Map<string, ContinueWatchingEntry>) => {
+  const seasonEpisodes = episodes
+    .filter((episode) => Number(episode.episode?.seasonNumber ?? 0) === season)
+    .sort((left, right) => Number(left.episode?.episodeNumber ?? 0) - Number(right.episode?.episodeNumber ?? 0));
+  const label = season === 0 ? "Specials" : `Season ${season}`;
+  return `
+    <section class="cinema-series-detail">
+      <header class="cinema-series-header"${backdropStyle(series)}>
+        <button type="button" data-cinema-action="series">← ${escapeHtml(series.title)}</button>
+        <div><p class="eyebrow">${escapeHtml(series.title)}</p><h2>${label}</h2><p>${seasonEpisodes.length} episodes</p></div>
+      </header>
+      <section class="cinema-season-library">
+        <header><div><p class="eyebrow">Library</p><h3>Episodes</h3></div><span>${seasonEpisodes.length} available</span></header>
+        <div class="cinema-grid">${renderCinemaCards(seasonEpisodes, "tv", playback)}</div>
+      </section>
     </section>
   `;
 };
@@ -978,6 +1016,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   let categoryTotals: Record<CinemaCategory, number | null> = { movies: null, tv: null };
   let activeCategory: CinemaCategory = "movies";
   let seriesEpisodes: CinemaEntry[] = [];
+  let selectedSeason: number | null = null;
   let selected: CinemaEntry | null = null;
   const subtitleState = new Map<string, SubtitleTracksResponse>();
   let subtitlePreference: SubtitlePreference | undefined;
@@ -1334,7 +1373,12 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       content.innerHTML = selected ? renderTitleHero(selected, entries, selected.id ? playback.get(selected.id) : undefined, selected.id ? catalogState.get(selected.id) : undefined, selected.id ? subtitleState.get(selected.id) : undefined, subtitlePreference, options.canManageRenditions) : renderLibrary(entries, categoryTotals, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
     }
     if (view === "series-detail") {
-      content.innerHTML = selected ? renderSeriesDetail(selected, seriesEpisodes, playback) : renderLibrary(entries, categoryTotals, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
+      content.innerHTML = selected ? renderSeriesDetail(selected, seriesEpisodes) : renderLibrary(entries, categoryTotals, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
+    }
+    if (view === "season-detail") {
+      content.innerHTML = selected && selectedSeason !== null
+        ? renderSeasonDetail(selected, seriesEpisodes, selectedSeason, playback)
+        : renderLibrary(entries, categoryTotals, activeCategory, query, selected, playback, catalogMessage, isScanning, libraryError);
     }
 
     if (view === "player") {
@@ -1424,6 +1468,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   const openTitle = (entry: CinemaEntry) => {
     if (entry.series) {
       selected = entry;
+      selectedSeason = null;
       activeCategory = "tv";
       seriesEpisodes = [];
       view = "series-detail";
@@ -2289,6 +2334,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     const target = event.target as HTMLElement;
     const resumeBackdrop = target.closest<HTMLElement>("[data-cinema-resume-sheet]");
     const categoryButton = target.closest<HTMLButtonElement>("[data-cinema-category]");
+    const seasonButton = target.closest<HTMLButtonElement>("[data-cinema-season]");
     const pathButton = target.closest<HTMLButtonElement>("[data-cinema-path]");
     const actionButton = target.closest<HTMLButtonElement>("[data-cinema-action]");
     const retentionButton = target.closest<HTMLButtonElement>("[data-cinema-rendition-retention]");
@@ -2324,6 +2370,13 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       selected = null;
       view = "library";
       void loadLibrary(true);
+      return;
+    }
+
+    if (seasonButton && selected?.series) {
+      selectedSeason = Number(seasonButton.dataset.cinemaSeason);
+      view = "season-detail";
+      render();
       return;
     }
 
@@ -2380,6 +2433,12 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       selected = null;
       closeSheet();
       view = "library";
+      render();
+    }
+
+    if (action === "series" && selected?.series) {
+      selectedSeason = null;
+      view = "series-detail";
       render();
     }
 

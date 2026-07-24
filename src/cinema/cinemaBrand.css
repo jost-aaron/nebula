@@ -345,6 +345,26 @@
   justify-content: space-between;
 }
 
+.cinema-season-library {
+  display: grid;
+  gap: 18px;
+}
+
+.cinema-season-library > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+}
+
+.cinema-season-library > header h3 {
+  margin: 2px 0 0;
+  font-size: 1.6rem;
+}
+
+.cinema-season-card .cinema-poster {
+  background-position: center;
+}
+
 .cinema-artwork-queued img {
   width: 58px;
   opacity: 0.42;

@@ -54,26 +54,48 @@ export const selectCinemaProcessingActivity = ({ artwork, metadata }) => {
   return { job: null, kind: null, queued: Number(artwork.counts.queued ?? 0), state: null };
 };
 
-const televisionSeriesKey = (entry) => entry.episode
-  ? entry.tmdbId ? `tmdb:${entry.tmdbId}` : `title:${String(entry.episode.seriesTitle ?? "").toLowerCase()}`
-  : `item:${entry.id}`;
+const normalizedSeriesTitle = (value) => String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 
-export const groupTelevisionEntries = (entries) => {
+const inferredSeriesTitle = (entry) => {
+  const parts = String(entry.path ?? "").split("/").filter(Boolean);
+  const categoryIndex = parts.findIndex((part) => /^(?:tv(?:[ ._-]*shows?)?|shows|series)$/i.test(part));
+  if (categoryIndex >= 0 && parts[categoryIndex + 1]) return parts[categoryIndex + 1];
+  const parent = parts.at(-2) ?? "";
+  if (/^season[ ._-]*\d+$/i.test(parent)) return parts.at(-3) ?? parent;
+  return parent || entry.episode?.seriesTitle || entry.title;
+};
+
+const televisionSeriesGroups = (entries) => {
+  const tmdbAliases = new Map();
+  entries.forEach((entry) => {
+    if (!entry.tmdbId || !entry.episode?.seriesTitle) return;
+    const key = `tmdb:${entry.tmdbId}`;
+    tmdbAliases.set(normalizedSeriesTitle(entry.episode.seriesTitle), key);
+    tmdbAliases.set(normalizedSeriesTitle(inferredSeriesTitle(entry)), key);
+  });
   const groups = new Map();
-  for (const entry of entries) {
-    const key = televisionSeriesKey(entry);
+  entries.forEach((entry) => {
+    const title = entry.episode?.seriesTitle || inferredSeriesTitle(entry);
+    const normalizedTitle = normalizedSeriesTitle(title);
+    const key = entry.tmdbId
+      ? `tmdb:${entry.tmdbId}`
+      : tmdbAliases.get(normalizedTitle) ?? (normalizedTitle ? `title:${normalizedTitle}` : `item:${entry.id}`);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(entry);
-  }
-  return [...groups.entries()].map(([key, episodes]) => {
-    if (!episodes[0]?.episode) return episodes[0];
+  });
+  return [...groups.entries()].map(([key, episodes]) => ({ episodes, key }));
+};
+
+export const groupTelevisionEntries = (entries) => {
+  return televisionSeriesGroups(entries).map(({ episodes, key }) => {
     episodes.sort((left, right) =>
       Number(left.episode?.seasonNumber ?? 0) - Number(right.episode?.seasonNumber ?? 0)
       || Number(left.episode?.episodeNumber ?? 0) - Number(right.episode?.episodeNumber ?? 0)
     );
-    const representative = episodes.find((entry) => entry.posterUrl) ?? episodes[0];
+    const identified = episodes.find((entry) => entry.episode?.seriesTitle && entry.tmdbId);
+    const representative = episodes.find((entry) => entry.posterUrl) ?? identified ?? episodes[0];
     const seasons = [...new Set(episodes.map((entry) => Number(entry.episode?.seasonNumber ?? 0)))].sort((a, b) => a - b);
-    const seriesTitle = representative.episode.seriesTitle;
+    const seriesTitle = identified?.episode?.seriesTitle || inferredSeriesTitle(representative);
     return {
       ...representative,
       episode: null,
@@ -168,7 +190,7 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
     const normalizedQuery = query.trim().toLowerCase();
     const televisionEntries = category === "tv" && allTelevisionEntries
       ? requestedSeriesKey
-        ? allTelevisionEntries.filter((entry) => televisionSeriesKey(entry) === requestedSeriesKey)
+        ? televisionSeriesGroups(allTelevisionEntries).find((group) => group.key === requestedSeriesKey)?.episodes ?? []
         : groupTelevisionEntries(allTelevisionEntries).filter((entry) =>
             !normalizedQuery || [entry.title, entry.sortTitle, entry.path].some((value) => String(value).toLowerCase().includes(normalizedQuery))
           )
