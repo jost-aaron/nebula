@@ -207,6 +207,45 @@
   font-weight: 560;
 }
 
+.cinema-title-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cinema-title-facts > span {
+  min-width: 116px;
+  min-height: 48px;
+  border: 1px solid var(--cinema-border);
+  border-radius: 10px;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 7px 10px;
+  color: var(--cinema-bone);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.cinema-title-facts strong {
+  font-size: 0.94rem;
+  line-height: 1;
+}
+
+.cinema-title-facts small {
+  color: var(--cinema-bone-muted);
+  font-size: 0.68rem;
+  line-height: 1.2;
+}
+
+.cinema-title-facts .cinema-title-score {
+  border-color: rgba(231, 169, 64, 0.32);
+  background: rgba(231, 169, 64, 0.08);
+}
+
+.cinema-title-facts .cinema-title-score strong {
+  color: var(--cinema-amber-bright);
+}
+
 .cinema-library-heading > span,
 .cinema-card-copy small,
 .cinema-continue > header > span,

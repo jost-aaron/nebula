@@ -150,6 +150,16 @@ const tmdbUserScore = (entry: CinemaEntry, includeVotes = false) => {
   return `TMDB users ${entry.rating}/10${votes ? ` · ${votes} votes` : ""}`;
 };
 
+const renderTitleFacts = (entry: CinemaEntry) => {
+  const votes = compactVoteCount(entry.ratingVotes);
+  return `
+    <div class="cinema-title-facts" aria-label="Title score and runtime">
+      ${entry.rating ? `<span class="cinema-title-score"><strong>★ ${escapeHtml(entry.rating)}</strong><small>TMDB user score${votes ? ` · ${escapeHtml(votes)} votes` : ""}</small></span>` : ""}
+      <span><strong>${escapeHtml(estimateRuntime(entry))}</strong><small>Runtime</small></span>
+    </div>
+  `;
+};
+
 const renderCardFacts = (entry: CinemaEntry) => {
   const runtime = formatRuntimeSeconds(entry.runtimeSeconds);
   if (!entry.rating && !runtime) return "";
@@ -187,7 +197,7 @@ const categoryLabel = (category: CinemaCategory) =>
 const searchUrl = (query: string) => `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 
 const metadataLine = (entry: CinemaEntry) =>
-  [entry.episode ? `S${entry.episode.seasonNumber} E${entry.episode.episodeNumber}` : "", entry.releaseYear, tmdbUserScore(entry, true), entry.genres.slice(0, 3).join(", "), estimateRuntime(entry)].filter(Boolean).join(" / ");
+  [entry.episode ? `S${entry.episode.seasonNumber} E${entry.episode.episodeNumber}` : "", entry.releaseYear, entry.genres.slice(0, 3).join(", ")].filter(Boolean).join(" / ");
 
 const displayTitle = (entry: CinemaEntry) => entry.episode
   ? `${entry.episode.seriesTitle} · S${String(entry.episode.seasonNumber).padStart(2, "0")}E${String(entry.episode.episodeNumber).padStart(2, "0")} · ${entry.title}`
@@ -671,6 +681,7 @@ const renderTitleHero = (entry: CinemaEntry, entries: CinemaEntry[], playback: C
         <p class="eyebrow">${escapeHtml(entry.episode?.seriesTitle || categoryLabel(entry.category))}</p>
         <h2>${escapeHtml(entry.title)}</h2>
         ${entry.tagline ? `<p class="cinema-tagline">${escapeHtml(entry.tagline)}</p>` : ""}
+        ${renderTitleFacts(entry)}
         <p class="cinema-title-meta">${escapeHtml(metadataLine(entry) || `${entry.folder || "Content"} / ${formatSize(entry.size)}`)}</p>
         <p>${escapeHtml(entry.summary || "No synopsis has been added for this title yet.")}</p>
         <div class="cinema-actions">
