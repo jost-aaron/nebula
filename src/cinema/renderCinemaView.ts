@@ -180,7 +180,10 @@ const renderSeriesDetail = (series: CinemaEntry, episodes: CinemaEntry[]) => {
   return `
     <section class="cinema-series-detail">
       <header class="cinema-series-header"${backdropStyle(series)}>
-        <button type="button" data-cinema-action="library">← TV Shows</button>
+        <button class="cinema-hero-back" type="button" data-cinema-action="library">
+          ${renderCinemaIcon("ArrowLeft", "cinema-ui-icon")}
+          <span><small>Back to library</small><strong>TV Shows</strong></span>
+        </button>
         <div><p class="eyebrow">Series</p><h2>${escapeHtml(series.title)}</h2>
           <p>${series.series?.seasonCount ?? seasons.size} seasons · ${series.series?.episodeCount ?? episodes.length} episodes</p>
         </div>
@@ -217,7 +220,10 @@ const renderSeasonDetail = (series: CinemaEntry, episodes: CinemaEntry[], season
   return `
     <section class="cinema-series-detail">
       <header class="cinema-series-header"${backdropStyle(series)}>
-        <button type="button" data-cinema-action="series">← ${escapeHtml(series.title)}</button>
+        <button class="cinema-hero-back" type="button" data-cinema-action="series">
+          ${renderCinemaIcon("ArrowLeft", "cinema-ui-icon")}
+          <span><small>Back to series</small><strong>${escapeHtml(series.title)}</strong></span>
+        </button>
         <div><p class="eyebrow">${escapeHtml(series.title)}</p><h2>${label}</h2><p>${seasonEpisodes.length} episodes</p></div>
       </header>
       <section class="cinema-season-library">

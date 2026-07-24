@@ -35,8 +35,11 @@ test("Cinema keeps queued titles visible and distinguishes active artwork proces
 
 test("Cinema navigates television as series, then seasons, then episodes", async () => {
   const cinema = await readFile(new URL("../src/cinema/renderCinemaView.ts", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../src/cinema/cinemaBrand.css", import.meta.url), "utf8");
   assert.match(cinema, /data-cinema-season/);
   assert.match(cinema, /view = "season-detail"/);
   assert.match(cinema, /renderSeasonDetail/);
   assert.match(cinema, /data-cinema-action="series"/);
+  assert.match(cinema, /cinema-hero-back/);
+  assert.match(styles, /\.cinema-season-library \.cinema-grid[\s\S]*grid-auto-flow: row[\s\S]*repeat\(auto-fill/);
 });

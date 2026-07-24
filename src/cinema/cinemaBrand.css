@@ -317,6 +317,7 @@
 }
 
 .cinema-series-header {
+  position: relative;
   min-height: 250px;
   display: grid;
   align-content: end;
@@ -327,6 +328,58 @@
   background-position: center;
   background-size: cover;
   box-shadow: inset 0 -180px 120px rgba(5, 6, 9, 0.92);
+}
+
+.cinema-hero-back {
+  justify-self: start;
+  min-height: 48px;
+  border: 1px solid rgba(242, 235, 221, 0.2);
+  border-radius: 12px;
+  display: inline-grid;
+  grid-template-columns: 28px auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px 7px 10px;
+  color: var(--cinema-bone);
+  background: rgba(7, 9, 12, 0.76);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(16px);
+}
+
+.cinema-hero-back:hover,
+.cinema-hero-back:focus-visible {
+  border-color: rgba(231, 169, 64, 0.62);
+  color: #fff7e9;
+  background: rgba(32, 24, 14, 0.9);
+  transform: translateX(-2px);
+}
+
+.cinema-hero-back .cinema-ui-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--cinema-amber);
+}
+
+.cinema-hero-back span {
+  display: grid;
+  gap: 1px;
+  text-align: left;
+}
+
+.cinema-hero-back small {
+  color: var(--cinema-bone-muted);
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.cinema-hero-back strong {
+  max-width: min(38vw, 340px);
+  overflow: hidden;
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cinema-series-header h2 {
@@ -361,8 +414,35 @@
   font-size: 1.6rem;
 }
 
+.cinema-season-library .cinema-grid {
+  grid-auto-flow: row;
+  grid-auto-columns: unset;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  align-content: start;
+  gap: clamp(16px, 1.8vw, 26px) clamp(12px, 1.4vw, 20px);
+  overflow: visible;
+  padding: 2px 2px 24px;
+}
+
 .cinema-season-card .cinema-poster {
   background-position: center;
+}
+
+@media (max-width: 720px) {
+  .cinema-series-header {
+    min-height: 220px;
+    gap: 20px;
+    padding: 22px;
+  }
+
+  .cinema-season-library .cinema-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 11px;
+  }
+
+  .cinema-hero-back strong {
+    max-width: 56vw;
+  }
 }
 
 .cinema-artwork-queued img {
