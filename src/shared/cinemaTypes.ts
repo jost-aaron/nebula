@@ -43,6 +43,24 @@ export interface CinemaLibraryResponse {
   totals: Record<CinemaCategory, number>;
 }
 
+export interface CinemaArtworkStatusResponse {
+  activity: {
+    failed: number;
+    processing: null | {
+      sourceId: string;
+      state: "preparing" | "running";
+      title: string;
+    };
+    queued: number;
+    ready: number;
+  };
+  entries: Array<{
+    artworkState: CinemaEntry["artworkState"];
+    posterUrl: string;
+    sourceId: string;
+  }>;
+}
+
 export interface CinemaIdentificationFrame {
   image: string;
   index: number;

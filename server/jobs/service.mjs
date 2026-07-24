@@ -20,10 +20,12 @@ export const createJobsService = ({ repository, allowedTypes = JOB_TYPES } = {})
   };
   const get = (id) => repository.get(id);
   const findByDedupe = (type, dedupeKey) => repository.findByDedupe(type, dedupeKey);
+  const findByDedupeMany = (type, dedupeKeys) => repository.findByDedupeMany(type, dedupeKeys);
+  const activity = (type) => repository.activity(type);
   const list = (query = {}) => repository.list({ ...query, limit: Math.min(200, positiveInteger(query.limit, 50)) });
   const cancel = (id) => repository.requestCancellation(id);
   const cancelAll = () => repository.requestCancellationAll();
-  return { cancel, cancelAll, enqueue, findByDedupe, get, list, types: [...types] };
+  return { activity, cancel, cancelAll, enqueue, findByDedupe, findByDedupeMany, get, list, types: [...types] };
 };
 
 export { JOB_TYPES };

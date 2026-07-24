@@ -8,6 +8,7 @@ import {
   createCinemaDelivery,
   createClusterCinemaDelivery,
   failoverClusterCinemaDelivery,
+  getCinemaArtworkStatus,
   getCinemaDelivery,
   identifyCinemaFrames,
   listCinemaCatalog,
@@ -23,6 +24,7 @@ import {
 import { createCinemaTmdbController, renderTmdbPanel } from "./tmdbUi";
 import type {
   CinemaCategory,
+  CinemaArtworkStatusResponse,
   CinemaEntry,
   CinemaIdentificationFrame,
   CinemaIdentifyResponse,
@@ -471,6 +473,7 @@ const renderLibrary = (entries: CinemaEntry[], categoryTotals: Record<CinemaCate
       <main class="cinema-library browsing" data-cinema-view="library">
       ${!query ? renderContinueWatching(entries, playback) : ""}
       <div class="cinema-catalog-status">${renderCinemaIcon(catalogMessage.includes("fallback") ? "HardDrive" : "RefreshCw")}<span>${escapeHtml(catalogMessage)}</span><button type="button" data-cinema-action="scan-catalog">Scan library</button></div>
+      <div class="cinema-artwork-activity" data-cinema-artwork-activity hidden></div>
       <section class="cinema-library-row">
         <header>
           <div class="cinema-library-heading">
@@ -964,6 +967,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   let posterObserver: IntersectionObserver | null = null;
   let pageObserver: IntersectionObserver | null = null;
   let artworkRefreshTimer = 0;
+  let artworkQueueActive = true;
   let alphabetScrollHost: HTMLElement | null = null;
   let refreshAlphabetRail: (() => void) | null = null;
   let searchTimer = 0;
@@ -1131,8 +1135,30 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   const scheduleArtworkRefresh = () => {
     window.clearTimeout(artworkRefreshTimer);
     if (!app.isConnected || view !== "library"
-      || !entries.some((entry) => entry.artworkState === "queued" || entry.artworkState === "processing")) return;
-    artworkRefreshTimer = window.setTimeout(() => void refreshArtworkStates(), 3_000);
+      || (!artworkQueueActive && !entries.some((entry) => entry.artworkState === "queued" || entry.artworkState === "processing"))) return;
+    artworkRefreshTimer = window.setTimeout(() => void refreshArtworkStates(), 400);
+  };
+
+  const updateArtworkActivity = (activity: CinemaArtworkStatusResponse["activity"]) => {
+    const status = content.querySelector<HTMLElement>("[data-cinema-artwork-activity]");
+    if (!status) return;
+    status.hidden = activity.queued === 0 && !activity.processing;
+    if (status.hidden) return;
+    if (activity.processing) {
+      status.classList.add("processing");
+      status.innerHTML = `
+        <span class="cinema-artwork-orbit" aria-hidden="true"><i></i><img src="${cinemaBrandMarkUrl}" alt="" /></span>
+        <span><strong>${activity.processing.state === "running" ? "Generating" : "Preparing"} title card</strong><small>${escapeHtml(activity.processing.title)}</small></span>
+        <b>${activity.queued} queued</b>
+      `;
+      return;
+    }
+    status.classList.remove("processing");
+    status.innerHTML = `
+      <img src="${cinemaBrandMarkUrl}" alt="" />
+      <span><strong>Artwork queue</strong><small>Waiting for the next scheduled title</small></span>
+      <b>${activity.queued} queued</b>
+    `;
   };
 
   const applyArtworkCardState = (entry: CinemaEntry) => {
@@ -1156,20 +1182,16 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   const refreshArtworkStates = async () => {
     if (!app.isConnected || view !== "library") return;
     try {
-      const refreshed: CinemaEntry[] = [];
-      const loaded = Math.max(60, entries.filter((entry) => entry.category === activeCategory).length);
-      for (let offset = 0; offset < loaded; offset += 200) {
-        const page = await listCinemaLibrary({
-          category: activeCategory,
-          limit: Math.min(200, loaded - offset),
-          offset,
-          query
-        });
-        refreshed.push(...page.entries);
-      }
-      const byPath = new Map(refreshed.map((entry) => [entry.path, entry]));
+      const sourceIds = entries
+        .filter((entry) => entry.category === activeCategory && typeof entry.sourceId === "string")
+        .map((entry) => entry.sourceId as string);
+      const status = await getCinemaArtworkStatus(sourceIds);
+      artworkQueueActive = status.activity.queued > 0 || Boolean(status.activity.processing);
+      updateArtworkActivity(status.activity);
+      const bySource = new Map(status.entries.map((entry) => [entry.sourceId, entry]));
       entries = entries.map((entry) => {
-        const update = byPath.get(entry.path);
+        if (!entry.sourceId) return entry;
+        const update = bySource.get(entry.sourceId);
         if (!update || (update.artworkState === entry.artworkState && update.posterUrl === entry.posterUrl)) return entry;
         const next = { ...entry, artworkState: update.artworkState, posterUrl: update.posterUrl };
         applyArtworkCardState(next);

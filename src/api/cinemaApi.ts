@@ -2,6 +2,7 @@ import { apiFetch, apiJson, apiUrl } from "./http";
 import type {
   CinemaIdentifyRequest,
   CinemaIdentifyResponse,
+  CinemaArtworkStatusResponse,
   CinemaLibraryResponse,
   CinemaMetadataUpdateRequest,
   CinemaMetadataUpdateResponse,
@@ -41,6 +42,9 @@ export const listCinemaLibrary = ({ category, limit = 60, offset = 0, query = ""
   page: library.page,
   totals: library.totals
 }));
+
+export const getCinemaArtworkStatus = (sourceIds: string[]) =>
+  apiJson<CinemaArtworkStatusResponse>(`/api/cinema/artwork-status?sourceIds=${encodeURIComponent(sourceIds.join(","))}`);
 
 export const listCinemaCatalog = () =>
   apiJson<{ items: CinemaCatalogEntry[] }>("/api/catalog/items?mediaKind=video");

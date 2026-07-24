@@ -71,6 +71,22 @@ test("deduplicated queued work can be expedited without creating another job", (
   assert.equal(repository.claimNext().id, first.job.id);
 });
 
+test("bulk dedupe lookup and type activity expose one current and next job", (t) => {
+  const clock = Date.parse("2026-07-24T00:00:00.000Z");
+  const { db, repository, service } = fixture({ now: () => clock });
+  t.after(() => db.close());
+  const first = service.enqueue({ availableAt: clock, dedupeKey: "source-a:1", payload: { sourceId: "source-a" }, type: "artwork" }).job;
+  const second = service.enqueue({ availableAt: clock + 4_000, dedupeKey: "source-b:1", payload: { sourceId: "source-b" }, type: "artwork" }).job;
+  assert.deepEqual(service.findByDedupeMany("artwork", ["source-b:1", "source-a:1"]).map(({ id }) => id).sort(), [first.id, second.id].sort());
+  assert.equal(service.activity("artwork").next.id, first.id);
+  assert.equal(repository.claimNext().id, first.id);
+  const active = service.activity("artwork");
+  assert.equal(active.running.id, first.id);
+  assert.equal(active.next.id, second.id);
+  assert.equal(active.counts.queued, 1);
+  assert.equal(active.counts.running, 1);
+});
+
 test("automatic enrichment reuses terminal failures until an explicit retry", (t) => {
   const { db, repository } = fixture();
   t.after(() => db.close());

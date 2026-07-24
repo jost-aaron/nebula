@@ -178,6 +178,57 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
     else createReadStream(absolutePath).pipe(response);
   };
 
+  const cinemaArtworkStatus = (request, response, url) => {
+    const requestedIds = [...new Set((url.searchParams.get("sourceIds") ?? "").split(",").filter(Boolean))].slice(0, 200);
+    const sources = requestedIds
+      .map((sourceId) => catalog?.repository?.getSource?.(sourceId))
+      .filter((source) => source?.mediaKind === "video" && source.availability === "available"
+        && (!libraryPermissions || libraryPermissions.canAccessPath(request.nebulaAuth, source.path, "video")));
+    const activity = jobs?.activity?.("artwork") ?? { counts: {}, next: null, running: null };
+    const jobsByDedupe = new Map((jobs?.findByDedupeMany?.(
+      "artwork",
+      sources.map((source) => artworkJobDedupeKey(source))
+    ) ?? []).map((job) => [job.dedupeKey, job]));
+    const activeJob = activity.running ?? (
+      activity.next && Date.parse(activity.next.availableAt) <= Date.now() + 1_500 ? activity.next : null
+    );
+    const candidateActiveSource = activeJob?.payload?.sourceId ? catalog?.repository?.getSource?.(activeJob.payload.sourceId) : null;
+    const activeSource = candidateActiveSource
+      && (!libraryPermissions || libraryPermissions.canAccessPath(request.nebulaAuth, candidateActiveSource.path, "video"))
+      ? candidateActiveSource
+      : null;
+    const activeItem = activeSource?.itemId ? catalog?.repository?.getItem?.(activeSource.itemId) : null;
+    const entries = sources.map((source) => {
+      const artwork = catalog.repository.listArtwork(source.itemId);
+      const generated = currentGeneratedArtwork(artwork, source);
+      const job = jobsByDedupe.get(artworkJobDedupeKey(source));
+      if (activeJob?.id === job?.id) return { artworkState: "processing", posterUrl: "", sourceId: source.id };
+      if (generated) return {
+        artworkState: "ready",
+        posterUrl: `/api/cinema/artwork?sourceId=${encodeURIComponent(source.id)}&revision=${source.contentRevision}`,
+        sourceId: source.id
+      };
+      return {
+        artworkState: job?.state === "failed" || job?.state === "cancelled" ? "failed" : job?.state === "queued" ? "queued" : "missing",
+        posterUrl: "",
+        sourceId: source.id
+      };
+    });
+    json(response, 200, {
+      activity: {
+        failed: Number(activity.counts.failed ?? 0),
+        processing: activeJob && activeSource ? {
+          sourceId: activeSource?.id ?? "",
+          title: activeItem?.title ?? "Title card",
+          state: activity.running ? "running" : "preparing"
+        } : null,
+        queued: Number(activity.counts.queued ?? 0),
+        ready: Number(activity.counts.succeeded ?? 0)
+      },
+      entries
+    });
+  };
+
   const updateCinemaMetadata = async (request, response) => {
     const body = await readBody(request);
     const contentPath = storage.relativePath(body.path ?? "");
@@ -358,6 +409,11 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
 
     if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/cinema/artwork") {
       await streamCinemaArtwork(request, response, url);
+      return true;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/cinema/artwork-status") {
+      cinemaArtworkStatus(request, response, url);
       return true;
     }
 

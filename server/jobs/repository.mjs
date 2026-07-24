@@ -34,6 +34,29 @@ export const createJobsRepository = ({ db, migrate = false, now = () => Date.now
     WHERE type = ? AND dedupe_key = ?
     ORDER BY CASE state WHEN 'running' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END, updated_at DESC, rowid DESC LIMIT 1`)
     .get(type, dedupeKey));
+  const findByDedupeMany = (type, dedupeKeys) => {
+    const keys = [...new Set(dedupeKeys.map(String))].slice(0, 200);
+    if (keys.length === 0) return [];
+    const placeholders = keys.map(() => "?").join(",");
+    const rows = db.prepare(`SELECT * FROM background_jobs
+      WHERE type = ? AND dedupe_key IN (${placeholders})
+      ORDER BY dedupe_key, CASE state WHEN 'running' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END, updated_at DESC, rowid DESC`)
+      .all(type, ...keys);
+    const jobs = new Map();
+    for (const row of rows) {
+      if (!jobs.has(row.dedupe_key)) jobs.set(row.dedupe_key, fromRow(row));
+    }
+    return [...jobs.values()];
+  };
+  const activity = (type) => {
+    const counts = Object.fromEntries(db.prepare(`SELECT state, COUNT(id) AS count FROM background_jobs
+      WHERE type = ? GROUP BY state`).all(type).map((row) => [row.state, Number(row.count)]));
+    const running = fromRow(db.prepare(`SELECT * FROM background_jobs WHERE type = ? AND state = 'running'
+      ORDER BY started_at DESC, rowid DESC LIMIT 1`).get(type));
+    const next = fromRow(db.prepare(`SELECT * FROM background_jobs WHERE type = ? AND state = 'queued'
+      ORDER BY available_at, rowid LIMIT 1`).get(type));
+    return { counts, next, running };
+  };
 
   const enqueue = ({ type, payload = {}, dedupeKey = null, maxAttempts = 3, availableAt = timestamp(), reuseTerminal = false }) => {
     const existing = dedupeKey === null ? null : db.prepare(`SELECT * FROM background_jobs
@@ -176,6 +199,6 @@ export const createJobsRepository = ({ db, migrate = false, now = () => Date.now
     WHERE (? IS NULL OR state = ?) AND (? IS NULL OR type = ?)
     ORDER BY created_at DESC, id DESC LIMIT ?`).all(state, state, type, type, limit).map(fromRow);
 
-  return { cancelRunning, claimNext, enqueue, failAttempt, findByDedupe, get, isCancellationRequested, list,
+  return { activity, cancelRunning, claimNext, enqueue, failAttempt, findByDedupe, findByDedupeMany, get, isCancellationRequested, list,
     recoverInterrupted, requestCancellation, requestCancellationAll, succeed, updateProgress };
 };
