@@ -379,10 +379,20 @@
   text-shadow: 0 1px 8px #000;
 }
 
+.cinema-content:has(.cinema-series-detail) {
+  align-content: start;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
 .cinema-series-detail {
+  height: max-content;
+  align-self: start;
   display: grid;
   gap: 32px;
   padding: 0 0 48px;
+  overflow: visible;
 }
 
 .cinema-series-header {

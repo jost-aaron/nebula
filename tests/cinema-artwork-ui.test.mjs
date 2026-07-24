@@ -52,6 +52,8 @@ test("Cinema navigates television as series, then seasons, then episodes", async
   assert.match(cinema, /data-cinema-action="series"/);
   assert.match(cinema, /cinema-hero-back/);
   assert.match(styles, /\.cinema-season-library \.cinema-grid[\s\S]*grid-auto-flow: row[\s\S]*repeat\(auto-fill/);
+  assert.match(styles, /\.cinema-content:has\(\.cinema-series-detail\) \{[\s\S]*overflow-y: auto[\s\S]*scrollbar-gutter: stable/);
+  assert.match(styles, /\.cinema-series-detail \{[\s\S]*height: max-content[\s\S]*overflow: visible/);
 });
 
 test("Cinema contains title actions and keeps chapter status in the metadata panel", async () => {
