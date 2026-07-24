@@ -27,6 +27,7 @@ test("Cinema keeps queued titles visible and distinguishes active artwork proces
   assert.match(cinema, /if \(poster\.dataset\.cinemaPoster\) return/);
   assert.match(styles, /\.cinema-artwork-orbit::before[\s\S]*animation: cinema-artwork-spin/);
   assert.match(styles, /\.cinema-artwork-queued img[\s\S]*opacity:/);
+  assert.match(styles, /\.cinema-poster \{[\s\S]*background-size: contain[\s\S]*background-repeat: no-repeat/);
   assert.match(styles, /\.cinema-artwork-activity \.cinema-artwork-orbit/);
   assert.match(styles, /\.cinema-artwork-activity \{[\s\S]*?position: sticky[\s\S]*?top: 0/);
   assert.match(styles, /@keyframes cinema-artwork-activity-sweep/);

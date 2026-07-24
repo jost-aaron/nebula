@@ -239,6 +239,10 @@
   background:
     linear-gradient(145deg, rgba(231, 169, 64, 0.13), rgba(242, 235, 221, 0.025)),
     #080a0d;
+  background-position: center;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-color: #05070a;
 }
 
 .cinema-card:hover .cinema-poster,
