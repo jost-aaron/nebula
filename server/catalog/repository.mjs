@@ -56,6 +56,10 @@ const transaction = (database, action) => {
 
 const defaultClock = () => new Date().toISOString();
 const sourceContentChanged = (source, file) => source.size_bytes !== file.size || source.modified_ms !== file.modifiedMs;
+const sourceTitle = (contentPath) => {
+  const fileName = String(contentPath).split("/").pop() ?? "";
+  return fileName.replace(/\.[a-z0-9]{2,5}$/i, "").replace(/[._-]+/g, " ").trim() || fileName;
+};
 
 export const createCatalogRepository = (database, { now = defaultClock, uuid = randomUUID, missingCleanupScans = 2, missingCleanupMs = 7 * 24 * 60 * 60 * 1000 } = {}) => {
   const getLibrary = (id) => database.prepare("SELECT * FROM media_libraries WHERE id = ?").get(id) ?? null;
@@ -294,10 +298,30 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
     return listArtwork(source.item_id);
   });
 
+  const resetMetadata = ({ mediaKind = "video" } = {}) => transaction(database, () => {
+    const rows = database.prepare(`SELECT i.id, s.content_path
+      FROM media_items i JOIN media_sources s ON s.item_id = i.id AND s.availability != 'superseded'
+      WHERE i.media_kind = ? ORDER BY i.id`).all(mediaKind);
+    const update = database.prepare(`UPDATE media_items SET title = ?, sort_title = ?, metadata_json = '{}',
+      locked_fields_json = '[]', updated_at = ? WHERE id = ?`);
+    const removeExternalIds = database.prepare("DELETE FROM media_external_ids WHERE media_item_id = ?");
+    const removeArtwork = database.prepare("DELETE FROM media_artwork WHERE media_item_id = ?");
+    const timestamp = now();
+    let externalIds = 0;
+    let artwork = 0;
+    for (const row of rows) {
+      const title = sourceTitle(row.content_path);
+      update.run(title, title, timestamp, row.id);
+      externalIds += removeExternalIds.run(row.id).changes;
+      artwork += removeArtwork.run(row.id).changes;
+    }
+    return { artwork, externalIds, items: rows.length, mediaKind };
+  });
+
   const putProbeResult = () => { throw new Error("Probe persistence is reserved for the Wave 2 catalog migration."); };
   const listExternalIds = (itemId) => database.prepare("SELECT provider, provider_item_id AS id, media_type AS mediaType FROM media_external_ids WHERE media_item_id = ? ORDER BY provider").all(itemId).map((row) => ({ ...row }));
   const listArtwork = (itemId) => database.prepare("SELECT id, artwork_type AS type, provider, remote_url AS remoteUrl, local_path AS localPath, width, height FROM media_artwork WHERE media_item_id = ? ORDER BY artwork_type, id").all(itemId).map((row) => ({ ...row }));
   const listCleanupCandidates = () => database.prepare("SELECT * FROM media_sources WHERE availability = 'missing' AND cleanup_eligible_at IS NOT NULL ORDER BY cleanup_eligible_at").all().map(rowToSource);
 
-  return { ensureLibrary, ensureRoot, getItem, getLibrary, getRootByKey, getSource, listArtwork, listCleanupCandidates, listExternalIds, listItems, listItemsPage, putExternalMetadata, putGeneratedArtwork, putProbeResult, reconcileScan, recordScanFailure, resolveContentPath };
+  return { ensureLibrary, ensureRoot, getItem, getLibrary, getRootByKey, getSource, listArtwork, listCleanupCandidates, listExternalIds, listItems, listItemsPage, putExternalMetadata, putGeneratedArtwork, putProbeResult, reconcileScan, recordScanFailure, resetMetadata, resolveContentPath };
 };

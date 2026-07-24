@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { actorFromContext } from "../audit/service.mjs";
 import { json, readBody } from "../http.mjs";
 
@@ -7,9 +8,16 @@ export const createMediaLocationsRoutes = ({ audit = null, jobs, service }) => a
     return true;
   }
   if (request.method === "POST" && url.pathname === "/api/admin/media-locations/reindex") {
-    const queued = jobs.enqueue({ type: "scan", payload: { reason: "owner-full-reindex" }, dedupeKey: "library:media-locations", availableAt: Date.now() - 86_400_000 });
+    const batchId = randomUUID();
+    const cancelled = jobs.cancelAll();
+    const queued = jobs.enqueue({
+      type: "scan",
+      payload: { batchId, purgeMetadata: true, reason: "owner-full-reindex", refreshTmdb: true },
+      dedupeKey: `library:media-locations:${batchId}`,
+      availableAt: Date.now() - 86_400_000
+    });
     audit?.recordBestEffort({ actor: actorFromContext(request.nebulaAuth), eventType: "media.library_reindex_requested", outcome: "success", target: { type: "media-library", id: "shared-content" } });
-    json(response, 202, { job: queued.job, scanQueued: queued.created });
+    json(response, 202, { cancelled, job: queued.job, scanQueued: queued.created });
     return true;
   }
   if (request.method === "POST" && url.pathname === "/api/admin/media-locations") {

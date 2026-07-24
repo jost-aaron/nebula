@@ -112,6 +112,32 @@ test("catalog pages bound menu work and search across unloaded titles", async (t
   assert.deepEqual(searched.items.map(({ title }) => title), ["Charlie"]);
 });
 
+test("catalog metadata reset clears video enrichment while preserving indexed media", async (t) => {
+  const { contentRoot, repository, root } = await setup(t);
+  await writeFile(path.join(contentRoot, "Movie.File.2020.mp4"), "movie");
+  await writeFile(path.join(contentRoot, "Song.mp3"), "song");
+  await scanLocalRoot({ absoluteRoot: contentRoot, repository, rootId: root.id });
+  const movie = repository.resolveContentPath("Movie.File.2020.mp4", root.id);
+  const song = repository.resolveContentPath("Song.mp3", root.id);
+  repository.putExternalMetadata(movie.itemId, {
+    artwork: [{ provider: "tmdb", remoteUrl: "https://image.example/poster.jpg", type: "poster" }],
+    externalIds: [{ id: 123, mediaType: "movie", provider: "tmdb" }],
+    fields: { posterUrl: "https://image.example/poster.jpg", title: "Matched Movie" }
+  });
+  repository.putExternalMetadata(song.itemId, { fields: { artist: "Preserved Artist", title: "Matched Song" } });
+
+  const result = repository.resetMetadata({ mediaKind: "video" });
+
+  assert.deepEqual(result, { artwork: 1, externalIds: 1, items: 1, mediaKind: "video" });
+  assert.equal(repository.getItem(movie.itemId).title, "Movie File 2020");
+  assert.deepEqual(repository.getItem(movie.itemId).metadata, {});
+  assert.deepEqual(repository.listArtwork(movie.itemId), []);
+  assert.deepEqual(repository.listExternalIds(movie.itemId), []);
+  assert.equal(repository.getItem(song.itemId).title, "Matched Song");
+  assert.equal(repository.getItem(song.itemId).metadata.artist, "Preserved Artist");
+  assert.equal(repository.listItems({ availability: "available" }).length, 2);
+});
+
 test("full scans reclassify legacy TV Shows paths without replacing stable identities", async (t) => {
   const { contentRoot, repository, root } = await setup(t);
   await mkdir(path.join(contentRoot, "TV Shows"));

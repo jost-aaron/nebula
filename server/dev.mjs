@@ -35,6 +35,9 @@ import { createRenditionService, createRenditionStore, renditionsMigration } fro
 import { createRenditionCleanupScheduler, createRenditionPolicyRepository, createRenditionPolicyService, renditionPolicyMigrations } from "./renditionPolicy/index.mjs";
 import { createTailscaleEnrollmentService } from "./tailscaleEnrollment.mjs";
 import { createArtworkScheduler, createArtworkService } from "./artwork/index.mjs";
+import { readMetadata, writeMetadata } from "./mediaLibrary.mjs";
+import { createTmdbClient } from "./tmdb.mjs";
+import { createTmdbMetadataService } from "./metadata/tmdbService.mjs";
 import {
   clusterKeyRotationMigration, clusterMigration, clusterOperationsMigration, clusterFederationMigration, createClusterIngressRoutes, createClusterManifestClient,
   createClusterManifestService, createClusterPairingClient, createClusterRepository, createClusterSyncService,
@@ -306,6 +309,14 @@ const artworkService = createArtworkService({
   resolveSource: (sourceId) => catalogRepository.getSource(sourceId)
 });
 const artworkScheduler = createArtworkScheduler({ repository: catalogRepository });
+const tmdbMetadata = createTmdbMetadataService({
+  readLegacyMetadata: () => readMetadata(storage.cinemaMetadataPath),
+  repository: catalogRepository,
+  tmdb: createTmdbClient({
+    tokenProvider: () => accountStore.getServerSetting("tmdb_api_token") || process.env.TMDB_API_TOKEN || ""
+  }),
+  writeLegacyMetadata: (metadata) => writeMetadata(storage.cinemaMetadataPath, metadata)
+});
 const renditionPolicy = createRenditionPolicyService({ audit: auditService, jobs: jobsService,
   repository: renditionPolicyRepository, store: renditionStore });
 const renditionService = createRenditionService({
@@ -320,8 +331,16 @@ const renditionService = createRenditionService({
 });
 const jobsWorker = createJobsWorker({
   handlers: createMediaJobHandlers({
-    scanLibrary: async (_payload, context) => {
+    scanLibrary: async (payload, context) => {
+      const purged = payload?.purgeMetadata ? catalogRepository.resetMetadata({ mediaKind: "video" }) : null;
+      if (payload?.purgeMetadata) await writeMetadata(storage.cinemaMetadataPath, {});
       const scan = await scanCatalog();
+      const metadata = payload?.refreshTmdb
+        ? tmdbMetadata.enqueueAll(context.enqueue, {
+            availableAt: Date.now() + 5_000,
+            batchId: payload.batchId ?? "full-reindex"
+          })
+        : { intervalMs: 0, queued: 0 };
       const enrichmentStart = Date.now() + 60_000;
       let enrichmentIndex = 0;
       for (const item of catalogRepository.listItems({ availability: "available" })) {
@@ -338,13 +357,18 @@ const jobsWorker = createJobsWorker({
           }
         }
       }
-      const artwork = artworkScheduler.enqueueMissing(context.enqueue, { availableAt: Date.now() + 30_000 });
-      return { ...scan, artworkQueued: artwork.queued };
+      const artworkStart = payload?.refreshTmdb
+        ? Date.now() + 30_000 + metadata.queued * metadata.intervalMs
+        : Date.now() + 30_000;
+      const artwork = artworkScheduler.enqueueMissing(context.enqueue, { availableAt: artworkStart });
+      return { ...scan, artworkQueued: artwork.queued, metadataQueued: metadata.queued, purged };
     },
     probeSource: async ({ sourceId }) => { const result = await probeService.probeSource(sourceId); await syncLocalProjection(); return result; },
     fingerprintSource: async ({ sourceId }, context) => { const result = await fingerprintService.fingerprintSource(sourceId, context); await syncLocalProjection(); return result; },
     buildRendition: async (payload, context) => { const result = await renditionService.build(payload, context); await syncLocalProjection(); return result; },
-    refreshMetadata: async () => ({ skipped: "metadata orchestration pending" }),
+    refreshMetadata: async (payload, context) => payload?.sourceId
+      ? tmdbMetadata.refreshSource(payload, context)
+      : tmdbMetadata.enqueueAll(context.enqueue, { availableAt: Date.now() + 1_000, batchId: `manual-${Date.now()}` }),
     cacheArtwork: async (payload, context) => payload?.sourceId
       ? artworkService.generate(payload, context)
       : artworkScheduler.enqueueMissing(context.enqueue, { availableAt: Date.now() + 1_000 }),
