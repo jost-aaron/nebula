@@ -1220,7 +1220,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     if (!scrollHost || !sentinel) return;
     pageObserver = new IntersectionObserver((observations) => {
       if (observations.some((observation) => observation.isIntersecting)) void loadLibrary(false);
-    }, { root: scrollHost, rootMargin: "1200px 0px" });
+    }, { root: scrollHost, rootMargin: "0px 0px 3200px 0px" });
     pageObserver.observe(sentinel);
   };
 
