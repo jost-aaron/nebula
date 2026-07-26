@@ -2678,7 +2678,6 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       null;
 
     if (action === "home") {
-      stopActivePlayback?.();
       onHome?.();
     }
 

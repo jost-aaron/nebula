@@ -77,6 +77,11 @@ let rendererState: RendererRuntimeState = {
   mode: "checking"
 };
 let disposeActiveApp: (() => void) | null = null;
+type CachedMediaSurface = {
+  dispose: () => void;
+  element: HTMLElement;
+};
+const mediaSurfaceCache = new Map<"cinema" | "studio", CachedMediaSurface>();
 
 const performanceMonitor = createPerformanceMonitor();
 
@@ -124,6 +129,10 @@ root.innerHTML = `
     </section>
   </main>
   <section id="app-surface" class="app-surface" role="dialog" aria-modal="true" aria-live="polite" tabindex="-1" hidden></section>
+  <section id="background-media-host" class="background-media-host" aria-label="Global media players">
+    <button id="background-video-return" class="background-video-return" type="button" hidden>Return to Cinema</button>
+    <button id="background-video-close" class="background-video-close" type="button" aria-label="Close video player" title="Close player" hidden>×</button>
+  </section>
 `;
 
 const grid = document.querySelector<HTMLDivElement>("#app-grid");
@@ -133,15 +142,53 @@ const launchButton = document.querySelector<HTMLButtonElement>("#launch-button")
 const detailsButton = document.querySelector<HTMLButtonElement>("#details-button");
 const detailPanel = document.querySelector<HTMLElement>("#detail-panel");
 const appSurface = document.querySelector<HTMLElement>("#app-surface");
+const backgroundMediaHost = document.querySelector<HTMLElement>("#background-media-host");
+const backgroundVideoReturn = document.querySelector<HTMLButtonElement>("#background-video-return");
+const backgroundVideoClose = document.querySelector<HTMLButtonElement>("#background-video-close");
 const gpuStatus = document.querySelector<HTMLSpanElement>("#gpu-status");
 const clock = document.querySelector<HTMLTimeElement>("#clock");
 const controllerStatus = document.querySelector<HTMLSpanElement>("#controller-status");
 const browserFullscreenButton = document.querySelector<HTMLButtonElement>("#browser-fullscreen");
 const shellRoot = document.querySelector<HTMLElement>(".shell");
 
-if (!grid || !featuredTitle || !featuredDescription || !launchButton || !detailsButton || !detailPanel || !appSurface || !gpuStatus || !clock || !controllerStatus || !browserFullscreenButton || !shellRoot) {
+if (!grid || !featuredTitle || !featuredDescription || !launchButton || !detailsButton || !detailPanel || !appSurface || !backgroundMediaHost || !backgroundVideoReturn || !backgroundVideoClose || !gpuStatus || !clock || !controllerStatus || !browserFullscreenButton || !shellRoot) {
   throw new Error("Dashboard controls failed to initialize.");
 }
+
+const syncBackgroundMediaPlayers = () => {
+  const cinema = mediaSurfaceCache.get("cinema")?.element;
+  const backgroundVideoStage = cinema?.classList.contains("background-media-app")
+    ? cinema.querySelector<HTMLElement>(".cinema-video-stage")
+    : null;
+  const hasBackgroundVideo = Boolean(backgroundVideoStage?.querySelector("[data-cinema-player]"));
+  if (hasBackgroundVideo && backgroundVideoStage) {
+    backgroundVideoStage.append(backgroundVideoReturn, backgroundVideoClose);
+  } else {
+    if (backgroundVideoReturn.parentElement !== backgroundMediaHost) backgroundMediaHost.append(backgroundVideoReturn);
+    if (backgroundVideoClose.parentElement !== backgroundMediaHost) backgroundMediaHost.append(backgroundVideoClose);
+  }
+  backgroundVideoReturn.hidden = !hasBackgroundVideo;
+  backgroundVideoClose.hidden = !hasBackgroundVideo;
+  backgroundMediaHost.classList.toggle("has-video", hasBackgroundVideo);
+};
+
+const backgroundActiveMediaApp = () => {
+  const activeId = shellState.activeAppId;
+  if (activeId !== "cinema" && activeId !== "studio") return false;
+  const cached = mediaSurfaceCache.get(activeId);
+  if (!cached) return false;
+  cached.element.classList.remove("foreground-media-app");
+  cached.element.classList.add("background-media-app");
+  disposeActiveApp = null;
+  syncBackgroundMediaPlayers();
+  return true;
+};
+
+const deactivateActiveApp = () => {
+  if (backgroundActiveMediaApp()) return;
+  disposeActiveApp?.();
+  disposeActiveApp = null;
+};
 
 const syncBrowserFullscreenControl = () => {
   const active = Boolean(browserFullscreenElement());
@@ -298,10 +345,9 @@ const closeActiveApp = () => {
     return;
   }
 
+  deactivateActiveApp();
   shellState = transitionShellState(shellState, { type: "close-active" }, appIds);
   activeAppLaunchGeneration += 1;
-  disposeActiveApp?.();
-  disposeActiveApp = null;
   appSurface.classList.remove("open");
   appSurface.classList.add("closing");
 
@@ -481,8 +527,7 @@ const launchApp = async (app: DashboardApp, options: { settingsSection?: string 
   const isStudioApp = app.id === "studio";
 
   const launchGeneration = ++activeAppLaunchGeneration;
-  disposeActiveApp?.();
-  disposeActiveApp = null;
+  deactivateActiveApp();
   shellState = transitionShellState(
     transitionShellState(shellState, { type: "select", appId: app.id }, appIds),
     { type: "activate" },
@@ -492,6 +537,27 @@ const launchApp = async (app: DashboardApp, options: { settingsSection?: string 
   renderFocus();
   detailPanel.classList.remove("system-panel", "search-panel", "library-panel");
   renderPanel();
+
+  const cachedMedia = isCinemaApp || isStudioApp
+    ? mediaSurfaceCache.get(isCinemaApp ? "cinema" : "studio")
+    : null;
+  if (cachedMedia) {
+    cachedMedia.element.classList.remove("background-media-app");
+    cachedMedia.element.classList.add("foreground-media-app");
+    appSurface.hidden = false;
+    shellRoot.inert = true;
+    appSurface.setAttribute("aria-label", app.name);
+    appSurface.className = `app-surface launching ${isCinemaApp ? "cinema-app-surface" : "studio-app-surface"}`;
+    appSurface.style.setProperty("--accent", app.accent);
+    appSurface.replaceChildren();
+    syncBackgroundMediaPlayers();
+    requestAnimationFrame(() => {
+      if (launchGeneration !== activeAppLaunchGeneration || shellState.activeAppId !== app.id) return;
+      appSurface.classList.add("open");
+      cachedMedia.element.focus();
+    });
+    return;
+  }
 
   let mediaModule: Awaited<ReturnType<typeof loadMediaApp>> | null = null;
   if (isCinemaApp || isStudioApp) {
@@ -621,7 +687,7 @@ const launchApp = async (app: DashboardApp, options: { settingsSection?: string 
 
   if (isCinemaApp) {
     if (!mediaModule || !("bindCinemaView" in mediaModule)) return;
-    disposeActiveApp = mediaModule.bindCinemaView(appSurface, closeActiveApp, {
+    const dispose = mediaModule.bindCinemaView(appSurface, closeActiveApp, {
       canManageRenditions: accountSession.user?.role === "owner",
       personalPlayback: !isGuest,
       onOpenJobs: () => {
@@ -629,27 +695,91 @@ const launchApp = async (app: DashboardApp, options: { settingsSection?: string 
         if (settingsApp) void launchApp(settingsApp, { settingsSection: "jobs" });
       }
     });
+    const element = appSurface.querySelector<HTMLElement>("[data-cinema-app]");
+    if (element) {
+      mediaSurfaceCache.set("cinema", { dispose, element });
+      element.classList.add("foreground-media-app");
+      element.tabIndex = -1;
+      element.setAttribute("role", "dialog");
+      element.setAttribute("aria-label", app.name);
+      backgroundMediaHost.append(element);
+    }
+    else disposeActiveApp = dispose;
   }
 
   if (isStudioApp) {
     if (!mediaModule || !("bindStudioView" in mediaModule)) return;
-    disposeActiveApp = mediaModule.bindStudioView(appSurface, closeActiveApp, {
+    const dispose = mediaModule.bindStudioView(appSurface, closeActiveApp, {
       personalPlayback: !isGuest,
       onOpenJobs: () => {
         const settingsApp = availableApps.find((candidate) => candidate.id === "settings");
         if (settingsApp) void launchApp(settingsApp, { settingsSection: "jobs" });
       }
     });
+    const element = appSurface.querySelector<HTMLElement>("[data-studio-app]");
+    if (element) {
+      mediaSurfaceCache.set("studio", { dispose, element });
+      element.classList.add("foreground-media-app");
+      element.tabIndex = -1;
+      element.setAttribute("role", "dialog");
+      element.setAttribute("aria-label", app.name);
+      backgroundMediaHost.append(element);
+    }
+    else disposeActiveApp = dispose;
   }
 
   requestAnimationFrame(() => {
     if (launchGeneration !== activeAppLaunchGeneration || shellState.activeAppId !== app.id) return;
     appSurface.classList.add("open");
-    if (!appSurface.contains(document.activeElement)) {
+    const activeMediaRoot = isCinemaApp || isStudioApp
+      ? mediaSurfaceCache.get(isCinemaApp ? "cinema" : "studio")?.element
+      : null;
+    if (activeMediaRoot && !activeMediaRoot.contains(document.activeElement)) {
+      activeMediaRoot.focus();
+    } else if (!activeMediaRoot && !appSurface.contains(document.activeElement)) {
       appSurface.focus();
     }
   });
 };
+
+backgroundVideoReturn.addEventListener("click", () => {
+  const cinema = availableApps.find((app) => app.id === "cinema");
+  if (cinema) void launchApp(cinema);
+});
+
+backgroundVideoClose.addEventListener("click", () => {
+  const cinema = mediaSurfaceCache.get("cinema")?.element;
+  const backToTitle = cinema?.querySelector<HTMLButtonElement>("[data-cinema-action='back-title']");
+  if (backToTitle) backToTitle.click();
+  else {
+    const video = cinema?.querySelector<HTMLVideoElement>("[data-cinema-player]");
+    video?.pause();
+    video?.removeAttribute("src");
+    video?.load();
+  }
+  requestAnimationFrame(syncBackgroundMediaPlayers);
+});
+
+backgroundMediaHost.addEventListener("click", (event) => {
+  const target = event.target as HTMLElement;
+  if (!target.closest("[data-studio-action='open-player']")) return;
+  const studio = availableApps.find((app) => app.id === "studio");
+  if (studio) void launchApp(studio);
+});
+
+document.addEventListener("play", (event) => {
+  const activeMedia = event.target;
+  if (!(activeMedia instanceof HTMLMediaElement)) return;
+  const otherKind = activeMedia instanceof HTMLAudioElement ? "video" : "audio";
+  document.querySelectorAll<HTMLMediaElement>(otherKind).forEach((media) => {
+    if (media !== activeMedia && !media.paused) media.pause();
+  });
+}, true);
+
+window.addEventListener("pagehide", () => {
+  mediaSurfaceCache.forEach(({ dispose }) => dispose());
+  mediaSurfaceCache.clear();
+}, { once: true });
 
 const bindSearchControls = (container: ParentNode) => {
   const input = container.querySelector<HTMLInputElement>("[data-search-input]");

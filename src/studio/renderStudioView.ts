@@ -551,6 +551,7 @@ const renderMiniPlayer = (entry: MusicEntry) => `
     <button type="button" data-studio-action="toggle-mute" data-studio-mute-toggle aria-label="Mute">${renderStudioIcon("Volume2")}</button>
     <input type="range" min="0" max="1" value="1" step="0.05" data-studio-volume aria-label="Volume" />
   </div>
+  <button class="studio-mini-close" type="button" data-studio-action="close-player" aria-label="Close music player" title="Close player">×</button>
 `;
 
 const renderNowPlaying = (entry: MusicEntry, entries: MusicEntry[]) => {
@@ -761,6 +762,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   let setPlayerEntry: (entry: MusicEntry, force?: boolean) => void = () => undefined;
   let playPlayerAt: (positionSeconds?: number) => void = () => undefined;
   let syncPlayerUi: () => void = () => undefined;
+  let closePlayer: () => void = () => undefined;
 
   const bindPlayer = () => {
     type PlaybackSession = {
@@ -806,7 +808,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       const currentIndex = entries.findIndex((entry) => entry.path === playingEntry?.path);
 
       app.classList.toggle("has-player", Boolean(playingEntry));
-      miniPlayer.hidden = !playingEntry || Boolean(selected);
+      miniPlayer.hidden = !playingEntry;
       app.querySelectorAll<HTMLElement>("[data-studio-current-time]").forEach((time) => { time.textContent = formatTime(audioPlayer.currentTime); });
       app.querySelectorAll<HTMLElement>("[data-studio-duration]").forEach((time) => { time.textContent = formatTime(duration); });
       app.querySelectorAll<HTMLInputElement>("[data-studio-seek]").forEach((seek) => {
@@ -886,6 +888,21 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       clusterDeliveryNodeId = null;
       clusterDeliverySourceId = null;
       if (id) void cancelClusterMusicDelivery(id).catch(() => undefined);
+    };
+
+    closePlayer = () => {
+      playerRequestGeneration += 1;
+      stopSession();
+      releaseClusterDelivery();
+      audioPlayer.pause();
+      audioPlayer.removeAttribute("src");
+      audioPlayer.load();
+      playingEntry = null;
+      playbackSession = null;
+      playerReady = Promise.resolve();
+      statusMessage = "Ready to play.";
+      miniContent.replaceChildren();
+      syncPlayerUi();
     };
 
     setPlayerEntry = (entry: MusicEntry, force = false) => {
@@ -1605,7 +1622,6 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     }
 
     if (actionButton?.dataset.studioAction === "home") {
-      dispose();
       onHome?.();
       return;
     }
@@ -1654,6 +1670,11 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       if (!playingEntry) return;
       if (audioPlayer.paused || audioPlayer.ended) playPlayerAt(audioPlayer.ended ? 0 : audioPlayer.currentTime);
       else audioPlayer.pause();
+      return;
+    }
+
+    if (actionButton?.dataset.studioAction === "close-player") {
+      closePlayer();
       return;
     }
 

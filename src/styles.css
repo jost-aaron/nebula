@@ -4056,6 +4056,149 @@ h1 {
   opacity: 0;
 }
 
+.background-media-host {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  pointer-events: none;
+}
+
+.foreground-media-app {
+  position: fixed !important;
+  z-index: 30;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  min-height: 0 !important;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.background-media-app {
+  position: fixed !important;
+  inset: auto !important;
+  width: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  visibility: hidden;
+  pointer-events: none;
+  background: transparent !important;
+}
+
+.studio-shell.background-media-app .studio-mini-player:not([hidden]) {
+  position: fixed;
+  z-index: 32;
+  right: max(14px, var(--safe-area-right));
+  bottom: max(12px, var(--safe-area-bottom));
+  left: max(14px, var(--safe-area-left));
+  display: block;
+  margin: 0;
+  visibility: visible;
+  pointer-events: auto;
+  box-shadow:
+    0 -18px 70px rgba(0, 0, 0, 0.58),
+    0 0 0 1px rgba(245, 185, 79, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
+
+.cinema-shell.background-media-app .cinema-content,
+.cinema-shell.background-media-app .cinema-watch-surface {
+  display: contents;
+  overflow: visible;
+}
+
+.cinema-shell.background-media-app .cinema-video-stage {
+  position: fixed;
+  z-index: 31;
+  right: max(18px, var(--safe-area-right));
+  bottom: max(18px, var(--safe-area-bottom));
+  width: min(410px, calc(100vw - 36px));
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border: 1px solid rgba(117, 230, 243, 0.34);
+  border-radius: 14px;
+  visibility: visible;
+  pointer-events: auto;
+  background: #000;
+  box-shadow:
+    0 24px 90px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+.background-media-host:has(.studio-mini-player:not([hidden])) .cinema-shell.background-media-app .cinema-video-stage {
+  bottom: max(116px, calc(102px + var(--safe-area-bottom)));
+}
+
+.cinema-shell.background-media-app .cinema-player-statusbar,
+.cinema-shell.background-media-app .cinema-transport-group-left,
+.cinema-shell.background-media-app .cinema-transport-group-right {
+  display: none;
+}
+
+.cinema-shell.background-media-app .cinema-transport {
+  padding: 8px 10px 10px;
+}
+
+.cinema-shell.background-media-app .cinema-transport-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.cinema-shell.background-media-app .background-video-return,
+.cinema-shell.background-media-app .background-video-close {
+  position: absolute;
+  z-index: 6;
+  top: 10px;
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid rgba(117, 230, 243, 0.44);
+  border-radius: 8px;
+  color: #eafcff;
+  background: rgba(2, 12, 17, 0.8);
+  backdrop-filter: blur(16px);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: auto;
+}
+
+.cinema-shell.background-media-app .background-video-return {
+  right: 10px;
+}
+
+.cinema-shell.background-media-app .background-video-close {
+  left: 10px;
+  width: 32px;
+  padding: 0;
+  font-size: 1.05rem;
+}
+
+.background-video-return[hidden],
+.background-video-close[hidden] {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .studio-shell.background-media-app .studio-mini-player:not([hidden]) {
+    right: max(8px, var(--safe-area-right));
+    bottom: max(8px, var(--safe-area-bottom));
+    left: max(8px, var(--safe-area-left));
+  }
+
+  .cinema-shell.background-media-app .cinema-video-stage {
+    right: max(10px, var(--safe-area-right));
+    bottom: max(10px, var(--safe-area-bottom));
+    width: min(360px, calc(100vw - 20px));
+  }
+
+  .background-media-host:has(.studio-mini-player:not([hidden])) .cinema-shell.background-media-app .cinema-video-stage {
+    bottom: max(172px, calc(164px + var(--safe-area-bottom)));
+  }
+}
+
 .app-window {
   width: min(1120px, calc(100vw - 56px));
   min-height: min(720px, calc(100vh - 56px));
@@ -5755,7 +5898,7 @@ h1 {
 
 .studio-mini-player > [data-studio-mini-content] {
   display: grid;
-  grid-template-columns: minmax(190px, 1fr) auto minmax(190px, 0.75fr) minmax(100px, 0.3fr);
+  grid-template-columns: minmax(190px, 1fr) auto minmax(190px, 0.75fr) minmax(100px, 0.3fr) auto;
   gap: clamp(12px, 2vw, 26px);
   align-items: center;
 }
@@ -5826,6 +5969,15 @@ h1 {
 
 .studio-mini-volume button {
   flex: 0 0 auto;
+}
+
+.studio-mini-player .studio-mini-close {
+  width: 34px;
+  height: 34px;
+  border-color: rgba(255, 255, 255, 0.14);
+  border-radius: 9px;
+  color: rgba(248, 251, 255, 0.72);
+  font-size: 1.05rem;
 }
 
 .studio-shell.has-player .studio-footer {
@@ -6154,7 +6306,7 @@ h1 {
   }
 
   .studio-mini-player > [data-studio-mini-content] {
-    grid-template-columns: minmax(180px, 1fr) auto minmax(180px, 0.8fr);
+    grid-template-columns: minmax(180px, 1fr) auto minmax(180px, 0.8fr) auto;
   }
 
   .studio-mini-volume {
@@ -6303,7 +6455,7 @@ h1 {
   }
 
   .studio-mini-player > [data-studio-mini-content] {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 7px 12px;
   }
 

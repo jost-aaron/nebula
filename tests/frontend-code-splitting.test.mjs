@@ -18,8 +18,10 @@ test("Cinema and Studio load as lifecycle-safe app chunks", async () => {
   assert.match(main, /launchGeneration !== activeAppLaunchGeneration/);
   assert.match(main, /activeAppLaunchGeneration \+= 1/);
   assert.match(main, /data-app-module-retry/);
-  assert.match(main, /disposeActiveApp = mediaModule\.bindCinemaView/);
-  assert.match(main, /disposeActiveApp = mediaModule\.bindStudioView/);
+  assert.match(main, /const dispose = mediaModule\.bindCinemaView/);
+  assert.match(main, /const dispose = mediaModule\.bindStudioView/);
+  assert.match(main, /mediaSurfaceCache\.set\("cinema", \{ dispose, element \}\)/);
+  assert.match(main, /mediaSurfaceCache\.set\("studio", \{ dispose, element \}\)/);
   assert.match(main, /import "\.\/cinema\/cinemaBrand\.css"/);
   assert.doesNotMatch(cinema, /import "\.\/cinemaBrand\.css"/);
 });
