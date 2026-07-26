@@ -640,6 +640,16 @@
   background: rgba(231, 169, 64, 0.055);
   box-shadow: 0 10px 26px rgba(3, 5, 8, 0.72);
   backdrop-filter: blur(16px);
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cinema-artwork-activity:hover,
+.cinema-artwork-activity:focus-visible {
+  border-color: rgba(231, 169, 64, 0.8);
+  outline: none;
 }
 
 .cinema-artwork-activity[hidden] {

@@ -98,10 +98,10 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
             <button class="active" type="button" data-diagnostic-tab="all">Overview</button>
             <button type="button" data-diagnostic-tab="account">Account</button>
           </div>
-          ${showJobsAdmin ? `
-            <div class="settings-nav-group">
-              <small>Server</small>
-              <button type="button" data-diagnostic-tab="jobs">Jobs</button>
+          <div class="settings-nav-group">
+            <small>Server</small>
+            <button type="button" data-diagnostic-tab="jobs">Jobs</button>
+            ${showJobsAdmin ? `
               <button type="button" data-diagnostic-tab="media-locations">Media Locations</button>
               <button type="button" data-diagnostic-tab="playback-policy">Playback</button>
               <button type="button" data-diagnostic-tab="transcode-acceleration">Transcoding</button>
@@ -109,8 +109,8 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
               <button type="button" data-diagnostic-tab="activity">Activity</button>
               <button type="button" data-diagnostic-tab="remote-access">Remote Access</button>
               <button type="button" data-diagnostic-tab="cluster">Cluster</button>
-            </div>
-          ` : ""}
+            ` : ""}
+          </div>
           <div class="settings-nav-group">
             <small>System</small>
             <button type="button" data-diagnostic-tab="renderer">Renderer</button>
@@ -143,14 +143,14 @@ export function renderSettingsPanel(snapshot: DiagnosticsSnapshot, accountSessio
             </div>
             <div class="settings-quick-grid" aria-label="Quick settings">
               <button type="button" data-settings-jump="account"><span>01</span><strong>Account</strong><small>Profile, security, and members</small></button>
-              ${showJobsAdmin ? `<button type="button" data-settings-jump="playback-policy"><span>02</span><strong>Playback</strong><small>Streams, limits, and delivery</small></button>` : ""}
+              <button type="button" data-settings-jump="jobs"><span>02</span><strong>Jobs</strong><small>Queues, progress, and history</small></button>
               ${showJobsAdmin ? `<button type="button" data-settings-jump="remote-access"><span>03</span><strong>Remote Access</strong><small>Tailscale and network paths</small></button>` : ""}
               <button type="button" data-settings-jump="client"><span>04</span><strong>Connection</strong><small>Server target and client token</small></button>
             </div>
           </section>
 
           ${renderAccountSettings(accountSession)}
-          ${showJobsAdmin ? renderJobsAdmin() : ""}
+          ${renderJobsAdmin({ canManage: showJobsAdmin })}
           ${showJobsAdmin ? renderMediaLocationsAdmin() : ""}
           ${showJobsAdmin ? renderPlaybackPolicyAdmin() : ""}
           ${showJobsAdmin ? renderTranscodeAccelerationAdmin() : ""}

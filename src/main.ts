@@ -322,7 +322,7 @@ const loadMediaApp = (appId: "cinema" | "studio") =>
     ? import("./cinema/renderCinemaView")
     : import("./studio/renderStudioView");
 
-const bindSettingsTabs = (container: ParentNode) => {
+const bindSettingsTabs = (container: ParentNode, initialSection = "all") => {
   const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>("[data-diagnostic-tab]"));
   const sections = Array.from(container.querySelectorAll<HTMLElement>("[data-diagnostic-section]"));
 
@@ -412,7 +412,9 @@ const bindSettingsTabs = (container: ParentNode) => {
     });
   });
 
-  activate(tabs.find((tab) => tab.classList.contains("active"))?.dataset.diagnosticTab ?? "all");
+  activate(tabs.some((tab) => tab.dataset.diagnosticTab === initialSection)
+    ? initialSection
+    : tabs.find((tab) => tab.classList.contains("active"))?.dataset.diagnosticTab ?? "all");
 };
 
 const bindClientSettings = (container: ParentNode) => {
@@ -471,7 +473,7 @@ const createSettingsContent = async () =>
     accountSession as AccountSessionState
   );
 
-const launchApp = async (app: DashboardApp) => {
+const launchApp = async (app: DashboardApp, options: { settingsSection?: string } = {}) => {
   const isSearchApp = app.id === "search";
   const isSettingsApp = app.id === "settings";
   const isFilesApp = app.id === "files";
@@ -588,11 +590,11 @@ const launchApp = async (app: DashboardApp) => {
 
   if (isSettingsApp) {
     appSurface.querySelector<HTMLButtonElement>("#close-panel")?.addEventListener("click", () => dispatchShellCommand({ type: "back", source: "pointer" }));
-    bindSettingsTabs(appSurface);
+    bindSettingsTabs(appSurface, options.settingsSection);
     bindClientSettings(appSurface);
     bindAccountSettings(appSurface);
+    const disposeJobs = bindJobsAdmin(appSurface);
     if (accountSession.user?.role === "owner") {
-      const disposeJobs = bindJobsAdmin(appSurface);
       const disposeMediaLocations = bindMediaLocationsAdmin(appSurface);
       const disposePlaybackPolicy = bindPlaybackPolicyAdmin(appSurface);
       const disposeAcceleration = bindTranscodeAccelerationAdmin(appSurface);
@@ -601,7 +603,7 @@ const launchApp = async (app: DashboardApp) => {
       const disposeTailscale = bindTailscaleAdmin(appSurface);
       const disposeCluster = bindClusterAdmin(appSurface);
       disposeActiveApp = () => { disposeJobs(); disposeMediaLocations(); disposePlaybackPolicy(); disposeAcceleration(); disposeRenditionStorage(); disposeActivity(); disposeTailscale(); disposeCluster(); };
-    }
+    } else disposeActiveApp = disposeJobs;
   }
 
   if (isFilesApp) {
@@ -621,13 +623,23 @@ const launchApp = async (app: DashboardApp) => {
     if (!mediaModule || !("bindCinemaView" in mediaModule)) return;
     disposeActiveApp = mediaModule.bindCinemaView(appSurface, closeActiveApp, {
       canManageRenditions: accountSession.user?.role === "owner",
-      personalPlayback: !isGuest
+      personalPlayback: !isGuest,
+      onOpenJobs: () => {
+        const settingsApp = availableApps.find((candidate) => candidate.id === "settings");
+        if (settingsApp) void launchApp(settingsApp, { settingsSection: "jobs" });
+      }
     });
   }
 
   if (isStudioApp) {
     if (!mediaModule || !("bindStudioView" in mediaModule)) return;
-    disposeActiveApp = mediaModule.bindStudioView(appSurface, closeActiveApp, { personalPlayback: !isGuest });
+    disposeActiveApp = mediaModule.bindStudioView(appSurface, closeActiveApp, {
+      personalPlayback: !isGuest,
+      onOpenJobs: () => {
+        const settingsApp = availableApps.find((candidate) => candidate.id === "settings");
+        if (settingsApp) void launchApp(settingsApp, { settingsSection: "jobs" });
+      }
+    });
   }
 
   requestAnimationFrame(() => {

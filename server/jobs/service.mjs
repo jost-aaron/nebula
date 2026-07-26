@@ -22,14 +22,23 @@ export const createJobsService = ({ repository, allowedTypes = JOB_TYPES } = {})
   const findByDedupe = (type, dedupeKey) => repository.findByDedupe(type, dedupeKey);
   const findByDedupeMany = (type, dedupeKeys) => repository.findByDedupeMany(type, dedupeKeys);
   const activity = (type) => repository.activity(type);
-  const list = (query = {}) => repository.list({ ...query, limit: Math.min(200, positiveInteger(query.limit, 50)) });
+  const list = (query = {}) => repository.list({
+    ...query,
+    limit: Math.min(200, positiveInteger(query.limit, 50)),
+    offset: Math.max(0, Number.isInteger(query.offset) ? query.offset : 0)
+  });
+  const overview = (query = {}) => ({
+    jobs: list(query),
+    summary: repository.summary(),
+    total: repository.count(query)
+  });
   const cancel = (id) => repository.requestCancellation(id);
   const cancelAll = ({ type = null } = {}) => {
     if (type !== null && !types.has(type)) throw Object.assign(new Error("Unsupported job type."), { status: 400 });
     return repository.requestCancellationAll({ type });
   };
   const prune = ({ olderThan, retain }) => repository.pruneTerminal({ olderThan, retain });
-  return { activity, cancel, cancelAll, enqueue, findByDedupe, findByDedupeMany, get, list, prune, types: [...types] };
+  return { activity, cancel, cancelAll, enqueue, findByDedupe, findByDedupeMany, get, list, overview, prune, types: [...types] };
 };
 
 export { JOB_TYPES };

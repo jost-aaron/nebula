@@ -66,6 +66,19 @@ export const createJobsRepository = ({ db, migrate = false, now = () => Date.now
       ORDER BY available_at, rowid LIMIT 1`).get(type));
     return { counts, next, running };
   };
+  const summary = () => {
+    const counts = Object.fromEntries(db.prepare(
+      "SELECT state, COUNT(id) AS count FROM background_jobs GROUP BY state"
+    ).all().map((row) => [row.state, Number(row.count)]));
+    const typeCounts = Object.fromEntries(db.prepare(
+      "SELECT type, COUNT(id) AS count FROM background_jobs GROUP BY type"
+    ).all().map((row) => [row.type, Number(row.count)]));
+    return {
+      counts,
+      total: Object.values(counts).reduce((total, count) => total + count, 0),
+      typeCounts
+    };
+  };
 
   const enqueue = ({ type, payload = {}, dedupeKey = null, maxAttempts = 3, availableAt = timestamp(), reuseTerminal = false }) => {
     const existing = dedupeKey === null ? null : db.prepare(`SELECT * FROM background_jobs
@@ -209,9 +222,32 @@ export const createJobsRepository = ({ db, migrate = false, now = () => Date.now
     return { cancelled, failed, requeued };
   };
 
-  const list = ({ limit = 50, state = null, type = null } = {}) => db.prepare(`SELECT * FROM background_jobs
-    WHERE (? IS NULL OR state = ?) AND (? IS NULL OR type = ?)
-    ORDER BY created_at DESC, id DESC LIMIT ?`).all(state, state, type, type, limit).map(fromRow);
+  const list = ({ limit = 50, offset = 0, query = null, state = null, type = null } = {}) => {
+    const search = typeof query === "string" && query.trim() ? `%${query.trim().toLowerCase()}%` : null;
+    return db.prepare(`SELECT * FROM background_jobs
+      WHERE (? IS NULL OR state = ?) AND (? IS NULL OR type = ?)
+        AND (? IS NULL OR lower(id) LIKE ? OR lower(type) LIKE ? OR lower(state) LIKE ?
+          OR lower(COALESCE(current_stage, '')) LIKE ? OR lower(COALESCE(dedupe_key, '')) LIKE ?
+          OR lower(COALESCE(error_code, '')) LIKE ? OR lower(COALESCE(error_message, '')) LIKE ?
+          OR lower(payload_json) LIKE ?)
+      ORDER BY CASE state WHEN 'running' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END,
+        CASE WHEN state = 'queued' THEN available_at END ASC,
+        CASE WHEN state = 'running' THEN started_at END DESC,
+        CASE WHEN state NOT IN ('queued', 'running') THEN updated_at END DESC,
+        id DESC LIMIT ? OFFSET ?`)
+      .all(state, state, type, type, search, search, search, search, search, search, search, search, search, limit, offset)
+      .map(fromRow);
+  };
+  const count = ({ query = null, state = null, type = null } = {}) => {
+    const search = typeof query === "string" && query.trim() ? `%${query.trim().toLowerCase()}%` : null;
+    return Number(db.prepare(`SELECT COUNT(id) AS count FROM background_jobs
+      WHERE (? IS NULL OR state = ?) AND (? IS NULL OR type = ?)
+        AND (? IS NULL OR lower(id) LIKE ? OR lower(type) LIKE ? OR lower(state) LIKE ?
+          OR lower(COALESCE(current_stage, '')) LIKE ? OR lower(COALESCE(dedupe_key, '')) LIKE ?
+          OR lower(COALESCE(error_code, '')) LIKE ? OR lower(COALESCE(error_message, '')) LIKE ?
+          OR lower(payload_json) LIKE ?)`)
+      .get(state, state, type, type, search, search, search, search, search, search, search, search, search).count);
+  };
 
   const pruneTerminal = ({ olderThan, retain = 1_000 } = {}) => {
     if (!Number.isInteger(retain) || retain < 0) throw new TypeError("retain must be a non-negative integer.");
@@ -226,6 +262,6 @@ export const createJobsRepository = ({ db, migrate = false, now = () => Date.now
     return { deleted: result.changes };
   };
 
-  return { activity, cancelRunning, claimNext, enqueue, failAttempt, findByDedupe, findByDedupeMany, get, isCancellationRequested, list,
-    pruneTerminal, recoverInterrupted, requestCancellation, requestCancellationAll, succeed, updateProgress };
+  return { activity, cancelRunning, claimNext, count, enqueue, failAttempt, findByDedupe, findByDedupeMany, get, isCancellationRequested, list,
+    pruneTerminal, recoverInterrupted, requestCancellation, requestCancellationAll, succeed, summary, updateProgress };
 };

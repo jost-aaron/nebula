@@ -21,6 +21,7 @@ import type { PlaybackEventKind, PlaybackHistoryEntry } from "../shared/playback
 import { createBrowserUuid } from "../shared/browserUuid";
 import type { FederatedAvailabilitySummary } from "../shared/federatedTypes";
 import { pollDeliveryUntilReady } from "../shared/deliveryPolling.js";
+import { listJobs } from "../api/jobsApi";
 
 interface StudioServerInfo {
   address: string;
@@ -89,6 +90,7 @@ const formatTime = (seconds: number) => {
   const minutes = Math.floor(safeSeconds / 60);
   return `${minutes}:${String(safeSeconds % 60).padStart(2, "0")}`;
 };
+const jobTypeLabel = (type: string) => `${type.slice(0, 1).toUpperCase()}${type.slice(1)}`;
 
 const metadataLine = (entry: MusicEntry) =>
   [entry.artist, entry.album, entry.releaseYear, entry.genres.slice(0, 2).join(", ")].filter(Boolean).join(" / ");
@@ -607,6 +609,11 @@ export const renderStudioView = () => {
         <button class="studio-dashboard-command" type="button" data-studio-action="home">${renderStudioIcon("LayoutDashboard")} Dashboard</button>
         <button class="studio-icon-command" type="button" data-studio-action="home" aria-label="Close Studio" title="Close">${renderStudioIcon("X")}</button>
       </header>
+      <button class="studio-job-activity" type="button" data-studio-action="open-jobs" data-studio-job-activity aria-label="Open background jobs">
+        ${renderStudioIcon("Activity")}
+        <span><strong data-studio-job-title>Background jobs</strong><small data-studio-job-detail>Checking queue…</small></span>
+        <b data-studio-job-count>…</b>
+      </button>
       <main class="studio-content" data-studio-content>
         <div class="studio-empty">
           <img src="${studioBrandMarkUrl}" alt="" aria-hidden="true" />
@@ -624,7 +631,7 @@ export const renderStudioView = () => {
   `;
 };
 
-export const bindStudioView = (container: ParentNode, onHome?: () => void, options: { personalPlayback?: boolean } = {}) => {
+export const bindStudioView = (container: ParentNode, onHome?: () => void, options: { onOpenJobs?: () => void; personalPlayback?: boolean } = {}) => {
   const app = container.querySelector<HTMLElement>("[data-studio-app]");
   const content = container.querySelector<HTMLElement>("[data-studio-content]");
   const footer = container.querySelector<HTMLElement>("[data-studio-footer]");
@@ -632,6 +639,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   const miniPlayer = container.querySelector<HTMLElement>("[data-studio-mini-player]");
   const miniContent = container.querySelector<HTMLElement>("[data-studio-mini-content]");
   const audioPlayer = container.querySelector<HTMLAudioElement>("[data-studio-player]")!;
+  const jobActivity = container.querySelector<HTMLButtonElement>("[data-studio-job-activity]");
 
   if (!app || !content || !footer || !dialogHost || !miniPlayer || !miniContent || !audioPlayer) {
     return () => undefined;
@@ -668,6 +676,27 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   let searchTimer = 0;
   let libraryController: AbortController | null = null;
   let libraryGeneration = 0;
+  let jobsTimer = 0;
+
+  const refreshJobActivity = async () => {
+    if (!jobActivity) return;
+    try {
+      const result = await listJobs({ limit: 1 });
+      const active = result.jobs.find((job) => job.state === "running" || job.state === "queued");
+      const running = result.summary.counts.running ?? 0;
+      const queued = result.summary.counts.queued ?? 0;
+      const title = jobActivity.querySelector<HTMLElement>("[data-studio-job-title]");
+      const detail = jobActivity.querySelector<HTMLElement>("[data-studio-job-detail]");
+      const count = jobActivity.querySelector<HTMLElement>("[data-studio-job-count]");
+      if (title) title.textContent = active?.state === "running" ? `${jobTypeLabel(active.type)} job running` : queued ? "Background jobs queued" : "Background jobs";
+      if (detail) detail.textContent = active?.currentStage ?? (queued ? "Waiting for the next scheduled job" : "Queue is clear");
+      if (count) count.textContent = `${running} running · ${queued} queued`;
+      jobActivity.classList.toggle("processing", running > 0);
+    } catch {
+      const detail = jobActivity.querySelector<HTMLElement>("[data-studio-job-detail]");
+      if (detail) detail.textContent = "Job status unavailable";
+    }
+  };
   let viewDisposed = false;
 
   const visibleEntries = () =>
@@ -1519,6 +1548,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     libraryController?.abort();
     libraryController = null;
     window.clearTimeout(searchTimer);
+    window.clearInterval(jobsTimer);
     pageObserver?.disconnect();
     pageObserver = null;
     viewController.abort();
@@ -1550,6 +1580,11 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     if (actionButton?.dataset.studioAction === "home") {
       dispose();
       onHome?.();
+      return;
+    }
+
+    if (actionButton?.dataset.studioAction === "open-jobs") {
+      options.onOpenJobs?.();
       return;
     }
 
@@ -1712,6 +1747,8 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     if (viewDisposed) return;
     playlists = personal.lists; collections = shared.lists; render();
   }).catch(() => {});
+  void refreshJobActivity();
+  jobsTimer = window.setInterval(() => void refreshJobActivity(), 5_000);
   void loadLibrary();
   return dispose;
 };

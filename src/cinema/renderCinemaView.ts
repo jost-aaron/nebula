@@ -614,7 +614,7 @@ const renderLibrary = (entries: CinemaEntry[], categoryTotals: Record<CinemaCate
       <main class="cinema-library browsing" data-cinema-view="library">
       ${!query ? renderContinueWatching(entries, playback) : ""}
       <div class="cinema-catalog-status">${renderCinemaIcon(catalogMessage.includes("fallback") ? "HardDrive" : "RefreshCw")}<span>${escapeHtml(catalogMessage)}</span><button type="button" data-cinema-action="scan-catalog">Scan library</button></div>
-      <div class="cinema-artwork-activity" data-cinema-artwork-activity hidden></div>
+      <button class="cinema-artwork-activity" type="button" data-cinema-artwork-activity data-cinema-action="open-jobs" aria-label="Open background jobs" hidden></button>
       <section class="cinema-library-row">
         <header>
           <div class="cinema-library-heading">
@@ -1075,7 +1075,7 @@ export const renderCinemaView = () => `
   </section>
 `;
 
-export const bindCinemaView = (container: ParentNode, onHome?: () => void, options: { canManageRenditions?: boolean; personalPlayback?: boolean } = {}) => {
+export const bindCinemaView = (container: ParentNode, onHome?: () => void, options: { canManageRenditions?: boolean; onOpenJobs?: () => void; personalPlayback?: boolean } = {}) => {
   const app = container.querySelector<HTMLElement>("[data-cinema-app]");
   const topNav = container.querySelector<HTMLElement>("[data-cinema-top-nav]");
   const content = container.querySelector<HTMLElement>("[data-cinema-content]");
@@ -2650,6 +2650,11 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     }
 
     const action = actionButton.dataset.cinemaAction;
+
+    if (action === "open-jobs") {
+      options.onOpenJobs?.();
+      return;
+    }
 
     if (action === "close-resume") {
       closeResumePrompt();

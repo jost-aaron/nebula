@@ -34,27 +34,36 @@ test("failed probes can be explicitly retried by the owner", () => {
   assert.match(source, /maxAttempts: 1/);
 });
 
-test("jobs admin keeps one completion receipt above active work and moves older jobs to history", () => {
+test("jobs admin separates the latest completion, running work, queue, and recent history", () => {
   assert.match(source, /latestSucceeded/);
-  assert.match(source, /const focused = \[\.\.\.\(latestSucceeded \? \[latestSucceeded\] : \[\]\), \.\.\.active\]/);
+  assert.match(source, /Running now/);
+  assert.match(source, /Queue #/);
+  assert.match(source, /const running = jobs\.filter/);
+  assert.match(source, /const queued = jobs\.filter/);
   assert.match(source, /class="jobs-admin-history"/);
   assert.match(source, /jobs\.filter\(\(job\) => !focusedIds\.has\(job\.id\)\)/);
-  assert.match(source, /left\.state === "running"/);
   assert.match(css, /\.jobs-admin-history/);
 });
 
-test("jobs admin exposes progress, live status, filtering, and phone layout", () => {
+test("jobs admin exposes progress, live status, search, summaries, filtering, and paging", () => {
   assert.match(source, /role="progressbar"/);
   assert.match(source, /aria-live="polite"/);
+  assert.match(source, /data-jobs-search/);
+  assert.match(source, /data-jobs-summary-state/);
+  assert.match(source, /data-jobs-load-more/);
+  assert.match(api, /query\.set\("q"/);
+  assert.match(api, /query\.set\("offset"/);
   assert.match(source, /data-jobs-state/);
   assert.match(source, /data-jobs-type/);
   assert.match(css, /@media \(max-width: 560px\)/);
 });
 
-test("settings integrates jobs admin only for owners and adds a Jobs category", () => {
-  assert.match(settings, /accountSession\.user\.role === "owner"/);
+test("settings exposes read-only jobs to guests and management controls to owners", () => {
+  assert.match(settings, /const showJobsAdmin = accountSession\.user\.role === "owner"/);
   assert.match(settings, /data-diagnostic-tab="jobs"/);
-  assert.match(settings, /renderJobsAdmin\(\)/);
+  assert.match(settings, /renderJobsAdmin\(\{ canManage: showJobsAdmin \}\)/);
+  assert.match(source, /data-jobs-can-manage/);
+  assert.match(source, /Job monitoring is read-only for this session/);
   assert.match(source, /data-diagnostic-section="jobs"/);
 });
 
@@ -63,6 +72,19 @@ test("settings app binds and disposes jobs admin lifecycle work", () => {
   assert.match(main, /disposeActiveApp\?\.\(\);/);
   assert.match(main, /const disposeJobs = bindJobsAdmin\(appSurface\)/);
   assert.match(main, /disposeJobs\(\)/);
+});
+
+test("Cinema and Studio job banners navigate directly to the Jobs settings section", async () => {
+  const [cinema, studio] = await Promise.all([
+    readFile(new URL("../src/cinema/renderCinemaView.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/studio/renderStudioView.ts", import.meta.url), "utf8")
+  ]);
+  assert.match(cinema, /data-cinema-action="open-jobs"/);
+  assert.match(cinema, /options\.onOpenJobs\?\.\(\)/);
+  assert.match(studio, /data-studio-action="open-jobs"/);
+  assert.match(studio, /options\.onOpenJobs\?\.\(\)/);
+  assert.match(main, /settingsSection: "jobs"/);
+  assert.match(main, /bindSettingsTabs\(appSurface, options\.settingsSection\)/);
 });
 
 test("390x844 jobs layout keeps filters full-width and the enqueue grid in two columns", () => {

@@ -3,7 +3,13 @@ import { actorFromContext } from "../audit/service.mjs";
 
 export const createJobsRoutes = (service, audit = null) => async (request, response, url) => {
   if (request.method === "GET" && url.pathname === "/api/jobs") {
-    json(response, 200, { jobs: service.list({ limit: Number(url.searchParams.get("limit") || 50), state: url.searchParams.get("state"), type: url.searchParams.get("type") }) });
+    json(response, 200, service.overview({
+      limit: Number(url.searchParams.get("limit") || 50),
+      offset: Number(url.searchParams.get("offset") || 0),
+      query: url.searchParams.get("q"),
+      state: url.searchParams.get("state"),
+      type: url.searchParams.get("type")
+    }));
     return true;
   }
   if (request.method === "POST" && url.pathname === "/api/jobs") {

@@ -39,6 +39,23 @@ test("manual service validates types and exposes enqueue, query, list, and cance
   assert.equal(service.cancel(first.job.id).state, "cancelled");
 });
 
+test("jobs overview reports database-wide state totals and searches active-first pages", (t) => {
+  const { db, repository, service } = fixture();
+  t.after(() => db.close());
+  const queued = repository.enqueue({ type: "artwork", payload: { title: "Breaking Bad" } }).job;
+  const running = repository.enqueue({ type: "probe", payload: { path: "Movies/Die Hard 2.mkv" } }).job;
+  assert.equal(repository.claimNext().id, running.id);
+  const overview = service.overview({ limit: 1 });
+  assert.equal(overview.summary.total, 2);
+  assert.equal(overview.summary.counts.running, 1);
+  assert.equal(overview.summary.counts.queued, 1);
+  assert.equal(overview.total, 2);
+  assert.equal(overview.jobs[0].state, "running");
+  const search = service.overview({ query: "breaking bad" });
+  assert.equal(search.total, 1);
+  assert.equal(search.jobs[0].id, queued.id);
+});
+
 test("cancel all stops queued jobs and requests cooperative running cancellation", (t) => {
   const { db, repository, service } = fixture();
   t.after(() => db.close());

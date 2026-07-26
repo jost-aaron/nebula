@@ -1,7 +1,7 @@
 import { apiJson } from "./http";
 
 export const JOB_STATES = ["queued", "running", "succeeded", "failed", "cancelled"] as const;
-export const JOB_TYPES = ["scan", "probe", "metadata", "artwork", "cleanup", "rendition"] as const;
+export const JOB_TYPES = ["scan", "probe", "fingerprint", "metadata", "artwork", "cleanup", "rendition"] as const;
 
 export type JobState = (typeof JOB_STATES)[number];
 export type JobType = (typeof JOB_TYPES)[number];
@@ -33,16 +33,24 @@ export interface EnqueueJobRequest {
   maxAttempts?: number;
 }
 
-const queryString = (filters: { limit?: number; state?: JobState; type?: JobType }) => {
+export interface JobsSummary {
+  counts: Partial<Record<JobState, number>>;
+  total: number;
+  typeCounts: Partial<Record<JobType, number>>;
+}
+
+const queryString = (filters: { limit?: number; offset?: number; query?: string; state?: JobState; type?: JobType }) => {
   const query = new URLSearchParams();
   query.set("limit", String(filters.limit ?? 100));
+  if (filters.offset) query.set("offset", String(filters.offset));
+  if (filters.query) query.set("q", filters.query);
   if (filters.state) query.set("state", filters.state);
   if (filters.type) query.set("type", filters.type);
   return query.toString();
 };
 
-export const listJobs = (filters: { limit?: number; state?: JobState; type?: JobType } = {}) =>
-  apiJson<{ jobs: BackgroundJob[] }>(`/api/jobs?${queryString(filters)}`);
+export const listJobs = (filters: { limit?: number; offset?: number; query?: string; state?: JobState; type?: JobType } = {}) =>
+  apiJson<{ jobs: BackgroundJob[]; summary: JobsSummary; total: number }>(`/api/jobs?${queryString(filters)}`);
 
 export const enqueueJob = (request: EnqueueJobRequest) =>
   apiJson<{ created: boolean; job: BackgroundJob }>("/api/jobs", {
