@@ -403,9 +403,7 @@ const renderMusicMatchDialog = (
 const queueEntries = (entries: MusicEntry[], selected: MusicEntry | null) =>
   entries.filter((entry) => entry.playable !== false && entry.path !== selected?.path).slice(0, 8);
 
-const renderQueue = (entries: MusicEntry[], selected: MusicEntry) => {
-  const queue = queueEntries(entries, selected);
-
+const renderQueue = (queue: MusicEntry[]) => {
   return `
     <section class="studio-queue">
       <header>
@@ -432,7 +430,7 @@ const renderQueue = (entries: MusicEntry[], selected: MusicEntry) => {
                   `
                 )
                 .join("")
-            : `<p>Add more audio files to build a queue.</p>`
+            : `<p>Choose Add to queue on a track to line it up without interrupting playback.</p>`
         }
       </div>
     </section>
@@ -554,8 +552,15 @@ const renderMiniPlayer = (entry: MusicEntry) => `
   <button class="studio-mini-close" type="button" data-studio-action="close-player" aria-label="Close music player" title="Close player">×</button>
 `;
 
-const renderNowPlaying = (entry: MusicEntry, entries: MusicEntry[]) => {
+const renderNowPlaying = (
+  entry: MusicEntry,
+  entries: MusicEntry[],
+  playingEntry: MusicEntry | null,
+  playbackQueue: MusicEntry[]
+) => {
   const server = currentServerInfo();
+  const isCurrent = playingEntry?.path === entry.path;
+  const isQueued = playbackQueue.some((queued) => queued.path === entry.path);
 
   return `
     <button class="studio-back-command" type="button" data-studio-action="library">${renderStudioIcon("ArrowLeft")} Back to Library</button>
@@ -566,14 +571,28 @@ const renderNowPlaying = (entry: MusicEntry, entries: MusicEntry[]) => {
           <span class="studio-format-chip">${escapeHtml(entry.federation && !entry.sourceId ? "Remote shard" : `${formatAudioFormat(entry).replace(" audio", "")} / Local file`)}</span>
         </div>
         <div class="studio-track-detail">
-          <p class="eyebrow">Now Playing</p>
+          <p class="eyebrow">${isCurrent ? "Now Playing" : "Track Details"}</p>
           <h2>${escapeHtml(entry.title)}</h2>
           <p class="studio-now-artist">${escapeHtml(entry.artist || "Unknown artist")}</p>
           <p class="studio-now-album">${escapeHtml(entry.album || entry.folder || "Local music")}</p>
-          <div class="studio-waveform" aria-hidden="true">
-            <canvas data-studio-visualizer data-studio-visualizer-mode="ambient"></canvas>
-          </div>
-          ${entry.playable === false ? `<div class="studio-remote-playback-note">${renderStudioIcon("ServerOff")}<span><strong>No compatible shard is online</strong><small>This track remains in the unified library and will become playable when an eligible source reconnects.</small></span></div>` : renderTransportControls()}
+          ${
+            isCurrent
+              ? `<div class="studio-waveform" aria-hidden="true"><canvas data-studio-visualizer data-studio-visualizer-mode="ambient"></canvas></div>`
+              : playingEntry
+                ? `<p class="studio-browsing-note">${renderStudioIcon("Volume2")}<span><strong>${escapeHtml(playingEntry.title)} keeps playing</strong><small>Choose when this track should take over.</small></span></p>`
+                : `<p class="studio-browsing-note">${renderStudioIcon("Music2")}<span><strong>Ready when you are</strong><small>Viewing a track never starts it automatically.</small></span></p>`
+          }
+          ${
+            entry.playable === false
+              ? `<div class="studio-remote-playback-note">${renderStudioIcon("ServerOff")}<span><strong>No compatible shard is online</strong><small>This track remains in the unified library and will become playable when an eligible source reconnects.</small></span></div>`
+              : isCurrent
+                ? renderTransportControls()
+                : `<div class="studio-track-start-actions">
+                    <button class="studio-play-now-command" type="button" data-studio-action="play-now">${renderStudioIcon("Play")} Play now</button>
+                    ${playingEntry ? `<button class="studio-playlist-command" type="button" data-studio-action="play-next">${renderStudioIcon("ListStart")} Play next</button>` : ""}
+                    <button class="studio-playlist-command" type="button" data-studio-action="add-queue" ${isQueued ? "disabled" : ""}>${renderStudioIcon("ListPlus")} ${isQueued ? "Added to queue" : "Add to queue"}</button>
+                  </div>`
+          }
           <div class="studio-metadata-actions">
             ${entry.playable !== false && entry.id ? `<button class="studio-playlist-command" type="button" data-studio-action="save-playlist">${renderStudioIcon("ListPlus")} Save to playlist</button>` : ""}
             ${entry.sourceId ? `<button class="studio-playlist-command" type="button" data-studio-action="open-music-match">${renderStudioIcon(entry.musicbrainzRecordingId ? "BadgeCheck" : "ScanSearch")} ${entry.musicbrainzRecordingId ? "Incorrect match?" : "Identify music"}</button>` : ""}
@@ -586,7 +605,7 @@ const renderNowPlaying = (entry: MusicEntry, entries: MusicEntry[]) => {
               : entry.musicbrainzMatchStatus === "not-found" ? "No confident MusicBrainz match" : "Music identification queued"}</p>
         </div>
       </section>
-      ${renderQueue(entries, entry)}
+      ${renderQueue(playbackQueue)}
     </div>
     <div class="studio-player-lower">
       ${renderSourceCards(entry, server)}
@@ -668,6 +687,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   let isScanning = false;
   let loadError = "";
   let playingEntry: MusicEntry | null = null;
+  let playbackQueue: MusicEntry[] = [];
   let playerCleanup: (() => void) | null = null;
   let playlists: MediaList[] = [];
   let collections: MediaList[] = [];
@@ -763,6 +783,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   let playPlayerAt: (positionSeconds?: number) => void = () => undefined;
   let syncPlayerUi: () => void = () => undefined;
   let closePlayer: () => void = () => undefined;
+  let playQueuedEntry: () => boolean = () => false;
 
   const bindPlayer = () => {
     type PlaybackSession = {
@@ -1030,6 +1051,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       if (playbackSession) { playbackSession.ended = true; report(playbackSession, "complete"); }
       setStatus("Finished.");
       syncPlayerUi();
+      if (playbackQueue.length > 0) window.setTimeout(() => playQueuedEntry(), 0);
     };
     const onTimeUpdate = () => {
       if (playbackSession?.sessionId && Date.now() - playbackSession.lastProgressAt >= 10_000) {
@@ -1279,7 +1301,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     content.classList.toggle("scanning", isScanning);
 
     if (selected) {
-      content.innerHTML = `<section class="studio-player-panel">${renderNowPlaying(selected, entries)}</section>`;
+      content.innerHTML = `<section class="studio-player-panel">${renderNowPlaying(selected, entries, playingEntry, playbackQueue)}</section>`;
     } else if (loadError) {
       content.innerHTML = `
         <div class="studio-empty">
@@ -1491,13 +1513,14 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
 
   const playSelected = (positionSeconds = 0, restartSession = false) => {
     if (!selected || selected.playable === false) return;
+    playbackQueue = playbackQueue.filter((queued) => queued.path !== selected?.path);
     setPlayerEntry(selected, restartSession);
+    render();
     playPlayerAt(positionSeconds);
   };
 
-  const selectTrack = (entry: MusicEntry, autoplay = false) => {
+  const requestSelectedPlayback = (entry: MusicEntry) => {
     selected = entry;
-    if (entry.playable !== false) setPlayerEntry(entry);
     render();
     content.scrollTop = 0;
 
@@ -1510,7 +1533,21 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       return;
     }
 
-    if (autoplay) playSelected();
+    playSelected();
+  };
+
+  const selectTrack = (entry: MusicEntry, autoplay = false) => {
+    selected = entry;
+    render();
+    content.scrollTop = 0;
+    if (autoplay) requestSelectedPlayback(entry);
+  };
+
+  const enqueueTrack = (entry: MusicEntry, playNext = false) => {
+    if (entry.playable === false || entry.path === playingEntry?.path) return;
+    playbackQueue = playbackQueue.filter((queued) => queued.path !== entry.path);
+    playbackQueue = playNext ? [entry, ...playbackQueue] : [...playbackQueue, entry];
+    render();
   };
 
   const selectAdjacentTrack = (offset: -1 | 1) => {
@@ -1519,13 +1556,30 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       return;
     }
 
+    if (offset === 1 && playQueuedEntry()) return;
     const playableEntries = entries.filter((entry) => entry.playable !== false);
     const playableIndex = playableEntries.findIndex((entry) => entry.path === current.path);
     const next = playableEntries[playableIndex + offset];
 
     if (next) {
-      selectTrack(next, true);
+      const wasViewingCurrent = selected?.path === playingEntry?.path;
+      setPlayerEntry(next);
+      if (!selected || wasViewingCurrent) selected = next;
+      render();
+      playPlayerAt();
     }
+  };
+
+  playQueuedEntry = () => {
+    const [next, ...remaining] = playbackQueue;
+    if (!next) return false;
+    const wasViewingCurrent = selected?.path === playingEntry?.path;
+    playbackQueue = remaining;
+    setPlayerEntry(next);
+    if (!selected || wasViewingCurrent) selected = next;
+    render();
+    playPlayerAt();
+    return true;
   };
 
   const loadLibrary = async (reset = true) => {
@@ -1673,8 +1727,25 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       return;
     }
 
+    if (actionButton?.dataset.studioAction === "play-now" && selected) {
+      requestSelectedPlayback(selected);
+      return;
+    }
+
+    if (actionButton?.dataset.studioAction === "play-next" && selected) {
+      enqueueTrack(selected, true);
+      return;
+    }
+
+    if (actionButton?.dataset.studioAction === "add-queue" && selected) {
+      enqueueTrack(selected);
+      return;
+    }
+
     if (actionButton?.dataset.studioAction === "close-player") {
       closePlayer();
+      playbackQueue = [];
+      render();
       return;
     }
 

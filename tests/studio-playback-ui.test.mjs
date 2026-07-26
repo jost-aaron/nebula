@@ -74,6 +74,30 @@ test("Studio reserves a dedicated grid row for background jobs", async () => {
   );
 });
 
+test("Studio browsing does not replace active playback and exposes explicit queue actions", async () => {
+  const [studio, css] = await Promise.all([
+    readFile(new URL("../src/studio/renderStudioView.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/styles.css", import.meta.url), "utf8")
+  ]);
+
+  assert.match(
+    studio,
+    /const selectTrack = \(entry: MusicEntry, autoplay = false\) => \{\s*selected = entry;\s*render\(\);\s*content\.scrollTop = 0;\s*if \(autoplay\) requestSelectedPlayback\(entry\);/
+  );
+  assert.doesNotMatch(
+    studio,
+    /const selectTrack = \(entry: MusicEntry, autoplay = false\) => \{[^}]*setPlayerEntry\(entry\)/s
+  );
+  assert.match(studio, /const isCurrent = playingEntry\?\.path === entry\.path/);
+  assert.match(studio, /data-studio-action="play-now"/);
+  assert.match(studio, /data-studio-action="play-next"/);
+  assert.match(studio, /data-studio-action="add-queue"/);
+  assert.match(studio, /let playbackQueue: MusicEntry\[\] = \[\]/);
+  assert.match(studio, /if \(playbackQueue\.length > 0\) window\.setTimeout\(\(\) => playQueuedEntry\(\), 0\)/);
+  assert.match(css, /\.studio-browsing-note[\s\S]*?background: rgba\(94, 215, 165, 0\.065\)/);
+  assert.match(css, /\.studio-play-now-command[\s\S]*?background: var\(--studio-amber-bright\)/);
+});
+
 test("Studio owns library request generations and does not reload history for appended pages", async () => {
   const [studio, api] = await Promise.all([
     readFile(new URL("../src/studio/renderStudioView.ts", import.meta.url), "utf8"),
