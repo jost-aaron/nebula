@@ -284,6 +284,15 @@
   background-color: #05070a;
 }
 
+.cinema-poster-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+}
+
 .cinema-card:hover .cinema-poster,
 .cinema-card:focus-visible .cinema-poster {
   border-color: rgba(231, 169, 64, 0.72);

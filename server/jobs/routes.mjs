@@ -20,8 +20,10 @@ export const createJobsRoutes = (service, audit = null) => async (request, respo
     return true;
   }
   if (request.method === "POST" && url.pathname === "/api/jobs/cancel-all") {
-    const result = service.cancelAll();
-    audit?.recordBestEffort({ actor: actorFromContext(request.nebulaAuth), eventType: "jobs.cancel_all_requested", outcome: "success", target: { type: "jobs", id: "active" }, metadata: result });
+    const body = await readBody(request, { limit: 8 * 1024 });
+    const type = body?.type === undefined ? null : String(body.type);
+    const result = service.cancelAll({ type });
+    audit?.recordBestEffort({ actor: actorFromContext(request.nebulaAuth), eventType: "jobs.cancel_all_requested", outcome: "success", target: { type: "jobs", id: type ?? "active" }, metadata: { ...result, jobType: type } });
     json(response, 200, result);
     return true;
   }

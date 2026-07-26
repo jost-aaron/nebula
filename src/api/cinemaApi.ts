@@ -37,11 +37,18 @@ export interface CinemaCatalogScanResponse {
   };
 }
 
-export const listCinemaLibrary = ({ category, limit = 60, offset = 0, query = "", seriesKey = "" }: { category?: "movies" | "tv"; limit?: number; offset?: number; query?: string; seriesKey?: string } = {}) => apiJson<CinemaLibraryResponse>(`/api/cinema/library?limit=${limit}&offset=${offset}${category ? `&category=${category}` : ""}${query ? `&query=${encodeURIComponent(query)}` : ""}${seriesKey ? `&seriesKey=${encodeURIComponent(seriesKey)}` : ""}`).then((library) => ({
+export const listCinemaLibrary = ({ category, limit = 60, offset = 0, query = "", seriesKey = "", signal }: { category?: "movies" | "tv"; limit?: number; offset?: number; query?: string; seriesKey?: string; signal?: AbortSignal } = {}) => apiJson<CinemaLibraryResponse>(`/api/cinema/library?limit=${limit}&offset=${offset}${category ? `&category=${category}` : ""}${query ? `&query=${encodeURIComponent(query)}` : ""}${seriesKey ? `&seriesKey=${encodeURIComponent(seriesKey)}` : ""}`, { signal }).then((library) => ({
   entries: library.entries.map((entry) => ({ ...entry, streamUrl: entry.streamUrl ? apiUrl(entry.streamUrl) : "" })),
   page: library.page,
   totals: library.totals
 }));
+
+export const createCinemaMediaTicket = (path: string) =>
+  apiJson<{ streamUrl: string }>("/api/cinema/ticket", {
+    body: JSON.stringify({ path }),
+    headers: { "content-type": "application/json" },
+    method: "POST"
+  }).then((result) => apiUrl(result.streamUrl));
 
 export const getCinemaArtworkStatus = (sourceIds: string[]) =>
   apiJson<CinemaArtworkStatusResponse>(`/api/cinema/artwork-status?sourceIds=${encodeURIComponent(sourceIds.join(","))}`);

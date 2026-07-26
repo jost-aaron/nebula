@@ -60,6 +60,7 @@ export const createGuestService = ({ accountStore, enabled = process.env.NEBULA_
     tickets.set(entry.id, entry);
     return rawToken;
   };
+  const issueMediaTickets = (requests) => requests.map((request) => issueMediaTicket(request));
 
   const authenticateMediaTicket = ({ contentPath, mediaKind, token: rawToken }) => {
     purge();
@@ -69,5 +70,5 @@ export const createGuestService = ({ accountStore, enabled = process.env.NEBULA_
       : null;
   };
 
-  return { authenticateMediaTicket, authenticateSession, createSession, eligible, issueMediaTicket, revokeAll, revokeSession };
+  return { authenticateMediaTicket, authenticateSession, createSession, eligible, issueMediaTicket, issueMediaTickets, revokeAll, revokeSession };
 };

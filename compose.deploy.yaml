@@ -6,6 +6,20 @@ services:
     restart: unless-stopped
     init: true
     user: "${NEBULA_UID:-1000}:${NEBULA_GID:-1000}"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    mem_limit: "${NEBULA_MEMORY_LIMIT:-4g}"
+    cpus: "${NEBULA_CPU_LIMIT:-2.0}"
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    logging:
+      driver: json-file
+      options:
+        max-size: "${NEBULA_LOG_MAX_SIZE:-10m}"
+        max-file: "${NEBULA_LOG_MAX_FILES:-5}"
     ports:
       - "${NEBULA_BIND_ADDRESS:-127.0.0.1}:${NEBULA_PORT:-5173}:5173"
     volumes:
@@ -24,6 +38,7 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: "5173"
+      NODE_ENV: production
       NEBULA_DATA_ROOT: /app/data
       NEBULA_BACKUP_ROOT: /app/backups
       NEBULA_RESTORE_STAGING_ROOT: /app/data/restore-staging
@@ -34,7 +49,6 @@ services:
       NEBULA_GUEST_SESSION_TTL_MS: "${NEBULA_GUEST_SESSION_TTL_MS:-28800000}"
       NEBULA_CORS_ALLOWED_ORIGINS: "${NEBULA_CORS_ALLOWED_ORIGINS:-}"
       NEBULA_VITE_ALLOWED_HOSTS: "${NEBULA_VITE_ALLOWED_HOSTS:-}"
-      NEBULA_VITE_HMR: "${NEBULA_VITE_HMR:-false}"
       NEBULA_EXTERNAL_HTTPS: "${NEBULA_EXTERNAL_HTTPS:-false}"
       NEBULA_TAILSCALE_UI_ENABLED: "true"
       NEBULA_TAILSCALE_FQDN: "${NEBULA_TAILSCALE_FQDN:-}"
@@ -46,11 +60,14 @@ services:
       NEBULA_CLUSTER_HTTP_PROXY: "http://127.0.0.1:1055"
       NEBULA_AUDIT_RETENTION_DAYS: "${NEBULA_AUDIT_RETENTION_DAYS:-90}"
       NEBULA_AUDIT_MAX_EVENTS: "${NEBULA_AUDIT_MAX_EVENTS:-10000}"
+      NEBULA_MEDIA_JOB_CONCURRENCY: "${NEBULA_MEDIA_JOB_CONCURRENCY:-1}"
+      NEBULA_JOB_HISTORY_DAYS: "${NEBULA_JOB_HISTORY_DAYS:-30}"
+      NEBULA_JOB_HISTORY_RETAIN: "${NEBULA_JOB_HISTORY_RETAIN:-1000}"
       NEBULA_TRANSCODE_ACCELERATION: "${NEBULA_TRANSCODE_ACCELERATION:-software-only}"
       TMDB_API_TOKEN: "${TMDB_API_TOKEN:-}"
       GOOGLE_VISION_API_KEY: "${GOOGLE_VISION_API_KEY:-}"
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5173/healthz"]
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5173/readyz"]
       interval: 30s
       timeout: 5s
       retries: 3

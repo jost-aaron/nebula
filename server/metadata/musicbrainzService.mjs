@@ -99,6 +99,8 @@ export const createMusicBrainzMetadataService = ({ client, repository } = {}) =>
     const fields = await client.details(candidate.recordingId, candidate.releaseId);
     const updatedAt = new Date().toISOString();
     repository.putExternalMetadata(item.id, {
+      expectedContentRevision: source.contentRevision,
+      expectedSourceId: source.id,
       externalIds: [{ id: fields.recordingId, mediaType: "recording", provider: "musicbrainz" }],
       fields: {
         album: fields.album,
@@ -148,6 +150,8 @@ export const createMusicBrainzMetadataService = ({ client, repository } = {}) =>
     const ranked = rankCandidates(await client.search(hints), hints);
     const candidates = storedCandidates(ranked);
     repository.putExternalMetadata(current.item.id, {
+      expectedContentRevision: current.source.contentRevision,
+      expectedSourceId: current.source.id,
       fields: {
         musicbrainzMatchCandidates: candidates,
         musicbrainzMatchQueries: hints,
@@ -181,6 +185,8 @@ export const createMusicBrainzMetadataService = ({ client, repository } = {}) =>
     const match = selectCandidate(ranked);
     const updatedAt = new Date().toISOString();
     repository.putExternalMetadata(current.item.id, {
+      expectedContentRevision: current.source.contentRevision,
+      expectedSourceId: current.source.id,
       fields: {
         musicbrainzMatchCandidates: candidates,
         musicbrainzMatchQueries: current.hints,

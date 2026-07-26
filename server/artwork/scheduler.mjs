@@ -8,12 +8,16 @@ export const createArtworkScheduler = ({ repository }) => {
   const enqueueMissing = (enqueue, { availableAt = Date.now(), intervalMs = 4_000 } = {}) => {
     if (typeof enqueue !== "function") throw new TypeError("An enqueue function is required.");
     let queued = 0;
-    for (const item of repository.listItems({ availability: "available", mediaKind: "video" })) {
+    for (const item of repository.listItems({ availability: "available" })) {
       const artwork = repository.listArtwork(item.id);
-      const hasRemotePoster = Boolean(item.metadata?.posterUrl)
-        || artwork.some((entry) => entry.type === "poster" && entry.remoteUrl);
+      const remotePosterUrl = String(item.metadata?.posterUrl
+        || artwork.find((entry) => entry.type === "poster" && entry.remoteUrl)?.remoteUrl
+        || "").trim();
+      const hasRemotePoster = Boolean(remotePosterUrl);
+      if (item.source.mediaKind === "audio" && !hasRemotePoster) continue;
+      const cached = currentCachedArtwork(artwork, item.source);
       const hasPoster = hasRemotePoster
-        ? Boolean(currentCachedArtwork(artwork, item.source))
+        ? Boolean(cached && cached.remoteUrl === remotePosterUrl)
         : Boolean(currentLocalArtwork(artwork, item.source));
       if (hasPoster) continue;
       enqueue({

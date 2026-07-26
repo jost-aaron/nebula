@@ -4,13 +4,25 @@ import type { PlaybackEventRequest, PlaybackEventResponse, PlaybackHistoryRespon
 import type { PlaybackClientCapabilities } from "../shared/playbackPlanTypes";
 import type { ClusterPlaybackCreateResponse } from "../shared/clusterTypes";
 
-export const listMusicLibrary = ({ limit = 100, offset = 0, query = "" }: { limit?: number; offset?: number; query?: string } = {}) => apiJson<MusicLibraryResponse>(`/api/music/library?limit=${limit}&offset=${offset}${query ? `&query=${encodeURIComponent(query)}` : ""}`).then((library) => ({
+export const listMusicLibrary = ({
+  limit = 100,
+  offset = 0,
+  query = "",
+  signal
+}: { limit?: number; offset?: number; query?: string; signal?: AbortSignal } = {}) => apiJson<MusicLibraryResponse>(`/api/music/library?limit=${limit}&offset=${offset}${query ? `&query=${encodeURIComponent(query)}` : ""}`, { signal }).then((library) => ({
   entries: library.entries.map((entry) => ({ ...entry, streamUrl: entry.streamUrl ? apiUrl(entry.streamUrl) : "" })),
   page: library.page
 }));
 
-export const listStudioPlaybackHistory = (limit = 50) =>
-  apiJson<PlaybackHistoryResponse>(`/api/playback/history?limit=${limit}`);
+export const createMusicMediaTicket = (path: string) =>
+  apiJson<{ streamUrl: string }>("/api/music/ticket", {
+    body: JSON.stringify({ path }),
+    headers: { "content-type": "application/json" },
+    method: "POST"
+  }).then((result) => apiUrl(result.streamUrl));
+
+export const listStudioPlaybackHistory = (limit = 50, signal?: AbortSignal) =>
+  apiJson<PlaybackHistoryResponse>(`/api/playback/history?limit=${limit}`, { signal });
 
 export const reportStudioPlayback = (body: PlaybackEventRequest) =>
   apiJson<PlaybackEventResponse>("/api/playback/events", {

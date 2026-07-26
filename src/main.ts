@@ -3,7 +3,6 @@ import { getAuthStatus, getCurrentAccount } from "./api/accountApi";
 import { apiJson, getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken, initializeAccountSession, setAccountSessionToken, setApiBaseUrl, setApiToken } from "./api/http";
 import { bindAccountGate, bindAccountIdentity, bindAccountSettings, bindServerConnection, renderAccountGate, renderAccountIdentity, renderAccountLoading, renderGuestIdentity, renderServerConnection } from "./account/accountUi";
 import { dashboardApps, type DashboardApp } from "./apps";
-import { bindCinemaView, renderCinemaView } from "./cinema/renderCinemaView";
 import { collectDiagnostics } from "./diagnostics/collectDiagnostics";
 import { createPerformanceMonitor } from "./diagnostics/performanceMonitor";
 import type { RendererRuntimeState } from "./diagnostics/types";
@@ -18,7 +17,6 @@ import { bindRenditionStorageAdmin } from "./settings/renditionStorageAdmin";
 import { bindTailscaleAdmin } from "./settings/tailscaleAdmin";
 import { bindClusterAdmin } from "./settings/clusterAdmin";
 import { bindMediaLocationsAdmin } from "./settings/mediaLocationsAdmin";
-import { bindStudioView, renderStudioView } from "./studio/renderStudioView";
 import { commandFromKey, type ShellCommand } from "./shell/commands";
 import { bindGamepadCommands } from "./shell/gamepad";
 import { WheelCommandGate } from "./shell/inputGates";
@@ -27,8 +25,6 @@ import { createShellState, transitionShellState } from "./shell/state";
 import { startRenderer } from "./webgpuRenderer";
 import type { AccountSessionState, CurrentSessionState } from "./shared/accountTypes";
 import "./styles.css";
-import "./cinema/tmdb.css";
-import "./cinema/cinemaBrand.css";
 import "./settings/settingsApp.css";
 import "./settings/tailscaleAdmin.css";
 
@@ -302,6 +298,7 @@ const closeActiveApp = () => {
   }
 
   shellState = transitionShellState(shellState, { type: "close-active" }, appIds);
+  activeAppLaunchGeneration += 1;
   disposeActiveApp?.();
   disposeActiveApp = null;
   appSurface.classList.remove("open");
@@ -316,6 +313,13 @@ const closeActiveApp = () => {
     restoreShellFocus();
   }, 240);
 };
+
+let activeAppLaunchGeneration = 0;
+
+const loadMediaApp = (appId: "cinema" | "studio") =>
+  appId === "cinema"
+    ? import("./cinema/renderCinemaView")
+    : import("./studio/renderStudioView");
 
 const bindSettingsTabs = (container: ParentNode) => {
   const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>("[data-diagnostic-tab]"));
@@ -473,6 +477,7 @@ const launchApp = async (app: DashboardApp) => {
   const isCinemaApp = app.id === "cinema";
   const isStudioApp = app.id === "studio";
 
+  const launchGeneration = ++activeAppLaunchGeneration;
   disposeActiveApp?.();
   disposeActiveApp = null;
   shellState = transitionShellState(
@@ -485,6 +490,42 @@ const launchApp = async (app: DashboardApp) => {
   detailPanel.classList.remove("system-panel", "search-panel", "library-panel");
   renderPanel();
 
+  let mediaModule: Awaited<ReturnType<typeof loadMediaApp>> | null = null;
+  if (isCinemaApp || isStudioApp) {
+    appSurface.hidden = false;
+    shellRoot.inert = true;
+    appSurface.setAttribute("aria-label", app.name);
+    appSurface.className = `app-surface launching ${isCinemaApp ? "cinema-app-surface" : "studio-app-surface"}`;
+    appSurface.style.setProperty("--accent", app.accent);
+    appSurface.innerHTML = `
+      <section class="app-module-state" role="status" aria-live="polite" aria-busy="true">
+        <span class="app-module-spinner" aria-hidden="true"></span>
+        <strong>Opening ${app.name}</strong>
+        <small>Loading the media workspace…</small>
+      </section>
+    `;
+    try {
+      mediaModule = await loadMediaApp(isCinemaApp ? "cinema" : "studio");
+    } catch {
+      if (launchGeneration !== activeAppLaunchGeneration || shellState.activeAppId !== app.id) return;
+      appSurface.innerHTML = `
+        <section class="app-module-state is-error" role="alert">
+          <strong>${app.name} could not be opened</strong>
+          <small>The app module did not load. You can retry without reloading the dashboard.</small>
+          <div>
+            <button type="button" data-app-module-retry>Retry</button>
+            <button type="button" data-app-module-close>Close</button>
+          </div>
+        </section>
+      `;
+      appSurface.querySelector<HTMLButtonElement>("[data-app-module-retry]")?.addEventListener("click", () => void launchApp(app), { once: true });
+      appSurface.querySelector<HTMLButtonElement>("[data-app-module-close]")?.addEventListener("click", closeActiveApp, { once: true });
+      appSurface.classList.add("open");
+      return;
+    }
+    if (launchGeneration !== activeAppLaunchGeneration || shellState.activeAppId !== app.id) return;
+  }
+
   const body = isSearchApp
     ? renderSearchView(availableApps, "app")
     : isSettingsApp
@@ -492,9 +533,9 @@ const launchApp = async (app: DashboardApp) => {
       : isFilesApp
         ? renderFileBrowserShell()
         : isCinemaApp
-          ? renderCinemaView()
+          ? mediaModule && "renderCinemaView" in mediaModule ? mediaModule.renderCinemaView() : ""
           : isStudioApp
-            ? renderStudioView()
+            ? mediaModule && "renderStudioView" in mediaModule ? mediaModule.renderStudioView() : ""
     : `
       <section class="app-window-body">
         <div>
@@ -576,14 +617,20 @@ const launchApp = async (app: DashboardApp) => {
   }
 
   if (isCinemaApp) {
-    bindCinemaView(appSurface, closeActiveApp, { canManageRenditions: accountSession.user?.role === "owner", personalPlayback: !isGuest });
+    if (!mediaModule || !("bindCinemaView" in mediaModule)) return;
+    disposeActiveApp = mediaModule.bindCinemaView(appSurface, closeActiveApp, {
+      canManageRenditions: accountSession.user?.role === "owner",
+      personalPlayback: !isGuest
+    });
   }
 
   if (isStudioApp) {
-    bindStudioView(appSurface, closeActiveApp, { personalPlayback: !isGuest });
+    if (!mediaModule || !("bindStudioView" in mediaModule)) return;
+    disposeActiveApp = mediaModule.bindStudioView(appSurface, closeActiveApp, { personalPlayback: !isGuest });
   }
 
   requestAnimationFrame(() => {
+    if (launchGeneration !== activeAppLaunchGeneration || shellState.activeAppId !== app.id) return;
     appSurface.classList.add("open");
     if (!appSurface.contains(document.activeElement)) {
       appSurface.focus();

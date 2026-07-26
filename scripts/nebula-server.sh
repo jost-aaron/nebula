@@ -191,6 +191,8 @@ initialize() {
     printf 'NEBULA_TAILSCALE_AUTHKEY_FILE=%s\n' "$(env_quote "$tailscale_authkey_file")"
     printf '%s\n' 'TMDB_API_TOKEN=""' 'GOOGLE_VISION_API_KEY=""'
     printf '%s\n' 'NEBULA_AUDIT_RETENTION_DAYS="90"' 'NEBULA_AUDIT_MAX_EVENTS="10000"'
+    printf '%s\n' 'NEBULA_MEDIA_JOB_CONCURRENCY="1"' 'NEBULA_JOB_HISTORY_DAYS="30"' 'NEBULA_JOB_HISTORY_RETAIN="1000"'
+    printf '%s\n' 'NEBULA_CPU_LIMIT="2.0"' 'NEBULA_MEMORY_LIMIT="4g"' 'NEBULA_LOG_MAX_SIZE="10m"' 'NEBULA_LOG_MAX_FILES="5"'
   } >"$TEMP_ENV"
   chmod 0600 "$TEMP_ENV"; mv -- "$TEMP_ENV" "$ENV_FILE"; TEMP_ENV=""
   [[ $(id -u) -ne 0 ]] || chown "$CONFIG_UID:$CONFIG_GID" "$ENV_FILE"

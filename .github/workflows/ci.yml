@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build development verification image
+        run: docker build --target build --tag nebula-ci-build:${{ github.sha }} .
+      - name: Type-check
+        run: docker run --rm nebula-ci-build:${{ github.sha }} npm run check
+      - name: Test with bounded concurrency
+        run: docker run --rm nebula-ci-build:${{ github.sha }} npm run test:ci
+      - name: Block critical runtime dependency advisories
+        run: docker run --rm nebula-ci-build:${{ github.sha }} npm audit --omit=dev --audit-level=critical
+      - name: Build production image
+        run: docker build --target runtime --tag nebula-ci:${{ github.sha }} .
+      - name: Validate deployment configuration
+        env:
+          NEBULA_CONTENT_PATH: /tmp/nebula-content
+          NEBULA_DATA_PATH: /tmp/nebula-data
+          NEBULA_BACKUP_PATH: /tmp/nebula-backups
+          NEBULA_TAILSCALE_STATE_PATH: /tmp/nebula-tailscale
+        run: |
+          mkdir -p "$NEBULA_CONTENT_PATH" "$NEBULA_DATA_PATH" "$NEBULA_BACKUP_PATH" "$NEBULA_TAILSCALE_STATE_PATH"
+          touch /tmp/nebula-tailscale-authkey
+          NEBULA_TAILSCALE_AUTHKEY_FILE=/tmp/nebula-tailscale-authkey docker compose -f compose.deploy.yaml config --quiet
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Playwright acceptance
+        run: ./scripts/test-e2e.sh
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7

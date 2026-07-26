@@ -24,8 +24,12 @@ export const createJobsService = ({ repository, allowedTypes = JOB_TYPES } = {})
   const activity = (type) => repository.activity(type);
   const list = (query = {}) => repository.list({ ...query, limit: Math.min(200, positiveInteger(query.limit, 50)) });
   const cancel = (id) => repository.requestCancellation(id);
-  const cancelAll = () => repository.requestCancellationAll();
-  return { activity, cancel, cancelAll, enqueue, findByDedupe, findByDedupeMany, get, list, types: [...types] };
+  const cancelAll = ({ type = null } = {}) => {
+    if (type !== null && !types.has(type)) throw Object.assign(new Error("Unsupported job type."), { status: 400 });
+    return repository.requestCancellationAll({ type });
+  };
+  const prune = ({ olderThan, retain }) => repository.pruneTerminal({ olderThan, retain });
+  return { activity, cancel, cancelAll, enqueue, findByDedupe, findByDedupeMany, get, list, prune, types: [...types] };
 };
 
 export { JOB_TYPES };

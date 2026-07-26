@@ -36,9 +36,8 @@ test("query variants recover a bounded clean title from a noisy filename", () =>
   assert.equal(normalized.queries.length <= 5, true);
 });
 
-test("TMDB metadata service imports a conservative movie match into catalog and legacy metadata", async () => {
+test("TMDB metadata service imports a conservative movie match into the catalog", async () => {
   let persisted = null;
-  let legacy = {};
   const artworkJobs = [];
   const source = {
     availability: "available", contentRevision: 1, id: "source-1", itemId: "item-1",
@@ -61,19 +60,13 @@ test("TMDB metadata service imports a conservative movie match into catalog and 
       return [{ id: 157849, mediaType: "movie", title: "A Most Wanted Man", year: "2014" }];
     }
   };
-  const service = createTmdbMetadataService({
-    readLegacyMetadata: async () => legacy,
-    repository,
-    tmdb,
-    writeLegacyMetadata: async (value) => { legacy = value; }
-  });
+  const service = createTmdbMetadataService({ repository, tmdb });
 
   const result = await service.refreshSource({ sourceId: source.id }, { enqueue: (job) => artworkJobs.push(job) });
 
   assert.equal(result.matched, true);
   assert.deepEqual(persisted.externalIds, [{ id: 157849, mediaType: "movie", provider: "tmdb" }]);
   assert.equal(persisted.fields.posterUrl, movieFields.posterUrl);
-  assert.equal(legacy[source.path].title, "A Most Wanted Man");
   assert.deepEqual(artworkJobs, [{
     availableAt: 0,
     dedupeKey: "source-1:1",

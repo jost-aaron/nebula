@@ -7,11 +7,24 @@ export class JobCancelledError extends Error {
   }
 }
 
-export const createJobsWorker = ({ repository, handlers, concurrency = 2, retryDelay = (attempt) => 1_000 * (2 ** (attempt - 1)), now = () => Date.now() } = {}) => {
+export const createJobsWorker = ({
+  repository,
+  handlers,
+  cancellationPollIntervalMs = 250,
+  concurrency = 2,
+  heartbeatIntervalMs = 5_000,
+  retryDelay = (attempt) => 1_000 * (2 ** (attempt - 1)),
+  now = () => Date.now()
+} = {}) => {
   if (!Number.isInteger(concurrency) || concurrency < 1) throw new TypeError("Worker concurrency must be a positive integer.");
+  if (!Number.isFinite(cancellationPollIntervalMs) || cancellationPollIntervalMs < 50) throw new TypeError("Worker cancellation poll interval must be at least 50 milliseconds.");
+  if (!Number.isFinite(heartbeatIntervalMs) || heartbeatIntervalMs < 100) throw new TypeError("Worker heartbeat interval must be at least 100 milliseconds.");
   if (!repository || typeof repository.claimNext !== "function") throw new TypeError("A jobs repository is required.");
   let stopping = false;
   let loops = [];
+  let heartbeatTimer = null;
+  let cancellationTimer = null;
+  const activeControllers = new Map();
   const snapshot = {
     active: 0,
     heartbeatAt: now(),
@@ -25,24 +38,29 @@ export const createJobsWorker = ({ repository, handlers, concurrency = 2, retryD
   const runJob = async (job) => {
     snapshot.active += 1;
     heartbeat();
+    const controller = new AbortController();
+    activeControllers.set(job.id, controller);
     const handler = handlers?.[job.type];
     if (typeof handler !== "function") {
       repository.failAttempt(job.id, { code: "NO_HANDLER", message: `No handler is registered for ${job.type}.`, retryAt: now() });
+      activeControllers.delete(job.id);
       snapshot.active = Math.max(0, snapshot.active - 1);
       heartbeat();
       return;
     }
     const throwIfCancelled = () => {
-      if (repository.isCancellationRequested(job.id)) throw new JobCancelledError();
+      if (controller.signal.aborted || repository.isCancellationRequested(job.id)) throw new JobCancelledError();
     };
     const context = {
       enqueue: (request) => repository.enqueue(request),
-      isCancellationRequested: () => repository.isCancellationRequested(job.id),
+      isCancellationRequested: () => controller.signal.aborted || repository.isCancellationRequested(job.id),
       reportProgress: (progress, currentStage = null) => {
         if (!Number.isFinite(progress) || progress < 0 || progress > 1) throw new RangeError("Job progress must be between 0 and 1.");
         throwIfCancelled();
+        heartbeat();
         return repository.updateProgress(job.id, { progress, currentStage });
       },
+      signal: controller.signal,
       throwIfCancelled
     };
     try {
@@ -58,6 +76,7 @@ export const createJobsWorker = ({ repository, handlers, concurrency = 2, retryD
         retryAt: now() + retryDelay(job.attempt)
       });
     } finally {
+      activeControllers.delete(job.id);
       snapshot.active = Math.max(0, snapshot.active - 1);
       heartbeat();
     }
@@ -79,6 +98,14 @@ export const createJobsWorker = ({ repository, handlers, concurrency = 2, retryD
     stopping = false;
     snapshot.running = true;
     heartbeat();
+    heartbeatTimer = setInterval(heartbeat, heartbeatIntervalMs);
+    heartbeatTimer.unref?.();
+    cancellationTimer = setInterval(() => {
+      for (const [jobId, controller] of activeControllers) {
+        if (repository.isCancellationRequested(jobId)) controller.abort(new JobCancelledError());
+      }
+    }, cancellationPollIntervalMs);
+    cancellationTimer.unref?.();
     repository.recoverInterrupted();
     loops = Array.from({ length: concurrency }, async () => {
       while (!stopping) {
@@ -90,12 +117,36 @@ export const createJobsWorker = ({ repository, handlers, concurrency = 2, retryD
     });
   };
 
-  const stop = async () => {
+  const stop = async ({ abortAfterMs = 20_000, drainTimeoutMs = 30_000 } = {}) => {
+    if (!Number.isFinite(abortAfterMs) || abortAfterMs < 0) throw new TypeError("abortAfterMs must be a non-negative number.");
+    if (!Number.isFinite(drainTimeoutMs) || drainTimeoutMs <= 0 || drainTimeoutMs < abortAfterMs) {
+      throw new TypeError("drainTimeoutMs must be positive and not less than abortAfterMs.");
+    }
     stopping = true;
-    await Promise.all(loops);
-    loops = [];
-    snapshot.running = false;
-    heartbeat();
+    const abortTimer = setTimeout(() => {
+      for (const controller of activeControllers.values()) controller.abort(new JobCancelledError());
+    }, abortAfterMs);
+    abortTimer.unref?.();
+    let timeout = null;
+    try {
+      await Promise.race([
+        Promise.all(loops),
+        new Promise((_, reject) => {
+          timeout = setTimeout(() => reject(Object.assign(new Error("Jobs worker did not drain before shutdown deadline."), { code: "WORKER_DRAIN_TIMEOUT" })), drainTimeoutMs);
+          timeout.unref?.();
+        })
+      ]);
+      loops = [];
+    } finally {
+      clearTimeout(abortTimer);
+      if (timeout) clearTimeout(timeout);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (cancellationTimer) clearInterval(cancellationTimer);
+      heartbeatTimer = null;
+      cancellationTimer = null;
+      snapshot.running = false;
+      heartbeat();
+    }
   };
 
   return {

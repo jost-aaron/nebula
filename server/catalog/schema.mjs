@@ -176,4 +176,22 @@ export const catalogMigration = Object.freeze({
   }
 });
 
+export const catalogQueryIndexesMigration = Object.freeze({
+  domain: "catalog-query-indexes",
+  version: 1,
+  apply(database) {
+    database.exec(`
+      CREATE INDEX IF NOT EXISTS media_items_kind_type_sort
+        ON media_items(media_kind, item_type, sort_title, id);
+      CREATE INDEX IF NOT EXISTS media_items_episode_series_title
+        ON media_items(json_extract(metadata_json, '$.episode.seriesTitle'))
+        WHERE media_kind = 'video' AND item_type = 'episode';
+      CREATE INDEX IF NOT EXISTS media_sources_availability_item
+        ON media_sources(availability, item_id);
+      CREATE INDEX IF NOT EXISTS media_external_ids_provider_item
+        ON media_external_ids(provider, provider_item_id, media_item_id);
+    `);
+  }
+});
+
 export const applyCatalogMigration = (database) => catalogMigration.apply(database);

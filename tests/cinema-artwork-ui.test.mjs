@@ -22,7 +22,9 @@ test("Cinema keeps queued titles visible and distinguishes active artwork proces
   assert.match(cinema, /series\.runtimeSeconds[\s\S]*total/);
   assert.match(cinema, /data-cinema-artwork-state="\$\{entry\.artworkState\}"/);
   assert.match(cinema, /getCinemaArtworkStatus\(sourceIds\)/);
-  assert.match(cinema, /window\.setTimeout\(\(\) => void refreshArtworkStates\(\), 400\)/);
+  assert.match(cinema, /artworkPollDelay = status\.activity\.processing \? 1_000 : status\.activity\.queued > 0 \? 5_000 : 15_000/);
+  assert.match(cinema, /document\.hidden/);
+  assert.match(cinema, /data-cinema-hydrated='true'/);
   assert.match(cinema, /artworkQueueActive = status\.activity\.queued > 0/);
   assert.match(cinema, /data-cinema-artwork-activity/);
   assert.match(cinema, /status\.dataset\.artworkSignature === signature/);
@@ -41,6 +43,8 @@ test("Cinema keeps queued titles visible and distinguishes active artwork proces
   assert.match(styles, /\.cinema-artwork-activity \{[\s\S]*?position: sticky[\s\S]*?top: 0/);
   assert.match(styles, /@keyframes cinema-artwork-activity-sweep/);
   assert.match(styles, /prefers-reduced-motion: reduce[\s\S]*animation: none/);
+  assert.match(cinema, /loading="lazy" decoding="async"/);
+  assert.match(styles, /\.cinema-poster-image \{[\s\S]*object-fit: contain/);
 });
 
 test("Cinema navigates television as series, then seasons, then episodes", async () => {

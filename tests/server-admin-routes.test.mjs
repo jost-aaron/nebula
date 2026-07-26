@@ -11,15 +11,20 @@ import { createAuthGuard } from "../server/auth.mjs";
 import { applyApiCorsHeaders, handleApiPreflight } from "../server/cors.mjs";
 import { createApiHandler } from "../server/api.mjs";
 import { createBackupService } from "../server/backup/index.mjs";
+import { auditMigration } from "../server/audit/index.mjs";
 import { catalogMigration } from "../server/catalog/index.mjs";
 import { PLAYBACK_MIGRATION } from "../server/playback/schema.mjs";
 import { probeMigration } from "../server/probe/index.mjs";
 import { createJobsRepository, createJobsService, createJobsWorker, jobsMigration } from "../server/jobs/index.mjs";
+import { libraryPermissionsMigration } from "../server/permissions/index.mjs";
+import { mediaListsMigration } from "../server/mediaLists/index.mjs";
+import { mediaLocationsMigration } from "../server/mediaLocations/index.mjs";
 import { createPlaybackPolicyRepository, createPlaybackPolicyService, playbackPolicyMigration } from "../server/playbackPolicy/index.mjs";
 import { renditionsMigration } from "../server/renditions/index.mjs";
 import { createRenditionStore } from "../server/renditions/index.mjs";
 import { createRenditionPolicyRepository, createRenditionPolicyService, renditionPolicyMigrations } from "../server/renditionPolicy/index.mjs";
 import { clusterFederationMigration, clusterKeyRotationMigration, clusterMigration, clusterOperationsMigration } from "../server/cluster/index.mjs";
+import { subtitleMigration } from "../server/subtitles/index.mjs";
 import {
   createCatalogCheck,
   createDatabaseCheck,
@@ -69,7 +74,12 @@ const startAdminServer = async ({ serviceToken = "admin-service-secret" } = {}) 
   const storage = await createStorage({ contentRoot, dataRoot });
   const database = await openNebulaDatabase(storage.accountDatabasePath);
   const accountStore = await createAccountStore({ database });
-  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, playbackPolicyMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration, clusterOperationsMigration, clusterKeyRotationMigration, clusterFederationMigration]);
+  applyDomainMigrations(database, [
+    catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, mediaLocationsMigration,
+    libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration,
+    subtitleMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration,
+    clusterOperationsMigration, clusterKeyRotationMigration, clusterFederationMigration
+  ]);
   const jobsRepository = createJobsRepository({ db: database });
   const jobsService = createJobsService({ repository: jobsRepository });
   const renditionStore = createRenditionStore({ database, dataRoot: storage.dataRoot });

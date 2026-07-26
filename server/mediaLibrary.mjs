@@ -1,4 +1,5 @@
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isAudioFile, isMediaFile, isVideoFile } from "./storage.mjs";
 
@@ -17,7 +18,13 @@ export const readMetadata = async (metadataPath) => {
 };
 
 export const writeMetadata = async (metadataPath, metadata) => {
-  await writeFile(metadataPath, JSON.stringify(metadata, null, 2));
+  const temporaryPath = `${metadataPath}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryPath, JSON.stringify(metadata, null, 2), { flag: "wx" });
+    await rename(temporaryPath, metadataPath);
+  } finally {
+    await rm(temporaryPath, { force: true }).catch(() => {});
+  }
 };
 
 export const metadataForEntry = (metadata, contentPath, fallbackTitle) => ({

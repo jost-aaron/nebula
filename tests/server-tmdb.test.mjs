@@ -134,10 +134,10 @@ test("Cinema TMDB routes require explicit apply before writing matched metadata"
 
   const apply = await post("/api/cinema/tmdb/apply", { mediaType: "movie", path: "Example.2024.mp4", tmdbId: 42 });
   assert.equal(apply.status, 200);
-  const saved = JSON.parse(await readFile(storage.cinemaMetadataPath, "utf8"));
-  assert.equal(saved["Example.2024.mp4"].title, "Matched Example");
-  assert.equal(saved["Example.2024.mp4"].tmdbId, 42);
+  await assert.rejects(() => readFile(storage.cinemaMetadataPath, "utf8"), { code: "ENOENT" });
   assert.equal(catalogItems.get("Example.2024.mp4").externalIds[0].id, 42);
+  assert.equal(catalogItems.get("Example.2024.mp4").metadata.title, "Matched Example");
+  assert.equal(catalogItems.get("Example.2024.mp4").metadata.tmdbId, 42);
   assert.equal(catalogItems.get("Example.2024.mp4").metadata.tmdbMatchStatus, "identified");
 
   const episodeSearch = await post("/api/cinema/tmdb/search", { category: "tv", path: "Example.Show.S02E03.mp4", query: "Example.Show.S02E03.mp4" });
@@ -146,7 +146,6 @@ test("Cinema TMDB routes require explicit apply before writing matched metadata"
   assert.equal(episodeCandidate.episodeNumber, 3);
   const episodeApply = await post("/api/cinema/tmdb/apply", { episodeNumber: 3, mediaType: "tv", path: "Example.Show.S02E03.mp4", seasonNumber: 2, tmdbId: 42 });
   assert.equal(episodeApply.status, 200);
-  const episodeSaved = JSON.parse(await readFile(storage.cinemaMetadataPath, "utf8"));
-  assert.equal(episodeSaved["Example.Show.S02E03.mp4"].title, "Episode Three");
-  assert.deepEqual(episodeSaved["Example.Show.S02E03.mp4"].episode, { airDate: "2025-02-03", episodeNumber: 3, seasonNumber: 2, seriesTitle: "Example Show" });
+  assert.equal(catalogItems.get("Example.Show.S02E03.mp4").metadata.title, "Episode Three");
+  assert.deepEqual(catalogItems.get("Example.Show.S02E03.mp4").metadata.episode, { airDate: "2025-02-03", episodeNumber: 3, seasonNumber: 2, seriesTitle: "Example Show" });
 });

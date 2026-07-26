@@ -213,6 +213,13 @@ function Initialize-Deployment {
     'GOOGLE_VISION_API_KEY=""'
     'NEBULA_AUDIT_RETENTION_DAYS="90"'
     'NEBULA_AUDIT_MAX_EVENTS="10000"'
+    'NEBULA_MEDIA_JOB_CONCURRENCY="1"'
+    'NEBULA_JOB_HISTORY_DAYS="30"'
+    'NEBULA_JOB_HISTORY_RETAIN="1000"'
+    'NEBULA_CPU_LIMIT="2.0"'
+    'NEBULA_MEMORY_LIMIT="4g"'
+    'NEBULA_LOG_MAX_SIZE="10m"'
+    'NEBULA_LOG_MAX_FILES="5"'
   )
   try {
     [IO.File]::WriteAllLines($temporary, $lines, [Text.UTF8Encoding]::new($false))

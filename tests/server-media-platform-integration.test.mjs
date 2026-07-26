@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { createAccountStore } from "../server/accountStore.mjs";
-import { applyCatalogMigration, catalogMigration, createCatalogRepository } from "../server/catalog/index.mjs";
+import { applyCatalogMigration, catalogMigration, catalogQueryIndexesMigration, createCatalogRepository } from "../server/catalog/index.mjs";
 import { createCatalogRoutes } from "../server/catalog/routes.mjs";
 import { applyDomainMigrations, openNebulaDatabase } from "../server/database.mjs";
 import { createPlaybackRepository } from "../server/playback/repository.mjs";
@@ -30,10 +30,10 @@ test("shared database composes account, catalog, playback, and probe migrations 
   const database = await openNebulaDatabase(path.join(root, "nebula.sqlite"));
   t.after(async () => { database.close(); await rm(root, { force: true, recursive: true }); });
   const accountStore = await createAccountStore({ database });
-  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, ...probeMigrations]);
-  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, ...probeMigrations]);
+  applyDomainMigrations(database, [catalogMigration, catalogQueryIndexesMigration, PLAYBACK_MIGRATION, ...probeMigrations]);
+  applyDomainMigrations(database, [catalogMigration, catalogQueryIndexesMigration, PLAYBACK_MIGRATION, ...probeMigrations]);
 
-  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM nebula_domain_migrations").get().count, 4);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM nebula_domain_migrations").get().count, 5);
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('users', 'media_items', 'playback_states', 'media_probe_results')").get().count, 4);
   assert.ok(database.prepare("SELECT 1 FROM pragma_table_info('media_probe_results') WHERE name = 'source_content_revision'").get());
   accountStore.close();
@@ -60,6 +60,25 @@ test("catalog routes expose stable items and manual scans", async () => {
   assert.equal(await route({ method: "POST" }, scanResponse, new URL("http://nebula/api/catalog/scan")), true);
   assert.equal(scanResponse.status(), 202);
   database.close();
+});
+
+test("catalog manual scans enqueue background work when the jobs service is available", async () => {
+  const enqueued = [];
+  const repository = { getRootByKey: () => ({ id: "root-1" }), listItems: () => [] };
+  const route = createCatalogRoutes({
+    jobs: { enqueue: (request) => {
+      enqueued.push(request);
+      return { id: "job-1", state: "queued", type: request.type };
+    } },
+    repository,
+    scan: async () => { throw new Error("manual route must not scan inline"); }
+  });
+  const response = responseCapture();
+  assert.equal(await route({ method: "POST" }, response, new URL("http://nebula/api/catalog/scan")), true);
+  assert.equal(response.status(), 202);
+  assert.deepEqual(response.json().scan, { id: "job-1", status: "queued" });
+  assert.equal(enqueued[0].type, "scan");
+  assert.equal(enqueued[0].dedupeKey, "library:root-1");
 });
 
 test("playback routes derive user identity and reject service principals", async () => {

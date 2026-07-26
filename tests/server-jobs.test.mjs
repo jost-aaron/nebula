@@ -171,6 +171,70 @@ test("worker lifecycle snapshots expose only running state, heartbeat, and aggre
   assert.equal(worker.snapshot().active, 0);
 });
 
+test("worker heartbeat advances while a long-running handler is healthy", async (t) => {
+  const { db, repository } = fixture();
+  t.after(() => db.close());
+  repository.enqueue({ type: "cleanup" });
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const worker = createJobsWorker({
+    heartbeatIntervalMs: 100,
+    repository,
+    handlers: { cleanup: async () => gate }
+  });
+
+  worker.start({ pollIntervalMs: 5 });
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  const first = worker.snapshot().heartbeatAt;
+  await new Promise((resolve) => setTimeout(resolve, 140));
+  assert.ok(worker.snapshot().heartbeatAt > first);
+  release();
+  await worker.stop();
+});
+
+test("worker shutdown aborts cooperative handlers before its drain deadline", async (t) => {
+  const { db, repository } = fixture();
+  t.after(() => db.close());
+  const { job } = repository.enqueue({ type: "cleanup" });
+  const worker = createJobsWorker({
+    repository,
+    handlers: {
+      cleanup: async (_claimed, context) => {
+        await new Promise((resolve) => context.signal.addEventListener("abort", resolve, { once: true }));
+        context.throwIfCancelled();
+      }
+    }
+  });
+
+  worker.start({ pollIntervalMs: 5 });
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  await worker.stop({ abortAfterMs: 10, drainTimeoutMs: 250 });
+  assert.equal(repository.get(job.id).state, "cancelled");
+  assert.equal(worker.snapshot().running, false);
+});
+
+test("manual cancellation aborts the active job signal", async (t) => {
+  const { db, repository } = fixture();
+  t.after(() => db.close());
+  const { job } = repository.enqueue({ type: "rendition" });
+  const worker = createJobsWorker({
+    cancellationPollIntervalMs: 50,
+    repository,
+    handlers: {
+      rendition: async (_claimed, context) => {
+        await new Promise((resolve) => context.signal.addEventListener("abort", resolve, { once: true }));
+        context.throwIfCancelled();
+      }
+    }
+  });
+  worker.start({ pollIntervalMs: 5 });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  repository.requestCancellation(job.id);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  await worker.stop({ abortAfterMs: 0, drainTimeoutMs: 250 });
+  assert.equal(repository.get(job.id).state, "cancelled");
+});
+
 test("retry policy requeues with delay and records terminal failure", async (t) => {
   let clock = Date.parse("2026-07-11T00:00:00.000Z");
   const { db, repository } = fixture({ now: () => clock });
@@ -210,8 +274,8 @@ test("startup recovery requeues interrupted attempts, fails exhausted jobs, and 
   const exhausted = repository.enqueue({ type: "metadata", maxAttempts: 1 }).job;
   const cancelled = repository.enqueue({ type: "artwork" }).job;
   assert.equal(repository.claimNext().id, retry.id);
-  assert.equal(repository.claimNext().id, exhausted.id);
   assert.equal(repository.claimNext().id, cancelled.id);
+  assert.equal(repository.claimNext().id, exhausted.id);
   repository.requestCancellation(cancelled.id);
   assert.deepEqual(repository.recoverInterrupted(), { cancelled: 1, failed: 1, requeued: 1 });
   assert.equal(repository.get(retry.id).state, "queued");
@@ -226,6 +290,43 @@ test("jobs with identical timestamps are claimed in enqueue order", (t) => {
   const second = repository.enqueue({ type: "probe" }).job;
   assert.equal(repository.claimNext().id, first.id);
   assert.equal(repository.claimNext().id, second.id);
+});
+
+test("ready work is claimed by bounded resource priority before maintenance work", (t) => {
+  const { db, repository } = fixture({ now: () => Date.parse("2026-07-11T00:00:00.000Z") });
+  t.after(() => db.close());
+  const scan = repository.enqueue({ type: "scan" }).job;
+  const metadata = repository.enqueue({ type: "metadata" }).job;
+  const rendition = repository.enqueue({ type: "rendition" }).job;
+  assert.equal(repository.claimNext().id, rendition.id);
+  assert.equal(repository.claimNext().id, metadata.id);
+  assert.equal(repository.claimNext().id, scan.id);
+});
+
+test("bulk cancellation can be scoped to one job type", (t) => {
+  const { db, repository } = fixture();
+  t.after(() => db.close());
+  const probe = repository.enqueue({ type: "probe" }).job;
+  const scan = repository.enqueue({ type: "scan" }).job;
+  const result = repository.requestCancellationAll({ type: "probe" });
+  assert.deepEqual(result, { queuedCancelled: 1, runningRequested: 0, total: 1 });
+  assert.equal(repository.get(probe.id).state, "cancelled");
+  assert.equal(repository.get(scan.id).state, "queued");
+});
+
+test("terminal job retention preserves the newest bounded history", (t) => {
+  let clock = Date.parse("2026-01-01T00:00:00.000Z");
+  const { db, repository } = fixture({ now: () => clock });
+  t.after(() => db.close());
+  for (let index = 0; index < 3; index += 1) {
+    const job = repository.enqueue({ type: "cleanup" }).job;
+    repository.claimNext();
+    repository.succeed(job.id);
+    clock += 1_000;
+  }
+  const result = repository.pruneTerminal({ olderThan: Date.parse("2026-02-01T00:00:00.000Z"), retain: 1 });
+  assert.equal(result.deleted, 2);
+  assert.equal(repository.list({ state: "succeeded" }).length, 1);
 });
 
 test("media orchestration contracts inject domain operations and can fan out idempotently", async (t) => {

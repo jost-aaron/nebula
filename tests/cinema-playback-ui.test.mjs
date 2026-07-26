@@ -8,12 +8,14 @@ test("Cinema pagination appends into the real library scroller without rebuildin
     readFile(new URL("../src/styles.css", import.meta.url), "utf8")
   ]);
   assert.match(source, /const observerRoot = content\.querySelector<HTMLElement>\("\.cinema-library\.browsing"\) \?\? content/);
-  assert.match(source, /root: scrollHost, rootMargin: "0px 0px 3200px 0px"/);
+  assert.match(source, /root: scrollHost, rootMargin: "0px 0px 1200px 0px"/);
   assert.match(source, /grid\?\.insertAdjacentHTML\("beforeend", renderCinemaCards\(appendedEntries, activeCategory, playback\)\)/);
   assert.match(source, /bindLibraryPageObserver\(\);[\s\S]*?return;/);
   assert.match(source, /const previousLibraryScrollTop = view === "library" && !isScanning/);
   assert.doesNotMatch(source, /scrollHost\.scrollTop = preservedScrollTop/);
   assert.match(styles, /\.cinema-library\.browsing,[\s\S]*?overflow-anchor: none/);
+  assert.doesNotMatch(source, /card\.getBoundingClientRect\(\)\.bottom/);
+  assert.match(source, /return \[\{ letter, top: card\.offsetTop \}\]/);
 });
 
 test("Cinema source loading cannot cancel its own delivery session", async () => {

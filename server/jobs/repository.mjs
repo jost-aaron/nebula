@@ -4,6 +4,15 @@ import { migrateJobsSchema } from "./schema.mjs";
 const stringify = (value) => JSON.stringify(value ?? {});
 const parse = (value) => value === null ? null : JSON.parse(value);
 const iso = (value) => new Date(value).toISOString();
+const JOB_PRIORITY_SQL = `CASE type
+  WHEN 'rendition' THEN 0
+  WHEN 'probe' THEN 1
+  WHEN 'artwork' THEN 2
+  WHEN 'metadata' THEN 3
+  WHEN 'fingerprint' THEN 4
+  WHEN 'scan' THEN 5
+  WHEN 'cleanup' THEN 6
+  ELSE 7 END`;
 
 const fromRow = (row) => row ? ({
   attempt: row.attempt,
@@ -98,7 +107,10 @@ export const createJobsRepository = ({ db, migrate = false, now = () => Date.now
     db.exec("BEGIN IMMEDIATE");
     try {
       const row = db.prepare(`SELECT id FROM background_jobs
-        WHERE state = 'queued' AND available_at <= ? ORDER BY available_at, created_at, rowid LIMIT 1`).get(claimedAt);
+        WHERE state = 'queued' AND available_at <= ?
+        ORDER BY CASE WHEN julianday(available_at) <= julianday(?) - (10.0 / 1440.0) THEN -1
+          ELSE ${JOB_PRIORITY_SQL} END,
+          available_at, created_at, rowid LIMIT 1`).get(claimedAt, claimedAt);
       if (!row) {
         db.exec("COMMIT");
         return null;
@@ -132,15 +144,17 @@ export const createJobsRepository = ({ db, migrate = false, now = () => Date.now
     return get(id);
   };
 
-  const requestCancellationAll = () => {
+  const requestCancellationAll = ({ type = null } = {}) => {
     const requestedAt = timestamp();
     db.exec("BEGIN IMMEDIATE");
     try {
       const queuedCancelled = db.prepare(`UPDATE background_jobs SET state = 'cancelled',
-        cancel_requested_at = ?, completed_at = ?, updated_at = ? WHERE state = 'queued'`)
-        .run(requestedAt, requestedAt, requestedAt).changes;
+        cancel_requested_at = ?, completed_at = ?, updated_at = ?
+        WHERE state = 'queued' AND (? IS NULL OR type = ?)`)
+        .run(requestedAt, requestedAt, requestedAt, type, type).changes;
       const runningRequested = db.prepare(`UPDATE background_jobs SET cancel_requested_at = ?, updated_at = ?
-        WHERE state = 'running' AND cancel_requested_at IS NULL`).run(requestedAt, requestedAt).changes;
+        WHERE state = 'running' AND cancel_requested_at IS NULL AND (? IS NULL OR type = ?)`)
+        .run(requestedAt, requestedAt, type, type).changes;
       db.exec("COMMIT");
       return { queuedCancelled, runningRequested, total: queuedCancelled + runningRequested };
     } catch (error) {
@@ -199,6 +213,19 @@ export const createJobsRepository = ({ db, migrate = false, now = () => Date.now
     WHERE (? IS NULL OR state = ?) AND (? IS NULL OR type = ?)
     ORDER BY created_at DESC, id DESC LIMIT ?`).all(state, state, type, type, limit).map(fromRow);
 
+  const pruneTerminal = ({ olderThan, retain = 1_000 } = {}) => {
+    if (!Number.isInteger(retain) || retain < 0) throw new TypeError("retain must be a non-negative integer.");
+    const cutoff = iso(olderThan);
+    const result = db.prepare(`DELETE FROM background_jobs
+      WHERE state IN ('succeeded', 'failed', 'cancelled') AND completed_at < ?
+        AND id NOT IN (
+          SELECT id FROM background_jobs
+          WHERE state IN ('succeeded', 'failed', 'cancelled')
+          ORDER BY completed_at DESC, id DESC LIMIT ?
+        )`).run(cutoff, retain);
+    return { deleted: result.changes };
+  };
+
   return { activity, cancelRunning, claimNext, enqueue, failAttempt, findByDedupe, findByDedupeMany, get, isCancellationRequested, list,
-    recoverInterrupted, requestCancellation, requestCancellationAll, succeed, updateProgress };
+    pruneTerminal, recoverInterrupted, requestCancellation, requestCancellationAll, succeed, updateProgress };
 };

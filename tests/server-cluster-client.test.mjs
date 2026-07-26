@@ -28,7 +28,9 @@ test("cluster proxy accepts only the fixed shared-loopback Tailscale listener", 
 test("pairing client resolves an exact tailnet origin and refuses redirects", async () => {
   let request;
   const client = createClusterPairingClient({
+    allowDirect: true,
     lookup: async () => [{ address: "100.80.1.2", family: 4 }],
+    proxyUrl: "",
     fetcher: async (url, options) => { request = { url, options }; return response({ clusterId: localIdentity.clusterId, node: descriptor }); }
   });
   const accepted = await client.pair({ endpoint: descriptor.endpoint, localIdentity, pairingCode: "pairing_code_123" });
@@ -43,13 +45,17 @@ test("pairing client rejects mixed DNS answers, endpoint substitution, and overs
   await assert.rejects(mixed.pair({ endpoint: descriptor.endpoint, localIdentity, pairingCode: "pairing_code_123" }), (error) => error.code === "non_tailnet_endpoint");
 
   const substituted = createClusterPairingClient({
+    allowDirect: true,
     lookup: async () => [{ address: "100.80.1.2" }],
+    proxyUrl: "",
     fetcher: async () => response({ clusterId: localIdentity.clusterId, node: { ...descriptor, endpoint: "https://different.example-tail.ts.net/" } })
   });
   await assert.rejects(substituted.pair({ endpoint: descriptor.endpoint, localIdentity, pairingCode: "pairing_code_123" }), (error) => error.code === "endpoint_mismatch");
 
   const oversized = createClusterPairingClient({
+    allowDirect: true,
     lookup: async () => [{ address: "100.80.1.2" }], maxResponseBytes: 8,
+    proxyUrl: "",
     fetcher: async () => response({ clusterId: localIdentity.clusterId, node: descriptor })
   });
   await assert.rejects(oversized.pair({ endpoint: descriptor.endpoint, localIdentity, pairingCode: "pairing_code_123" }), (error) => error.code === "invalid_shard_response");

@@ -21,7 +21,7 @@ const inferredEpisode = (item, source) => {
 
 const artworkProjection = ({ artwork, job = null, item, source }) => {
   const local = currentLocalArtwork(artwork, source);
-  if (local) return { artworkState: job?.state === "running" ? "processing" : "ready", posterUrl: generatedArtworkUrl(source) };
+  if (local) return { artworkState: job?.state === "running" ? "processing" : "ready", posterUrl: generatedArtworkUrl(source, local) };
   if (job?.state === "running") return { artworkState: "processing", posterUrl: "" };
   if (job?.state === "queued") return { artworkState: "queued", posterUrl: "" };
   if (job?.state === "failed" || job?.state === "cancelled") return { artworkState: "failed", posterUrl: "" };
@@ -93,12 +93,21 @@ export const projectRepositoryItems = (repository, query = {}) => repository.lis
 
 export const projectRepositoryItemsPage = (repository, query = {}) => {
   const page = repository.listItemsPage(query);
+  const itemIds = page.items.map((item) => item.id);
+  const artworkByItem = repository.listArtworkMany?.(itemIds)
+    ?? new Map(page.items.map((item) => [item.id, repository.listArtwork(item.id)]));
+  const externalIdsByItem = repository.listExternalIdsMany?.(itemIds)
+    ?? new Map(page.items.map((item) => [item.id, repository.listExternalIds(item.id)]));
+  const artworkJobs = query.artworkJobsForSources?.(page.items.map((item) => item.source)) ?? [];
+  const artworkJobByDedupe = new Map(artworkJobs.map((job) => [job.dedupeKey, job]));
   return {
     ...page,
     entries: page.items.map((item) => projectCompatibilityEntry({
-      artwork: repository.listArtwork(item.id),
-      artworkJob: query.artworkJobForSource?.(item.source) ?? null,
-      externalIds: repository.listExternalIds(item.id),
+      artwork: artworkByItem.get(item.id) ?? [],
+      artworkJob: artworkJobByDedupe.get(`${item.source.id}:${item.source.contentRevision}`)
+        ?? query.artworkJobForSource?.(item.source)
+        ?? null,
+      externalIds: externalIdsByItem.get(item.id) ?? [],
       item,
       source: item.source
     }))

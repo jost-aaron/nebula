@@ -29,7 +29,7 @@ export const createApiHandler = (storage, accountStore, authGuard, options = {})
     ...(options.tailscaleEnrollment ? [createTailscaleEnrollmentRoutes(options.tailscaleEnrollment)] : []),
     ...(options.cluster ? [createClusterAdminRoutes(options.cluster)] : []),
     ...(options.cluster?.playback ? [createClusterPlaybackRoutes(options.cluster.playback, { authorize: options.cluster.authorizePlayback })] : []),
-    ...(options.catalog ? [createCatalogRoutes(options.catalog, options.audit)] : []),
+    ...(options.catalog ? [createCatalogRoutes({ ...options.catalog, jobs: options.jobs }, options.audit)] : []),
     ...(options.mediaLists ? [createMediaListsRoutes(options.mediaLists, options.audit)] : []),
     ...(options.subtitles ? [createSubtitleRoutes(options.subtitles)] : []),
     createRenditionRoutes(options.renditions, options.audit),
@@ -72,6 +72,7 @@ export const createApiHandler = (storage, accountStore, authGuard, options = {})
       return false;
     } catch (error) {
       const status = error.status ?? 500;
+      try { options.onError?.(error, { method: request.method ?? "OTHER", status }); } catch {}
       json(response, status, {
         ...(error.code ? { code: error.code } : {}),
         error: status >= 500 && !error.expose ? "Server operation failed." : error.message

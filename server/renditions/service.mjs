@@ -100,12 +100,14 @@ export const createRenditionService = ({ audit, canAccessItem = null, catalog, j
       throw Object.assign(new Error("Rendition profile cannot be generated."), { code: "RENDITION_UNAVAILABLE" });
     }
     context.reportProgress(0.1, "transcoding");
-    const controller = new AbortController();
-    const timer = setInterval(() => { if (context.isCancellationRequested()) controller.abort(); }, 200);
-    timer.unref?.();
     let session = null;
     try {
-      session = await transcode.createSession(plan, principal, { origin: "scheduled", requireCompleteBeforeReady: true, retention: payload.retention, signal: controller.signal });
+      session = await transcode.createSession(plan, principal, {
+        origin: "scheduled",
+        requireCompleteBeforeReady: true,
+        retention: payload.retention,
+        signal: context.signal
+      });
       await session.completion;
       context.throwIfCancelled();
       context.reportProgress(0.95, "publishing");
@@ -114,7 +116,6 @@ export const createRenditionService = ({ audit, canAccessItem = null, catalog, j
       if (rendition && payload.retention === "pinned") store.setRetention(rendition.id, "pinned");
       return { profileId: profile.id, renditionId: rendition?.id ?? null, reused: Boolean(session.reused) };
     } finally {
-      clearInterval(timer);
       await session?.cleanup?.();
     }
   };

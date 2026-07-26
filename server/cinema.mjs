@@ -8,7 +8,7 @@ import { parseByteRange } from "./ranges.mjs";
 import { createCinemaTmdbRoutes } from "./cinemaTmdb.mjs";
 import { canBrowseFederatedLibrary, projectUnifiedLibrary } from "./cluster/index.mjs";
 import { projectCompatibilityEntry, projectRepositoryItemsPage } from "./catalog/projections.mjs";
-import { artworkJobDedupeKey, currentLocalArtwork } from "./artwork/index.mjs";
+import { artworkJobDedupeKey, currentLocalArtwork, generatedArtworkUrl } from "./artwork/index.mjs";
 
 const candidateWords = (value = "") =>
   value
@@ -174,8 +174,27 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
   const catalog = options.catalog ?? null;
   const jobs = options.jobs ?? null;
   const handleTmdb = createCinemaTmdbRoutes(storage, accountStore, options);
+  const projectCatalogItems = (items) => {
+    const artworkByItem = catalog.repository.listArtworkMany?.(items.map((item) => item.id))
+      ?? new Map(items.map((item) => [item.id, catalog.repository.listArtwork(item.id)]));
+    const externalIdsByItem = catalog.repository.listExternalIdsMany?.(items.map((item) => item.id))
+      ?? new Map(items.map((item) => [item.id, catalog.repository.listExternalIds(item.id)]));
+    const artworkJobs = jobs?.findByDedupeMany?.(
+      "artwork",
+      items.map((item) => artworkJobDedupeKey(item.source))
+    ) ?? [];
+    const artworkJobByDedupe = new Map(artworkJobs.map((job) => [job.dedupeKey, job]));
+    return items.map((item) => projectCompatibilityEntry({
+      artwork: artworkByItem.get(item.id) ?? [],
+      artworkJob: artworkJobByDedupe.get(artworkJobDedupeKey(item.source)) ?? null,
+      externalIds: externalIdsByItem.get(item.id) ?? [],
+      item,
+      source: item.source
+    }));
+  };
+
   const listCinemaLibrary = async (request, response) => {
-    const metadata = await readMetadata(storage.cinemaMetadataPath);
+    let metadata = catalog?.repository?.listItemsPage ? {} : await readMetadata(storage.cinemaMetadataPath);
     const url = new URL(request.url ?? "/", "http://nebula.local");
     const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
     const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit")) || 60));
@@ -183,27 +202,67 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
     const category = url.searchParams.get("category");
     const requestedSeriesKey = url.searchParams.get("seriesKey") ?? "";
     const context = request.nebulaAuth;
-    const allTelevisionEntries = category === "tv" && catalog?.repository?.listItems
-      ? catalog.repository.listItems({ availability: "available", mediaKind: "video" })
-        .filter((item) => item.itemType === "episode")
-        .map((item) => projectCompatibilityEntry({
-          artwork: catalog.repository.listArtwork(item.id),
-          artworkJob: jobs?.findByDedupe?.("artwork", artworkJobDedupeKey(item.source)) ?? null,
-          externalIds: catalog.repository.listExternalIds(item.id),
-          item,
-          source: item.source
-        }))
-        .filter((entry) => !libraryPermissions || libraryPermissions.canAccessPath(context, entry.path, "video"))
-      : null;
+    let allTelevisionEntries = null;
+    let televisionPage = null;
+    if (category === "tv" && catalog?.repository?.listTelevisionSeriesPage && catalog.repository.listTelevisionEpisodes) {
+      if (requestedSeriesKey) {
+        const episodePage = catalog.repository.listTelevisionEpisodes({ limit, offset, seriesKey: requestedSeriesKey });
+        const projected = projectCatalogItems(episodePage.items);
+        const entries = libraryPermissions
+          ? libraryPermissions.filterPaths?.(context, projected, "video")
+            ?? projected.filter((entry) => libraryPermissions.canAccessPath(context, entry.path, "video"))
+          : projected;
+        televisionPage = { ...episodePage, entries, items: entries, total: projected.length && !entries.length ? 0 : episodePage.total };
+      } else {
+        const seriesPage = catalog.repository.listTelevisionSeriesPage({ limit, offset, query });
+        const representatives = projectCatalogItems(catalog.repository.listItemsByIds(seriesPage.groups.map((group) => group.representativeItemId)));
+        const representativeById = new Map(representatives.map((entry) => [entry.id, entry]));
+        let entries = seriesPage.groups.map((series) => {
+          const representative = representativeById.get(series.representativeItemId);
+          if (!representative) return null;
+          return {
+            ...representative,
+            episode: null,
+            id: `series:${series.key}`,
+            name: series.title,
+            playable: false,
+            rating: representative.seriesRating || representative.rating,
+            ratingVotes: representative.seriesRatingVotes ?? representative.ratingVotes,
+            runtimeSeconds: series.runtimeSeconds,
+            sortTitle: series.title,
+            title: series.title,
+            series: {
+              episodeCount: series.episodeCount,
+              key: series.key,
+              seasonCount: series.seasonCount,
+              seasons: series.seasons
+            }
+          };
+        }).filter(Boolean);
+        if (libraryPermissions) {
+          entries = libraryPermissions.filterPaths?.(context, entries, "video")
+            ?? entries.filter((entry) => libraryPermissions.canAccessPath(context, entry.path, "video"));
+        }
+        televisionPage = { ...seriesPage, entries, items: entries, total: representatives.length && !entries.length ? 0 : seriesPage.total };
+      }
+    } else if (category === "tv" && catalog?.repository?.listItems) {
+      const televisionItems = catalog.repository.listItems({ availability: "available", mediaKind: "video" })
+        .filter((item) => item.itemType === "episode");
+      const projected = projectCatalogItems(televisionItems);
+      allTelevisionEntries = libraryPermissions
+        ? libraryPermissions.filterPaths?.(context, projected, "video")
+          ?? projected.filter((entry) => libraryPermissions.canAccessPath(context, entry.path, "video"))
+        : projected;
+    }
     const normalizedQuery = query.trim().toLowerCase();
-    const televisionEntries = category === "tv" && allTelevisionEntries
+    const televisionEntries = !televisionPage && category === "tv" && allTelevisionEntries
       ? requestedSeriesKey
         ? televisionSeriesGroups(allTelevisionEntries).find((group) => group.key === requestedSeriesKey)?.episodes ?? []
         : groupTelevisionEntries(allTelevisionEntries).filter((entry) =>
             !normalizedQuery || [entry.title, entry.sortTitle, entry.path].some((value) => String(value).toLowerCase().includes(normalizedQuery))
           )
       : null;
-    const televisionPage = televisionEntries
+    televisionPage = televisionPage ?? (televisionEntries
       ? {
           entries: televisionEntries.slice(offset, offset + limit),
           items: televisionEntries.slice(offset, offset + limit),
@@ -211,11 +270,14 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
           offset,
           total: televisionEntries.length
         }
-      : null;
+      : null);
     const page = televisionPage ?? (catalog?.repository?.listItemsPage
       ? projectRepositoryItemsPage(catalog.repository, {
           availability: "available",
-          artworkJobForSource: (source) => jobs?.findByDedupe?.("artwork", artworkJobDedupeKey(source)) ?? null,
+          artworkJobsForSources: (sources) => jobs?.findByDedupeMany?.(
+            "artwork",
+            sources.map((source) => artworkJobDedupeKey(source))
+          ) ?? [],
           itemType: category === "tv" ? "episode" : category === "movies" ? "movie" : undefined,
           limit,
           mediaKind: "video",
@@ -227,32 +289,29 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
     const totals = catalog?.repository?.listItemsPage
       ? {
           movies: catalog.repository.listItemsPage({ availability: "available", itemType: "movie", limit: 1, mediaKind: "video" }).total,
-          tv: catalog.repository.countTelevisionSeries?.() ?? (allTelevisionEntries ? groupTelevisionEntries(allTelevisionEntries).length : catalog.repository.listItemsPage({ availability: "available", itemType: "episode", limit: 1, mediaKind: "video" }).total)
+          tv: category === "tv" && televisionPage && !requestedSeriesKey
+            ? televisionPage.total
+            : catalog.repository.countTelevisionSeries?.() ?? (allTelevisionEntries ? groupTelevisionEntries(allTelevisionEntries).length : catalog.repository.listItemsPage({ availability: "available", itemType: "episode", limit: 1, mediaKind: "video" }).total)
         }
       : {
           movies: scanned.filter((entry) => entry.category === "movies").length,
           tv: scanned.filter((entry) => entry.category === "tv").length
         };
-    let entries = libraryPermissions ? scanned.filter((entry) => libraryPermissions.canAccessPath(context, entry.path, "video")) : scanned;
+    let entries = libraryPermissions
+      ? libraryPermissions.filterPaths?.(context, scanned, "video")
+        ?? scanned.filter((entry) => libraryPermissions.canAccessPath(context, entry.path, "video"))
+      : scanned;
 
     if (context?.user) {
+      if (accountStore.needsLegacyWatchlistMigration?.(context.user.id) ?? true) {
+        metadata = await readMetadata(storage.cinemaMetadataPath);
+      }
       const legacyPaths = Object.entries(metadata).filter(([, value]) => Boolean(value?.watchlisted)).map(([contentPath]) => contentPath);
       accountStore.migrateLegacyWatchlist(context.user.id, context.user.role === "owner" ? legacyPaths : []);
       const watchlist = accountStore.getWatchlist(context.user.id);
       entries.forEach((entry) => { entry.watchlisted = watchlist.has(entry.path); });
     }
 
-    if (context) {
-      entries.forEach((entry) => {
-        const ticket = context.kind === "guest" ? guestService.issueMediaTicket({ contentPath: entry.path, mediaKind: "video", sessionId: context.sessionId }) : accountStore.issueMediaTicket({
-          contentPath: entry.path,
-          mediaKind: "video",
-          principalId: context.user?.id ?? context.principalId,
-          principalType: context.user ? "user" : "service"
-        });
-        entry.streamUrl = `/api/cinema/media?path=${encodeURIComponent(entry.path)}&ticket=${encodeURIComponent(ticket)}`;
-      });
-    }
     const authorizeFederatedItem = options.federationAuthorization
       ? (itemId) => options.federationAuthorization.canAccessItem(context, itemId)
       : null;
@@ -267,9 +326,9 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
     const sourceId = url.searchParams.get("sourceId") ?? "";
     const revision = Number(url.searchParams.get("revision"));
     const source = catalog?.repository?.getSource?.(sourceId);
-    if (!source || source.mediaKind !== "video" || source.availability !== "available"
+    if (!source || !["audio", "video"].includes(source.mediaKind) || source.availability !== "available"
       || source.contentRevision !== revision
-      || (libraryPermissions && !libraryPermissions.canAccessPath(request.nebulaAuth, source.path, "video"))) {
+      || (libraryPermissions && !libraryPermissions.canAccessPath(request.nebulaAuth, source.path, source.mediaKind))) {
       json(response, 404, { error: "Artwork not found." });
       return;
     }
@@ -325,7 +384,7 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
       const job = jobsByDedupe.get(artworkJobDedupeKey(source));
       if (generated) return {
         artworkState: activity.running?.id === job?.id ? "processing" : "ready",
-        posterUrl: `/api/cinema/artwork?sourceId=${encodeURIComponent(source.id)}&revision=${source.contentRevision}`,
+        posterUrl: generatedArtworkUrl(source, generated),
         sourceId: source.id
       };
       if (activity.running?.id === job?.id) return { artworkState: "processing", posterUrl: "", sourceId: source.id };
@@ -388,7 +447,41 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
       updatedAt: new Date().toISOString()
     };
 
-    await writeMetadata(storage.cinemaMetadataPath, metadata);
+    const catalogSource = catalog?.repository?.resolveContentPath?.(contentPath) ?? null;
+    if (catalogSource?.item?.id) {
+      const source = catalogSource.source ?? catalogSource;
+      const manualFields = {
+        cast: metadata[contentPath].cast,
+        collection: metadata[contentPath].collection,
+        genres: metadata[contentPath].genres,
+        posterUrl: metadata[contentPath].posterUrl,
+        rating: metadata[contentPath].rating,
+        releaseYear: metadata[contentPath].releaseYear,
+        sortTitle: metadata[contentPath].sortTitle,
+        studio: metadata[contentPath].studio,
+        summary: metadata[contentPath].summary,
+        tagline: metadata[contentPath].tagline,
+        title: metadata[contentPath].title
+      };
+      catalog.repository.putExternalMetadata(catalogSource.item.id, {
+        expectedContentRevision: source.contentRevision,
+        expectedSourceId: source.id,
+        fields: manualFields,
+        lockedFields: Object.keys(manualFields),
+        mode: "manual"
+      });
+      if (manualFields.posterUrl && jobs) jobs.enqueue({
+        availableAt: Date.now(),
+        dedupeKey: artworkJobDedupeKey(source),
+        maxAttempts: 2,
+        payload: {
+          contentRevision: source.contentRevision,
+          sourceId: source.id
+        },
+        type: "artwork"
+      });
+    }
+    if (!catalogSource?.item?.id) await writeMetadata(storage.cinemaMetadataPath, metadata);
     json(response, 200, { metadata: metadata[contentPath], ok: true, path: contentPath });
   };
 
@@ -518,6 +611,38 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
     }
   };
 
+  const issueCinemaTicket = async (request, response) => {
+    const body = await readBody(request);
+    const contentPath = storage.relativePath(body.path ?? "");
+    const absolutePath = storage.resolveContentPath(contentPath);
+    const stats = await stat(absolutePath).catch(() => null);
+    const context = request.nebulaAuth;
+    if (!stats?.isFile() || !isVideoFile(absolutePath) || !context
+      || (libraryPermissions && !libraryPermissions.canAccessPath(context, contentPath, "video"))) {
+      json(response, 404, { error: "Media file not found." });
+      return;
+    }
+    const ticket = context.kind === "guest"
+      ? guestService?.issueMediaTicket({
+          contentPath,
+          mediaKind: "video",
+          sessionId: context.sessionId
+        })
+      : accountStore.issueMediaTicket({
+          contentPath,
+          mediaKind: "video",
+          principalId: context.user?.id ?? context.principalId,
+          principalType: context.user ? "user" : "service"
+        });
+    if (!ticket) {
+      json(response, 403, { error: "Video playback is not available." });
+      return;
+    }
+    json(response, 201, {
+      streamUrl: `/api/cinema/media?path=${encodeURIComponent(contentPath)}&ticket=${encodeURIComponent(ticket)}`
+    });
+  };
+
   return async (request, response, url) => {
     if (request.method === "GET" && url.pathname === "/api/cinema/library") {
       await listCinemaLibrary(request, response);
@@ -526,6 +651,11 @@ export const createCinemaRoutes = (storage, accountStore, options = {}) => {
 
     if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/cinema/media") {
       await streamCinemaMedia(request, response, url);
+      return true;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/cinema/ticket") {
+      await issueCinemaTicket(request, response);
       return true;
     }
 

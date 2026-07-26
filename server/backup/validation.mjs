@@ -10,14 +10,18 @@ export const BACKUP_FORMAT_VERSION = 1;
 export const DATABASE_ENTRY = "database/nebula.sqlite";
 export const REQUIRED_TABLES = Object.freeze([
   "users", "sessions", "login_attempts", "cinema_watchlist", "user_migrations", "media_tickets", "server_settings",
+  "server_state",
   "nebula_domain_migrations", "media_libraries", "media_library_roots", "media_items",
   "media_renditions",
   "media_sources", "media_source_fingerprints", "media_external_ids", "media_artwork", "media_scan_runs",
   "playback_states", "playback_sessions", "playback_events", "background_jobs",
+  "audit_events", "user_media_access_policies", "user_library_permissions", "media_lists", "media_list_items",
+  "subtitle_preferences", "subtitle_provider_config", "rendition_storage_policy", "media_locations",
   "cluster_identity", "cluster_nodes", "cluster_pairing_codes", "cluster_request_nonces",
   "cluster_identity_rotations", "cluster_identity_rotation_peers", "cluster_node_key_rotations",
-  "cluster_local_manifest_state", "cluster_manifest_cursors", "federated_items", "federated_editions",
+  "cluster_node_controls", "cluster_local_manifest_state", "cluster_manifest_cursors", "federated_items", "federated_editions",
   "federated_sources", "federated_replicas", "federated_dedupe_overrides", "federated_dedupe_conflicts",
+  "federated_playback_states", "federated_playback_sessions", "federated_playback_events",
   "media_probe_results", "media_streams", "media_chapters", "playback_policy_config"
 ]);
 

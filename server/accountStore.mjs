@@ -383,6 +383,10 @@ export const createAccountStore = async ({ database, databasePath, now = () => D
     }
   };
 
+  const needsLegacyWatchlistMigration = (userId) => !db.prepare(
+    "SELECT 1 FROM user_migrations WHERE user_id = ? AND migration_key = 'legacy-watchlist-v1'"
+  ).get(userId);
+
   const getWatchlist = (userId) => new Set(db.prepare("SELECT content_path FROM cinema_watchlist WHERE user_id = ?")
     .all(userId).map((row) => row.content_path));
 
@@ -408,15 +412,32 @@ export const createAccountStore = async ({ database, databasePath, now = () => D
 
   const deleteServerSetting = (key) => db.prepare("DELETE FROM server_settings WHERE setting_key = ?").run(String(key));
 
-  const issueMediaTicket = ({ contentPath, mediaKind, principalId, principalType }) => {
-    db.prepare("DELETE FROM media_tickets WHERE expires_at <= ? OR revoked_at IS NOT NULL").run(iso(now()));
-    const token = randomBytes(32).toString("base64url");
-    db.prepare(`INSERT INTO media_tickets
+  const issueMediaTickets = (requests) => {
+    if (!Array.isArray(requests)) throw new TypeError("Media ticket requests must be an array.");
+    if (requests.length === 0) return [];
+    const current = now();
+    const createdAt = iso(current);
+    const expiresAt = iso(current + MEDIA_TICKET_TTL_MS);
+    const insert = db.prepare(`INSERT INTO media_tickets
       (token_hash, principal_type, principal_id, media_kind, content_path, created_at, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run(hashToken(token), principalType, principalId, mediaKind, contentPath, iso(now()), iso(now() + MEDIA_TICKET_TTL_MS));
-    return token;
+      VALUES (?, ?, ?, ?, ?, ?, ?)`);
+    const tokens = [];
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.prepare("DELETE FROM media_tickets WHERE expires_at <= ? OR revoked_at IS NOT NULL").run(createdAt);
+      for (const { contentPath, mediaKind, principalId, principalType } of requests) {
+        const token = randomBytes(32).toString("base64url");
+        insert.run(hashToken(token), principalType, principalId, mediaKind, contentPath, createdAt, expiresAt);
+        tokens.push(token);
+      }
+      db.exec("COMMIT");
+      return tokens;
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
   };
+  const issueMediaTicket = (request) => issueMediaTickets([request])[0];
 
   const authenticateMediaTicket = ({ contentPath, mediaKind, token }) => {
     if (!token) return null;
@@ -438,11 +459,13 @@ export const createAccountStore = async ({ database, databasePath, now = () => D
     getUser: (userId) => publicUser(db.prepare("SELECT * FROM users WHERE id = ?").get(userId)),
     getWatchlist,
     issueMediaTicket,
+    issueMediaTickets,
     isOwnerInitialized: () => db.prepare("SELECT state_value FROM server_state WHERE state_key = 'owner_initialized'").get()?.state_value === "true",
     listSessions,
     listUsers: () => db.prepare("SELECT * FROM users ORDER BY role DESC, display_name COLLATE NOCASE").all().map(publicUser),
     login,
     migrateLegacyWatchlist,
+    needsLegacyWatchlistMigration,
     revokeSession,
     setWatchlisted,
     setServerSetting,

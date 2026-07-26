@@ -43,7 +43,9 @@ export const currentCachedArtwork = (artwork, source) => {
 export const currentLocalArtwork = (artwork, source) =>
   currentCachedArtwork(artwork, source) ?? currentGeneratedArtwork(artwork, source);
 
-export const generatedArtworkUrl = (source) =>
-  `/api/cinema/artwork?sourceId=${encodeURIComponent(source.id)}&revision=${source.contentRevision}`;
+export const generatedArtworkUrl = (source, artwork = null) =>
+  `/api/cinema/artwork?sourceId=${encodeURIComponent(source.id)}&revision=${source.contentRevision}${
+    artwork?.id ? `&artwork=${encodeURIComponent(artwork.id)}` : ""
+  }`;
 
 export const artworkJobDedupeKey = (source) => `${safeSegment(source.id, "sourceId")}:${Number(source.contentRevision)}`;

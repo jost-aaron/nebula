@@ -14,6 +14,11 @@ import { probeMigration } from "../server/probe/catalogAdapter.mjs";
 import { playbackPolicyMigration } from "../server/playbackPolicy/index.mjs";
 import { auditMigration } from "../server/audit/schema.mjs";
 import { renditionsMigration } from "../server/renditions/index.mjs";
+import { libraryPermissionsMigration } from "../server/permissions/index.mjs";
+import { mediaListsMigration } from "../server/mediaLists/index.mjs";
+import { subtitleMigration } from "../server/subtitles/index.mjs";
+import { renditionPolicyMigrations } from "../server/renditionPolicy/index.mjs";
+import { mediaLocationsMigration } from "../server/mediaLocations/index.mjs";
 import {
   clusterFederationMigration, clusterKeyRotationMigration, clusterMigration, clusterOperationsMigration,
   createClusterRepository, createClusterTrustService
@@ -26,7 +31,12 @@ const fixture = async (t) => {
   const databasePath = path.join(dataRoot, "nebula.sqlite");
   const database = await openNebulaDatabase(databasePath);
   migrateAccountSchema(database);
-  applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, playbackPolicyMigration, auditMigration, renditionsMigration, clusterMigration, clusterOperationsMigration, clusterKeyRotationMigration, clusterFederationMigration]);
+  applyDomainMigrations(database, [
+    catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, mediaLocationsMigration,
+    libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration,
+    subtitleMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration,
+    clusterOperationsMigration, clusterKeyRotationMigration, clusterFederationMigration
+  ]);
   t.after(() => database.close());
   return { backupRoot: path.join(root, "backups"), dataRoot, database, databasePath, root };
 };

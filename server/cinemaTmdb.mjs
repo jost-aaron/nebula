@@ -5,6 +5,7 @@ import { defaultTitle, metadataForEntry, readMetadata, writeMetadata } from "./m
 import { isVideoFile } from "./storage.mjs";
 import { createTmdbClient, normalizeMediaQuery } from "./tmdb.mjs";
 import { rankCandidates } from "./metadata/tmdbService.mjs";
+import { artworkJobDedupeKey } from "./artwork/index.mjs";
 
 export const createCinemaTmdbRoutes = (storage, accountStore, options = {}) => {
   const repository = options.catalog?.repository ?? null;
@@ -89,10 +90,12 @@ export const createCinemaTmdbRoutes = (storage, accountStore, options = {}) => {
       tmdbMatchUpdatedAt: updatedAt,
       updatedAt
     };
-    await writeMetadata(storage.cinemaMetadataPath, metadata);
     const catalogSource = catalogItemForPath(file.contentPath);
     if (catalogSource?.item?.id) {
+      const source = catalogSource.source ?? catalogSource;
       repository.putExternalMetadata(catalogSource.item.id, {
+        expectedContentRevision: source.contentRevision,
+        expectedSourceId: source.id,
         externalIds: [{ id: tmdbId, mediaType, provider: "tmdb" }],
         fields: {
           ...imported,
@@ -102,7 +105,18 @@ export const createCinemaTmdbRoutes = (storage, accountStore, options = {}) => {
         },
         mode: "provider"
       });
+      if (imported.posterUrl && options.jobs) options.jobs.enqueue({
+        availableAt: Date.now(),
+        dedupeKey: artworkJobDedupeKey(source),
+        maxAttempts: 2,
+        payload: {
+          contentRevision: source.contentRevision,
+          sourceId: source.id
+        },
+        type: "artwork"
+      });
     }
+    if (!catalogSource?.item?.id) await writeMetadata(storage.cinemaMetadataPath, metadata);
     json(response, 200, { metadata: metadata[file.contentPath], ok: true, path: file.contentPath });
   };
 

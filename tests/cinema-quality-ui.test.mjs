@@ -18,7 +18,8 @@ test("Cinema exposes Auto, Original, and fixed profile controls with actual deli
 
 test("Cinema uses native-or-MSE HLS and tears it down with delivery lifecycle", () => {
   assert.match(source, /supportsHlsPlayback\(player\)/);
-  assert.match(source, /createHlsPlayback\(/);
+  assert.match(source, /import\("\.\/hlsPlayback"\)/);
+  assert.match(source, /const playback = createHlsPlayback\(/);
   assert.match(source, /hlsPlayback\?\.destroy\(\)/);
   assert.match(source, /startPositionSeconds:\s*targetPosition/);
 });

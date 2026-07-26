@@ -4,6 +4,7 @@ import {
   applyMusicBrainzMatch,
   cancelClusterMusicDelivery,
   createClusterMusicDelivery,
+  createMusicMediaTicket,
   failoverClusterMusicDelivery,
   getClusterMusicDelivery,
   listMusicBrainzCandidates,
@@ -67,6 +68,9 @@ const escapeHtml = (value: string) =>
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 
+const isAbortError = (error: unknown) =>
+  error instanceof DOMException && error.name === "AbortError";
+
 const formatSize = (size: number) => {
   if (size < 1024 * 1024 * 1024) {
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
@@ -123,14 +127,13 @@ const renderStudioIcon = (iconName: keyof typeof icons, className = "studio-ui-i
 
 const renderArtwork = (entry: MusicEntry | null, fallbackLabel = "S") => {
   const initial = (entry?.posterUrl ? entry.title : fallbackLabel).slice(0, 1).toUpperCase() || "S";
-  const style = entry?.posterUrl ? ` style="background-image: url('${escapeHtml(entry.posterUrl)}')"` : "";
 
   return `
-    <div class="studio-album-art ${entry?.posterUrl ? "has-poster" : "is-fallback"}"${style}>
+    <div class="studio-album-art ${entry?.posterUrl ? "has-poster" : "is-fallback"}">
       ${
         entry?.posterUrl
-          ? ""
-          : `<img src="${studioFallbackArtworkUrl}" alt="" aria-hidden="true" /><span aria-hidden="true">${escapeHtml(initial)}</span>`
+          ? `<img src="${escapeHtml(entry.posterUrl)}" alt="${escapeHtml(`Cover art for ${entry.title}`)}" loading="lazy" decoding="async" />`
+          : `<img src="${studioFallbackArtworkUrl}" alt="" aria-hidden="true" loading="lazy" decoding="async" /><span aria-hidden="true">${escapeHtml(initial)}</span>`
       }
       ${entry?.artworkState === "processing" ? `<span class="studio-artwork-status is-processing">${renderStudioIcon("LoaderCircle")}<b>Downloading cover</b></span>` : ""}
       ${entry?.artworkState === "queued" ? `<span class="studio-artwork-status is-queued">${renderStudioIcon("Clock3")}<b>Cover queued</b></span>` : ""}
@@ -264,6 +267,41 @@ const libraryItemsFor = (
   return groupedModeItems(tracks, mode);
 };
 
+const libraryItemKey = (item: StudioLibraryItem) =>
+  item.itemKind === "group" ? `group:${item.group.id}` : `track:${item.track.path}`;
+
+const renderLibraryItem = (item: StudioLibraryItem, selected: MusicEntry | null) => {
+  const itemKey = escapeHtml(libraryItemKey(item));
+
+  if (item.itemKind === "group") {
+    const cover = item.group.tracks.find((track) => track.posterUrl) ?? item.group.tracks[0] ?? null;
+
+    return `
+      <button class="studio-track studio-group-tile" type="button" data-studio-item-key="${itemKey}" data-studio-item-kind="group" data-studio-group="${escapeHtml(item.group.id)}">
+        ${renderArtwork(cover, item.group.label)}
+        <span>
+          <strong>${escapeHtml(item.group.label)}</strong>
+          <small>${escapeHtml(`${item.group.subtitle} / ${pluralizeTracks(item.group.tracks.length)}`)}</small>
+        </span>
+        <em>${escapeHtml(item.group.kind)}</em>
+      </button>
+    `;
+  }
+
+  const entry = item.track;
+
+  return `
+    <button class="studio-track ${selected?.path === entry.path ? "active" : ""}" type="button" data-studio-item-key="${itemKey}" data-studio-item-kind="track" data-studio-path="${escapeHtml(entry.path)}">
+      ${renderArtwork(entry, entry.title)}
+      <span>
+        <strong>${escapeHtml(entry.title)}</strong>
+        <small>${escapeHtml(metadataLine(entry) || `${entry.folder || "Content"} / ${formatAudioFormat(entry)}`)}</small>
+      </span>
+      <em class="${entry.playable === false ? "is-remote" : ""}">${escapeHtml(entry.federation ? federationLabel(entry.federation) : formatAudioFormat(entry).replace(" audio", ""))}</em>
+    </button>
+  `;
+};
+
 const renderLibraryItems = (items: StudioLibraryItem[], selected: MusicEntry | null) => {
   if (items.length === 0) {
     return `
@@ -275,37 +313,7 @@ const renderLibraryItems = (items: StudioLibraryItem[], selected: MusicEntry | n
     `;
   }
 
-  return items
-    .map((item) => {
-      if (item.itemKind === "group") {
-        const cover = item.group.tracks.find((track) => track.posterUrl) ?? item.group.tracks[0] ?? null;
-
-        return `
-          <button class="studio-track studio-group-tile" type="button" data-studio-group="${escapeHtml(item.group.id)}">
-            ${renderArtwork(cover, item.group.label)}
-            <span>
-              <strong>${escapeHtml(item.group.label)}</strong>
-              <small>${escapeHtml(`${item.group.subtitle} / ${pluralizeTracks(item.group.tracks.length)}`)}</small>
-            </span>
-            <em>${escapeHtml(item.group.kind)}</em>
-          </button>
-        `;
-      }
-
-      const entry = item.track;
-
-      return `
-        <button class="studio-track ${selected?.path === entry.path ? "active" : ""}" type="button" data-studio-path="${escapeHtml(entry.path)}">
-          ${renderArtwork(entry, entry.title)}
-          <span>
-            <strong>${escapeHtml(entry.title)}</strong>
-            <small>${escapeHtml(metadataLine(entry) || `${entry.folder || "Content"} / ${formatAudioFormat(entry)}`)}</small>
-          </span>
-          <em class="${entry.playable === false ? "is-remote" : ""}">${escapeHtml(entry.federation ? federationLabel(entry.federation) : formatAudioFormat(entry).replace(" audio", ""))}</em>
-        </button>
-      `;
-    })
-    .join("");
+  return items.map((item) => renderLibraryItem(item, selected)).join("");
 };
 
 const renderPlaybackHistory = (entries: MusicEntry[], history: Map<string, PlaybackHistoryEntry>) => {
@@ -626,9 +634,10 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   const audioPlayer = container.querySelector<HTMLAudioElement>("[data-studio-player]")!;
 
   if (!app || !content || !footer || !dialogHost || !miniPlayer || !miniContent || !audioPlayer) {
-    return;
+    return () => undefined;
   }
 
+  const viewController = new AbortController();
   let entries: MusicEntry[] = [];
   let selected: MusicEntry | null = null;
   let libraryScope: StudioLibraryScope | null = null;
@@ -648,10 +657,18 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   const personalPlayback = options.personalPlayback !== false;
   const playbackDeviceId = createBrowserUuid();
   let libraryHasMore = false;
+  let libraryTruncated = false;
+  // Artist/album groups span server pages, so recycling arbitrary card ranges would
+  // make group counts and ordering incorrect. Bound the browse DOM and use server-side
+  // search to expose tracks outside this window.
+  const libraryBrowseLimit = 600;
   let libraryOffset = 0;
   let pageLoading = false;
   let pageObserver: IntersectionObserver | null = null;
   let searchTimer = 0;
+  let libraryController: AbortController | null = null;
+  let libraryGeneration = 0;
+  let viewDisposed = false;
 
   const visibleEntries = () =>
     query
@@ -720,7 +737,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     let playerReady = Promise.resolve();
     let eventQueue = Promise.resolve();
     let statusMessage = "Ready to play.";
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
     const levels = new Float32Array(192);
     let audioContext: AudioContext | null = null;
     let source: MediaElementAudioSourceNode | null = null;
@@ -728,6 +745,8 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     let spectrum: Uint8Array<ArrayBuffer> | null = null;
     let animationFrame = 0;
     let disposed = false;
+    let syncVisualizer = () => undefined;
+    const playerController = new AbortController();
 
     const setStatus = (message: string) => {
       statusMessage = message;
@@ -768,6 +787,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
         button.setAttribute("aria-pressed", String(muted));
       });
       setStatus(statusMessage);
+      syncVisualizer();
     };
 
     const report = (session: PlaybackSession, event: PlaybackEventKind) => {
@@ -800,9 +820,11 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
             progress: result.state.durationSeconds ? result.state.positionSeconds / result.state.durationSeconds : 0,
             sourceId: result.state.sourceId
           });
-          if (!selected) render();
+          if (!selected && !viewDisposed) render();
         }
-      }).catch(() => setStatus("Playing locally; listening history is unavailable."));
+      }).catch(() => {
+        if (!viewDisposed) setStatus("Playing locally; listening history is unavailable.");
+      });
     };
 
     const stopSession = () => {
@@ -869,9 +891,15 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
             syncPlayerUi();
             throw error;
           })
-        : Promise.resolve().then(() => {
-            audioPlayer.src = entry.streamUrl;
+        : createMusicMediaTicket(entry.path).then((streamUrl) => {
+            if (disposed || requestGeneration !== playerRequestGeneration || playingEntry?.path !== entry.path) return;
+            audioPlayer.src = streamUrl;
             audioPlayer.load();
+          }).catch((error) => {
+            if (requestGeneration !== playerRequestGeneration) return;
+            statusMessage = error instanceof Error ? error.message : "Playback could not be authorized.";
+            syncPlayerUi();
+            throw error;
           });
       syncPlayerUi();
     };
@@ -884,7 +912,9 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       };
       void playerReady.then(() => {
         if (!audioPlayer.src) return;
-        if (positionSeconds > 0 && audioPlayer.readyState < 1) audioPlayer.addEventListener("loadedmetadata", beginPlayback, { once: true });
+        if (positionSeconds > 0 && audioPlayer.readyState < 1) {
+          audioPlayer.addEventListener("loadedmetadata", beginPlayback, { once: true, signal: playerController.signal });
+        }
         else beginPlayback();
       }).catch(() => undefined);
     };
@@ -982,7 +1012,9 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
           if (Number.isFinite(audioPlayer.duration) && position < audioPlayer.duration) audioPlayer.currentTime = Math.max(0, position);
           void audioPlayer.play().catch(() => setStatus("Replica ready. Press Play to resume."));
         };
-        if (audioPlayer.readyState < 1) audioPlayer.addEventListener("loadedmetadata", resume, { once: true });
+        if (audioPlayer.readyState < 1) {
+          audioPlayer.addEventListener("loadedmetadata", resume, { once: true, signal: playerController.signal });
+        }
         else resume();
         setStatus(`Switched to ${replacement.session.candidate.nodeName ?? "an exact replica"}.`);
       } catch {
@@ -1003,13 +1035,11 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     audioPlayer.addEventListener("volumechange", syncPlayerUi);
 
     const drawVisualizer = (timestamp: number) => {
-      if (disposed) return;
+      animationFrame = 0;
+      if (disposed || document.visibilityState !== "visible" || motionPreference.matches || audioPlayer.paused || audioPlayer.ended) return;
       const visualizer = content.querySelector<HTMLCanvasElement>("[data-studio-visualizer]");
       const context = visualizer?.getContext("2d");
-      if (!visualizer || !context) {
-        animationFrame = window.requestAnimationFrame(drawVisualizer);
-        return;
-      }
+      if (!visualizer || !context) return;
 
       const bounds = visualizer.getBoundingClientRect();
       const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
@@ -1058,7 +1088,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       visualizer.dataset.studioVisualizerMaximumFrequency = String(Math.round(maximumFrequency));
       const center = height / 2;
       const maximumBarHeight = Math.max(16, height - 14);
-      const ambientTime = reduceMotion ? 0 : timestamp * (isPlaying ? 0.0026 : 0.00125);
+      const ambientTime = timestamp * (isPlaying ? 0.0026 : 0.00125);
       const duration = Number.isFinite(audioPlayer.duration) && audioPlayer.duration > 0 ? audioPlayer.duration : 0;
       const progress = duration ? Math.min(1, audioPlayer.currentTime / duration) : isPlaying ? 0.58 : 0.34;
 
@@ -1120,14 +1150,42 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       animationFrame = window.requestAnimationFrame(drawVisualizer);
     };
 
+    const stopVisualizer = () => {
+      if (!animationFrame) return;
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = 0;
+    };
+
+    syncVisualizer = () => {
+      const visualizer = content.querySelector<HTMLCanvasElement>("[data-studio-visualizer]");
+      const shouldAnimate = !disposed
+        && document.visibilityState === "visible"
+        && !motionPreference.matches
+        && !audioPlayer.paused
+        && !audioPlayer.ended
+        && Boolean(visualizer);
+      if (!shouldAnimate) {
+        stopVisualizer();
+        if (visualizer) visualizer.dataset.studioVisualizerMode = motionPreference.matches ? "reduced-motion" : "idle";
+        return;
+      }
+      if (!animationFrame) animationFrame = window.requestAnimationFrame(drawVisualizer);
+    };
+
+    const onVisibilityChange = () => syncVisualizer();
+    const onMotionPreferenceChange = () => syncVisualizer();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    motionPreference.addEventListener("change", onMotionPreferenceChange);
+
     function cleanup() {
       if (disposed) return;
       disposed = true;
+      playerController.abort();
       playerRequestGeneration += 1;
       stopSession();
       releaseClusterDelivery();
       audioPlayer.pause();
-      window.cancelAnimationFrame(animationFrame);
+      stopVisualizer();
       audioPlayer.removeEventListener("durationchange", syncPlayerUi);
       audioPlayer.removeEventListener("ended", onEnded);
       audioPlayer.removeEventListener("error", onError);
@@ -1137,6 +1195,8 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       audioPlayer.removeEventListener("stalled", onStalled);
       audioPlayer.removeEventListener("timeupdate", onTimeUpdate);
       audioPlayer.removeEventListener("volumechange", syncPlayerUi);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      motionPreference.removeEventListener("change", onMotionPreferenceChange);
       window.removeEventListener("pagehide", cleanup);
       source?.disconnect();
       analyser?.disconnect();
@@ -1144,7 +1204,6 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     }
 
     window.addEventListener("pagehide", cleanup, { once: true });
-    animationFrame = window.requestAnimationFrame(drawVisualizer);
     return cleanup;
   };
 
@@ -1198,6 +1257,14 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     renderFooter();
     syncPlayerUi();
     pageObserver?.disconnect();
+    content.querySelector("[data-studio-window-limit]")?.remove();
+    if (!selected && libraryTruncated) {
+      content.insertAdjacentHTML("beforeend", `
+        <p class="media-window-limit" data-studio-window-limit role="status">
+          Showing the first ${libraryBrowseLimit} matching tracks. Search narrows the full library without growing this view further.
+        </p>
+      `);
+    }
     if (!selected && libraryHasMore) {
       content.insertAdjacentHTML("beforeend", `<div data-studio-page-sentinel aria-label="Loading more tracks" style="height:1px"></div>`);
       const sentinel = content.querySelector<HTMLElement>("[data-studio-page-sentinel]");
@@ -1209,6 +1276,62 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       }
     }
     if (previousLibraryScrollTop !== null) content.scrollTop = previousLibraryScrollTop;
+  };
+
+  const patchLibraryPage = () => {
+    if (selected || loadError || isScanning || libraryScope) return false;
+    const list = content.querySelector<HTMLElement>(".studio-track-list");
+    const count = content.querySelector<HTMLElement>(".studio-library > header > span");
+    if (!list || !count) return false;
+
+    const visible = visibleEntries();
+    const items = libraryItemsFor(visible, browseMode, null);
+    const existing = new Map(
+      Array.from(list.querySelectorAll<HTMLElement>("[data-studio-item-key]"))
+        .map((node) => [node.dataset.studioItemKey ?? "", node])
+    );
+    const firstTrack = () => list.querySelector<HTMLElement>('[data-studio-item-kind="track"]');
+    const nodeFor = (item: StudioLibraryItem) => {
+      const template = document.createElement("template");
+      template.innerHTML = renderLibraryItem(item, selected).trim();
+      return template.content.firstElementChild as HTMLElement | null;
+    };
+
+    items.forEach((item) => {
+      const key = libraryItemKey(item);
+      const current = existing.get(key);
+      if (current) {
+        if (item.itemKind === "group") {
+          const updated = nodeFor(item);
+          if (updated && current.innerHTML !== updated.innerHTML) current.replaceWith(updated);
+        }
+        return;
+      }
+
+      const added = nodeFor(item);
+      if (!added) return;
+      const track = item.itemKind === "group" ? firstTrack() : null;
+      if (track) list.insertBefore(added, track);
+      else list.appendChild(added);
+    });
+
+    count.textContent = pluralizeTracks(visible.length);
+    renderFooter();
+    syncPlayerUi();
+    if (!libraryHasMore) {
+      pageObserver?.disconnect();
+      pageObserver = null;
+      content.querySelector("[data-studio-page-sentinel]")?.remove();
+      content.querySelector("[data-studio-window-limit]")?.remove();
+      if (libraryTruncated) {
+        content.insertAdjacentHTML("beforeend", `
+          <p class="media-window-limit" data-studio-window-limit role="status">
+            Showing the first ${libraryBrowseLimit} matching tracks. Search narrows the full library without growing this view further.
+          </p>
+        `);
+      }
+    }
+    return true;
   };
 
   const closeResumePrompt = () => {
@@ -1333,35 +1456,76 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   };
 
   const loadLibrary = async (reset = true) => {
-    if (pageLoading) return;
+    if (viewDisposed || (!reset && pageLoading)) return;
+    if (reset) {
+      libraryController?.abort();
+      libraryGeneration += 1;
+      pageLoading = false;
+    }
+    const requestGeneration = libraryGeneration;
+    const requestController = new AbortController();
+    libraryController = requestController;
     pageLoading = true;
     if (reset) {
       isScanning = true;
       loadError = "";
       entries = [];
       libraryHasMore = false;
+      libraryTruncated = false;
       render();
     }
 
     try {
       const [library, playbackHistory] = await Promise.all([
-        listMusicLibrary({ limit: 100, offset: reset ? 0 : libraryOffset, query }),
-        personalPlayback ? listStudioPlaybackHistory() : Promise.resolve({ entries: [] })
+        listMusicLibrary({
+          limit: Math.min(100, Math.max(1, libraryBrowseLimit - (reset ? 0 : entries.length))),
+          offset: reset ? 0 : libraryOffset,
+          query,
+          signal: requestController.signal
+        }),
+        reset && personalPlayback
+          ? listStudioPlaybackHistory(50, requestController.signal)
+          : Promise.resolve(null)
       ]);
+      if (viewDisposed || requestGeneration !== libraryGeneration) return;
       entries = reset ? library.entries : [...entries, ...library.entries];
       libraryHasMore = library.page.hasMore;
       libraryOffset = library.page.nextOffset;
-      history = new Map(playbackHistory.entries.map((entry) => [entry.itemId, entry]));
+      libraryTruncated = library.page.hasMore && entries.length >= libraryBrowseLimit;
+      if (libraryTruncated) libraryHasMore = false;
+      if (playbackHistory) {
+        history = new Map(playbackHistory.entries.map((entry) => [entry.itemId, entry]));
+      }
       selected = selected ? entries.find((entry) => entry.path === selected?.path) ?? null : null;
     } catch (error) {
+      if (viewDisposed || requestGeneration !== libraryGeneration || isAbortError(error)) return;
       loadError = error instanceof Error ? error.message : "Unable to scan content.";
     } finally {
+      if (viewDisposed || requestGeneration !== libraryGeneration) return;
+      if (libraryController === requestController) libraryController = null;
       isScanning = false;
       pageLoading = false;
       const preservedScrollTop = reset ? null : content.scrollTop;
-      render();
+      const updatedIncrementally = !reset && patchLibraryPage();
+      if (!updatedIncrementally) render();
       if (preservedScrollTop !== null) content.scrollTop = preservedScrollTop;
     }
+  };
+
+  const dispose = () => {
+    if (viewDisposed) return;
+    viewDisposed = true;
+    libraryGeneration += 1;
+    libraryController?.abort();
+    libraryController = null;
+    window.clearTimeout(searchTimer);
+    pageObserver?.disconnect();
+    pageObserver = null;
+    viewController.abort();
+    playerCleanup?.();
+    playerCleanup = null;
+    dialogHost.hidden = true;
+    dialogHost.innerHTML = "";
   };
 
   app.addEventListener("click", (event) => {
@@ -1384,9 +1548,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     }
 
     if (actionButton?.dataset.studioAction === "home") {
-      closeResumePrompt();
-      playerCleanup?.();
-      playerCleanup = null;
+      dispose();
       onHome?.();
       return;
     }
@@ -1495,7 +1657,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
         selectTrack(entry, false);
       }
     }
-  });
+  }, { signal: viewController.signal });
 
   app.addEventListener("input", (event) => {
     const target = event.target as HTMLElement;
@@ -1521,6 +1683,11 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
 
     if (input) {
       query = input.value.trim();
+      libraryController?.abort();
+      libraryController = null;
+      libraryGeneration += 1;
+      pageLoading = false;
+      isScanning = false;
       libraryHasMore = false;
       selected = null;
       libraryScope = null;
@@ -1530,19 +1697,21 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       content.scrollTop = 0;
       input.focus();
     }
-  });
+  }, { signal: viewController.signal });
 
   app.addEventListener("submit", (event) => {
     const form = (event.target as HTMLElement).closest<HTMLFormElement>("[data-studio-match-form]");
     if (!form) return;
     event.preventDefault();
     void runMusicSearch(form);
-  });
+  }, { signal: viewController.signal });
 
   playerCleanup = bindPlayer();
   render();
   void Promise.all([listMediaLists("playlist", "audio"), listMediaLists("collection", "audio")]).then(([personal, shared]) => {
+    if (viewDisposed) return;
     playlists = personal.lists; collections = shared.lists; render();
   }).catch(() => {});
   void loadLibrary();
+  return dispose;
 };

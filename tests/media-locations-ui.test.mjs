@@ -29,7 +29,9 @@ test("cinema alphabet rail follows the real grid scroll surface without duplicat
   assert.match(cinema, /\^\[A-Z\]\$[\s\S]*?\? firstCharacter : "#"/);
   assert.match(cinema, /alphabetScrollHost === scrollHost && refreshAlphabetRail/);
   assert.match(cinema, /requestAnimationFrame\(update\)/);
-  assert.match(cinema, /const marker = hostBounds\.top \+ 1/);
+  assert.match(cinema, /const marker = scrollHost\.scrollTop \+ 1/);
+  assert.match(cinema, /top: card\.offsetTop/);
+  assert.doesNotMatch(cinema, /card\.getBoundingClientRect/);
   assert.match(cinema, /const windowSize = 9/);
   assert.match(cinema, /letter\.hidden = index < windowStart \|\| index >= windowEnd/);
   assert.match(cinema, /class="cinema-library-stage"/);

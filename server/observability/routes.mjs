@@ -1,4 +1,4 @@
-import { renderClusterOperationsMetrics, renderPrometheusMetrics, renderTranscodeAccelerationMetrics } from "./metrics.mjs";
+import { renderClusterOperationsMetrics, renderPrometheusMetrics, renderRuntimeMetrics, renderTranscodeAccelerationMetrics } from "./metrics.mjs";
 
 const json = (response, status, body) => {
   response.writeHead(status, { "cache-control": "no-store", "content-type": "application/json; charset=utf-8" });
@@ -7,7 +7,7 @@ const json = (response, status, body) => {
 
 const forbidden = (response) => json(response, 403, { error: "Admin authorization required." });
 
-export const createObservabilityRoutes = ({ service, isAdmin = () => false, clusterMetrics = () => ({}), transcodeStatus = async () => ({}) } = {}) => async (request, response, url) => {
+export const createObservabilityRoutes = ({ service, isAdmin = () => false, clusterMetrics = () => ({}), runtimeMetrics = () => ({}), transcodeStatus = async () => ({}) } = {}) => async (request, response, url) => {
   if (request.method === "GET" && url.pathname === "/healthz") {
     json(response, 200, service.liveness());
     return true;
@@ -29,6 +29,7 @@ export const createObservabilityRoutes = ({ service, isAdmin = () => false, clus
     response.writeHead(200, { "cache-control": "no-store", "content-type": "text/plain; version=0.0.4; charset=utf-8" });
     response.end(renderPrometheusMetrics({ readiness, uptimeSeconds: service.uptimeSeconds() })
       + renderTranscodeAccelerationMetrics(await transcodeStatus().catch(() => ({})))
+      + renderRuntimeMetrics(runtimeMetrics())
       + renderClusterOperationsMetrics(clusterMetrics()));
     return true;
   }

@@ -71,6 +71,31 @@ export const createLibraryPermissionsService = ({ database, now = () => new Date
     return sources.some(({ library_id }) => canAccessLibrary(principal, library_id));
   };
 
+  const filterPaths = (principal, entries, mediaKind) => {
+    const values = Array.isArray(entries) ? entries : [];
+    const identity = principalIdentity(database, principal);
+    if (identity.guest || identity.service || identity.role === "owner") return values;
+    if (identity.role !== "member" || !identity.userId) return [];
+    if (getPolicy(identity.userId) === "all") return values;
+    const permitted = new Set(database.prepare(
+      "SELECT library_id FROM user_library_permissions WHERE user_id = ?"
+    ).all(identity.userId).map(({ library_id }) => library_id));
+    if (!permitted.size || !values.length) return [];
+    const accessiblePaths = new Set();
+    const paths = [...new Set(values.map((entry) => String(entry.path ?? "")).filter(Boolean))];
+    for (let offset = 0; offset < paths.length; offset += 200) {
+      const batch = paths.slice(offset, offset + 200);
+      const placeholders = batch.map(() => "?").join(",");
+      for (const row of database.prepare(`SELECT DISTINCT s.content_path, i.library_id
+        FROM media_sources s JOIN media_items i ON i.id = s.item_id
+        WHERE s.content_path IN (${placeholders}) AND s.media_kind = ? AND s.availability = 'available'`)
+        .all(...batch, mediaKind)) {
+        if (permitted.has(row.library_id)) accessiblePaths.add(row.content_path);
+      }
+    }
+    return values.filter((entry) => accessiblePaths.has(entry.path));
+  };
+
   const filterItems = (principal, items) => items.filter((item) => canAccessLibrary(principal, item.libraryId));
 
   const listAdministration = () => {
@@ -123,5 +148,5 @@ export const createLibraryPermissionsService = ({ database, now = () => new Date
     return listAdministration().members.find(({ id }) => id === userId);
   };
 
-  return { canAccessItem, canAccessLibrary, canAccessPath, filterItems, listAdministration, listLibraries, setMemberAccess, sourceForPath };
+  return { canAccessItem, canAccessLibrary, canAccessPath, filterItems, filterPaths, listAdministration, listLibraries, setMemberAccess, sourceForPath };
 };

@@ -2,8 +2,9 @@ import { createServer as createHttpServer } from "node:http";
 import path from "node:path";
 import { access } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { createServer as createViteServer } from "vite";
 import { createExactViteHostGuard, createViteServerOptions } from "./viteConfig.mjs";
+import { createStaticHandler } from "./static.mjs";
+import { readRuntimeConfig } from "./runtimeConfig.mjs";
 import { createApiHandler } from "./api.mjs";
 import { createAuthGuard } from "./auth.mjs";
 import { applyApiCorsHeaders, handleApiPreflight, isApiCorsOriginAllowed } from "./cors.mjs";
@@ -11,7 +12,7 @@ import { createStorage } from "./storage.mjs";
 import { createAccountStore } from "./accountStore.mjs";
 import { createGuestService } from "./guest/service.mjs";
 import {
-  catalogMigration, bootstrapSharedContentRoot, createCatalogRepository, createFingerprintRepository,
+  catalogMigration, catalogQueryIndexesMigration, bootstrapSharedContentRoot, createCatalogRepository, createFingerprintRepository,
   createFingerprintService, discoverLocalMedia, importLegacyCinemaMetadata, scanLocalRoot
 } from "./catalog/index.mjs";
 import { createMediaLocationsService, mediaLocationsMigration } from "./mediaLocations/index.mjs";
@@ -57,16 +58,19 @@ import {
   createRenditionStorageCheck,
   createObservabilityRoutes,
   createObservabilityService,
+  createRuntimeTelemetry,
   createWorkerCheck
 } from "./observability/index.mjs";
 
+const runtimeConfig = readRuntimeConfig();
+const runtimeTelemetry = createRuntimeTelemetry();
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const contentRoot = path.join(root, "content");
 const dataRoot = process.env.NEBULA_DATA_ROOT ? path.resolve(process.env.NEBULA_DATA_ROOT) : path.join(root, "data");
 const backupRoot = process.env.NEBULA_BACKUP_ROOT ? path.resolve(process.env.NEBULA_BACKUP_ROOT) : path.join(dataRoot, "backups");
 const restoreStagingRoot = process.env.NEBULA_RESTORE_STAGING_ROOT ? path.resolve(process.env.NEBULA_RESTORE_STAGING_ROOT) : path.join(dataRoot, "restore-staging");
-const port = Number(process.env.PORT ?? 5173);
-const host = process.env.HOST ?? "0.0.0.0";
+const port = runtimeConfig.port;
+const host = runtimeConfig.host;
 
 const storage = await createStorage({ contentRoot, dataRoot });
 const database = await openNebulaDatabase(storage.accountDatabasePath);
@@ -74,11 +78,11 @@ const accountStore = await createAccountStore({ database });
 const guestService = createGuestService({ accountStore });
 const tailscaleEnrollment = createTailscaleEnrollmentService();
 accountStore.setOwnerCreatedHook(() => guestService.revokeAll());
-applyDomainMigrations(database, [catalogMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, mediaLocationsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration, clusterOperationsMigration, clusterKeyRotationMigration, clusterFederationMigration]);
+applyDomainMigrations(database, [catalogMigration, catalogQueryIndexesMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, mediaLocationsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration, clusterOperationsMigration, clusterKeyRotationMigration, clusterFederationMigration]);
 const auditService = createAuditService({
   db: database,
-  maxEvents: Number(process.env.NEBULA_AUDIT_MAX_EVENTS ?? 10_000),
-  retentionDays: Number(process.env.NEBULA_AUDIT_RETENTION_DAYS ?? 90)
+  maxEvents: runtimeConfig.auditMaxEvents,
+  retentionDays: runtimeConfig.auditRetentionDays
 });
 const clusterEnabled = process.env.NEBULA_CLUSTER_ENABLED === "true";
 const clusterRepository = createClusterRepository(database);
@@ -348,21 +352,18 @@ const jobsWorker = createJobsWorker({
           })
         : { intervalMs: 0, queued: 0 };
       const enrichmentStart = Date.now() + 60_000;
-      let enrichmentIndex = 0;
       const probedAudioSources = new Set();
       for (const item of catalogRepository.listItems({ availability: "available" })) {
         const probe = probeReader.get(item.source.id);
         if (probe.sourceContentRevision !== item.source.contentRevision) {
-          context.enqueue({ type: "probe", payload: { sourceId: item.source.id }, dedupeKey: `${item.source.id}:${item.source.contentRevision}`, maxAttempts: 1, reuseTerminal: true, availableAt: enrichmentStart + enrichmentIndex * 10_000 });
-          enrichmentIndex += 1;
+          context.enqueue({ type: "probe", payload: { sourceId: item.source.id }, dedupeKey: `${item.source.id}:${item.source.contentRevision}`, maxAttempts: 1, reuseTerminal: true, availableAt: enrichmentStart });
         } else if (item.source.mediaKind === "audio") {
           probedAudioSources.add(item.source.id);
         }
         if (clusterService) {
           const fingerprint = fingerprintRepository.get(item.source.id);
           if (fingerprint?.state !== "ready" || fingerprint.sourceRevision !== item.source.contentRevision) {
-            context.enqueue({ type: "fingerprint", payload: { sourceId: item.source.id }, dedupeKey: `${item.source.id}:${item.source.contentRevision}`, availableAt: enrichmentStart + enrichmentIndex * 10_000 });
-            enrichmentIndex += 1;
+            context.enqueue({ type: "fingerprint", payload: { sourceId: item.source.id }, dedupeKey: `${item.source.id}:${item.source.contentRevision}`, availableAt: enrichmentStart });
           }
         }
       }
@@ -380,7 +381,9 @@ const jobsWorker = createJobsWorker({
       return { ...scan, artworkQueued: artwork.queued, metadataQueued: metadata.queued, musicMetadataQueued: music.queued, purged };
     },
     probeSource: async ({ sourceId }, context) => {
+      context.throwIfCancelled();
       const result = await probeService.probeSource(sourceId);
+      context.throwIfCancelled();
       const source = catalogRepository.getSource(sourceId);
       const music = source?.mediaKind === "audio"
         ? musicMetadata.enqueueMissing(context.enqueue, {
@@ -417,7 +420,7 @@ const jobsWorker = createJobsWorker({
       : ({ candidates: catalogRepository.listCleanupCandidates().length })
   }),
   repository: jobsRepository,
-  concurrency: Math.max(1, Math.min(2, Number(process.env.NEBULA_MEDIA_JOB_CONCURRENCY) || 1))
+  concurrency: runtimeConfig.jobConcurrency
 });
 const authGuard = createAuthGuard(accountStore, {
   audit: auditService,
@@ -463,6 +466,7 @@ const handleObservability = createObservabilityRoutes({
     const context = authGuard.resolve(request, url);
     return context?.kind !== "media-ticket" && authGuard.hasCapability(context, "server.admin");
   },
+  runtimeMetrics: runtimeTelemetry.snapshot,
   service: observabilityService,
   transcodeStatus: transcodeService.status
 });
@@ -485,6 +489,7 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   guestService,
   libraryPermissions,
   mediaLists,
+  onError: (error, fields) => runtimeTelemetry.recordError(error, fields),
   playback: playbackService,
   playbackPlanner,
   playbackDelivery,
@@ -495,6 +500,13 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   subtitles: subtitleService,
   tailscaleEnrollment
 });
+const pruneJobHistory = () => jobsService.prune({
+  olderThan: Date.now() - runtimeConfig.jobHistoryDays * 24 * 60 * 60 * 1_000,
+  retain: runtimeConfig.jobHistoryRetain
+});
+pruneJobHistory();
+const jobHistoryInterval = setInterval(pruneJobHistory, 24 * 60 * 60 * 1_000);
+jobHistoryInterval.unref?.();
 jobsWorker.start();
 jobsService.enqueue({
   availableAt: Date.now() + 15_000,
@@ -517,66 +529,63 @@ const renditionCleanupScheduler = createRenditionCleanupScheduler({ enqueue: ren
 renditionPolicy.enqueueCleanup("startup");
 renditionCleanupScheduler.start();
 
-const viteServerOptions = createViteServerOptions();
-const vite = await createViteServer({
+const production = runtimeConfig.production;
+const vite = production ? null : await (await import("vite")).createServer({
   cacheDir: path.join(storage.dataRoot, "vite-cache"),
   server: {
     middlewareMode: true,
     host,
-    ...viteServerOptions,
+    ...createViteServerOptions(),
     // Nebula performs exact validation before Vite so the sidecar-published
     // hostname can become available without weakening to a wildcard suffix.
     allowedHosts: true
   },
   appType: "spa"
 });
+const serveFrontend = production
+  ? createStaticHandler({ root: path.join(root, "dist") })
+  : (request, response) => vite.middlewares(request, response);
 const viteHostGuard = createExactViteHostGuard({ dynamicHost: tailscaleEnrollment.currentFqdn });
 
-const httpServer = createHttpServer(async (request, response) => {
-  const url = new URL(request.url ?? "/", "http://nebula.local");
-
-  if (!viteHostGuard(request, response)) return;
-
-  if (await handleObservability(request, response, url)) {
-    return;
-  }
-
-  if (url.pathname.startsWith("/api/")) {
-    applyApiCorsHeaders(request, response);
-
-    if (handleApiPreflight(request, response)) {
-      return;
+const httpServer = createHttpServer((request, response) => {
+  const startedAt = performance.now();
+  response.once("finish", () => runtimeTelemetry.recordRequest({
+    durationMs: performance.now() - startedAt,
+    method: request.method ?? "OTHER",
+    status: response.statusCode
+  }));
+  void (async () => {
+    const url = new URL(request.url ?? "/", "http://nebula.local");
+    if (!viteHostGuard(request, response)) return;
+    if (await handleObservability(request, response, url)) return;
+    if (url.pathname.startsWith("/api/")) {
+      applyApiCorsHeaders(request, response);
+      if (handleApiPreflight(request, response)) return;
+      if (clusterIngress && await clusterIngress(request, response, url)) return;
+      if (!(await authGuard.authorize(request, response, url))) return;
+      if (await handleApi(request, response)) return;
     }
-
-    if (clusterIngress && await clusterIngress(request, response, url)) {
-      return;
+    await serveFrontend(request, response);
+  })().catch((error) => {
+    runtimeTelemetry.recordError(error, { method: request.method ?? "OTHER" });
+    if (!response.headersSent) {
+      response.writeHead(500, { "cache-control": "no-store", "content-type": "application/json; charset=utf-8" });
+      response.end(JSON.stringify({ error: "Server operation failed." }));
+    } else {
+      response.destroy();
     }
-
-    if (!(await authGuard.authorize(request, response, url))) {
-      return;
-    }
-
-    const handled = await handleApi(request, response);
-
-    if (handled) {
-      return;
-    }
-  }
-
-  vite.middlewares(request, response);
+  });
 });
 httpServer.listen(port, host, () => {
-  console.log(`Nebula Dashboard running at http://${host}:${port}`);
-  console.log(`Content root: ${storage.contentRoot}`);
-  console.log(`Account store: ${storage.accountDatabasePath}`);
-  console.log(`Backup root: ${backupRoot}`);
-  console.log(`Offline restore staging root: ${restoreStagingRoot}`);
+  runtimeTelemetry.write("info", "server.started", { host, port, production });
 });
 
 let shuttingDown = false;
 const shutdown = async () => {
   if (shuttingDown) return;
   shuttingDown = true;
+  clearInterval(jobHistoryInterval);
+  clearInterval(libraryScanInterval);
   renditionCleanupScheduler.stop();
   await new Promise((resolve) => httpServer.close(resolve));
   await jobsWorker.stop();
@@ -589,8 +598,16 @@ const shutdown = async () => {
   await Promise.allSettled([
     remuxService.shutdown(), transcodeService.shutdown(),
     clusterRemuxService?.shutdown(), clusterTranscodeService?.shutdown(),
-    vite.close()
+    vite?.close()
   ]);
   database.close();
 };
-for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => { void shutdown().finally(() => process.exit(0)); });
+for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => {
+  void shutdown().then(
+    () => process.exit(0),
+    (error) => {
+      runtimeTelemetry.recordError(error, { phase: "shutdown" });
+      process.exit(1);
+    }
+  );
+});

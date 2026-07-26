@@ -8,9 +8,11 @@ import {
   createRenditionStorageCheck,
   createObservabilityRoutes,
   createObservabilityService,
+  createRuntimeTelemetry,
   createWorkerCheck,
   renderClusterOperationsMetrics,
-  renderPrometheusMetrics
+  renderPrometheusMetrics,
+  renderRuntimeMetrics
 } from "../server/observability/index.mjs";
 
 const responseCapture = () => {
@@ -71,6 +73,31 @@ test("Prometheus output has only bounded component and storage labels", () => {
   assert.doesNotMatch(output, /id=|path=|user=|session=|filename=/);
   assert.equal(output.match(/# HELP nebula_component_ready/g)?.length, 1);
   assert.ok(output.endsWith("\n"));
+});
+
+test("runtime telemetry emits structured redacted records and bounded metrics", () => {
+  let output = "";
+  const telemetry = createRuntimeTelemetry({
+    now: () => 1_000,
+    output: { write: (value) => { output += value; } }
+  });
+  telemetry.recordRequest({ method: "GET", status: 200, durationMs: 25 });
+  telemetry.recordRequest({ method: "TRACE", status: 599, durationMs: 5 });
+  telemetry.recordError(Object.assign(new Error("operation failed"), { code: "FAILED" }), { method: "POST" });
+  const record = JSON.parse(output.trim());
+  assert.deepEqual(record, {
+    timestamp: "1970-01-01T00:00:01.000Z",
+    level: "error",
+    event: "server.error",
+    code: "FAILED",
+    errorType: "Error",
+    method: "POST"
+  });
+  const metrics = renderRuntimeMetrics(telemetry.snapshot());
+  assert.match(metrics, /nebula_runtime_errors_total 1/);
+  assert.match(metrics, /nebula_http_requests_total\{method="GET",status="2xx"\} 1/);
+  assert.match(metrics, /nebula_http_requests_total\{method="OTHER",status="5xx"\} 1/);
+  assert.doesNotMatch(metrics, /operation failed|TRACE/);
 });
 
 test("rendition storage readiness fails only when pinned output makes recovery impossible", async () => {

@@ -35,17 +35,29 @@ export const buildTranscodeArguments = (inputPath, outputDirectory, {
   ];
 };
 
-const inspectOutput = async (outputDirectory) => {
-  let bytes = 0; let mediaPlaylist = false; let segments = 0;
-  for (const entry of await readdir(outputDirectory, { withFileTypes: true }).catch(() => [])) {
-    if (!entry.isFile()) continue;
-    const details = await stat(path.join(outputDirectory, entry.name)).catch(() => null);
-    if (!details) continue;
-    bytes += details.size;
-    if (/^segment-\d{5}\.ts$/.test(entry.name)) segments += 1;
-    if (entry.name === "media.m3u8") mediaPlaylist = true;
-  }
-  return { bytes, mediaPlaylist, segments };
+const createOutputInspector = (outputDirectory) => {
+  const sizes = new Map();
+  let bytes = 0;
+  return async () => {
+    let mediaPlaylist = false; let segments = 0;
+    for (const entry of await readdir(outputDirectory, { withFileTypes: true }).catch(() => [])) {
+      if (!entry.isFile()) continue;
+      const segment = /^segment-\d{5}\.ts$/.test(entry.name);
+      if (segment) segments += 1;
+      if (entry.name === "media.m3u8") mediaPlaylist = true;
+      // HLS segments are published with temp_file and become immutable after rename.
+      // Only the playlist is expected to change, so avoid restating every segment
+      // on every poll as the rendition grows.
+      if (!segment && entry.name !== "media.m3u8" && sizes.has(entry.name)) continue;
+      if (segment && sizes.has(entry.name)) continue;
+      const details = await stat(path.join(outputDirectory, entry.name)).catch(() => null);
+      if (!details) continue;
+      const previous = sizes.get(entry.name) ?? 0;
+      sizes.set(entry.name, details.size);
+      bytes += details.size - previous;
+    }
+    return { bytes, mediaPlaylist, segments };
+  };
 };
 
 export const runFfmpegTranscode = async (inputPath, outputDirectory, {
@@ -64,6 +76,7 @@ export const runFfmpegTranscode = async (inputPath, outputDirectory, {
   const advertisedBitrate = renditionProfile?.totalBitrate ?? maxBitrate ?? 5_000_000;
   await writeFile(masterPlaylist, `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=${advertisedBitrate}${resolution},CODECS="avc1.42e01e,mp4a.40.2"\nmedia.m3u8\n`, { flag: "wx" })
     .catch((error) => { throw new TranscodeError("output_failed", "The HLS master playlist could not be created.", { cause: error }); });
+  const inspectOutput = createOutputInspector(outputDirectory);
 
   return new Promise((resolve, reject) => {
     const child = spawn(binary, buildTranscodeArguments(inputPath, outputDirectory, { maxBitrate, maxHeight: height, maxWidth: width, profile, renditionProfile, segmentDuration, subtitleFilter }), {

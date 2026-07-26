@@ -115,7 +115,13 @@ test("owner administration denies members and restrictions prevent catalog and c
 
   const before = await fetch(`${api.baseUrl}/api/cinema/library`, { headers: memberHeaders }).then((response) => response.json());
   assert.equal(before.entries.length, 1);
-  const issuedTicketUrl = new URL(before.entries[0].streamUrl, api.baseUrl);
+  assert.equal(new URL(before.entries[0].streamUrl, api.baseUrl).searchParams.has("ticket"), false);
+  const issuedTicket = await fetch(`${api.baseUrl}/api/cinema/ticket`, {
+    body: JSON.stringify({ path: before.entries[0].path }),
+    headers: { ...memberHeaders, "content-type": "application/json" },
+    method: "POST"
+  }).then((response) => response.json());
+  const issuedTicketUrl = new URL(issuedTicket.streamUrl, api.baseUrl);
 
   const saved = await fetch(`${api.baseUrl}/api/auth/accounts/${api.member.id}/library-permissions`, {
     body: JSON.stringify({ libraryIds: [], mode: "selected" }),

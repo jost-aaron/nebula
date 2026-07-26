@@ -1,7 +1,7 @@
 import { json } from "../http.mjs";
 import { actorFromContext } from "../audit/service.mjs";
 
-export const createCatalogRoutes = ({ libraryPermissions = null, probeReader = null, repository, scan }, audit = null) => async (request, response, url) => {
+export const createCatalogRoutes = ({ jobs = null, libraryPermissions = null, probeReader = null, repository, scan }, audit = null) => async (request, response, url) => {
   if (request.method === "GET" && url.pathname === "/api/catalog/items") {
     const mediaKind = url.searchParams.get("mediaKind") || undefined;
     const availability = url.searchParams.get("availability") || undefined;
@@ -26,9 +26,18 @@ export const createCatalogRoutes = ({ libraryPermissions = null, probeReader = n
 
   if (request.method === "POST" && url.pathname === "/api/catalog/scan") {
     try {
-      const result = await scan();
+      const root = repository.getRootByKey?.("shared-content") ?? null;
+      const result = jobs?.enqueue
+        ? jobs.enqueue({
+            availableAt: Date.now(),
+            dedupeKey: `library:${root?.id ?? "shared-content"}`,
+            maxAttempts: 1,
+            payload: { reason: "manual", ...(root?.id ? { rootId: root.id } : {}) },
+            type: "scan"
+          })
+        : await scan();
       audit?.recordBestEffort({ actor: actorFromContext(request.nebulaAuth), eventType: "catalog.scan_requested", outcome: "success", target: { type: "library", id: "shared-content" }, metadata: { requestedBy: "manual" } });
-      json(response, 202, { scan: result });
+      json(response, 202, jobs?.enqueue ? { job: result, scan: { id: result.id, status: "queued" } } : { scan: result });
     } catch (error) {
       audit?.recordBestEffort({ actor: actorFromContext(request.nebulaAuth), eventType: "catalog.scan_requested", outcome: "failure", target: { type: "library", id: "shared-content" }, metadata: { requestedBy: "manual" } });
       throw error;

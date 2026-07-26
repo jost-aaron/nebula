@@ -10,7 +10,11 @@ test("Studio pagination preserves its scroll container while appending pages", a
   assert.match(source, /const preservedScrollTop = reset \? null : content\.scrollTop/);
   assert.match(source, /if \(preservedScrollTop !== null\) content\.scrollTop = preservedScrollTop/);
   assert.match(source, /const previousLibraryScrollTop = !selected && !isScanning \? content\.scrollTop : null/);
+  assert.match(source, /const patchLibraryPage = \(\) =>/);
+  assert.match(source, /const updatedIncrementally = !reset && patchLibraryPage\(\)/);
+  assert.match(source, /data-studio-item-key/);
   assert.match(styles, /\.studio-content \{[\s\S]*?overflow-anchor: none/);
+  assert.match(styles, /\.studio-track \{[\s\S]*?content-visibility: auto/);
 });
 
 test("Studio integrates personal playback history, lifecycle reporting, and an in-app resume dialog", async () => {
@@ -52,4 +56,45 @@ test("Studio uses a persistent custom player and responsive mini-player instead 
   assert.match(css, /\.studio-mini-player/);
   assert.match(css, /\.studio-shell\.has-player \.studio-footer/);
   assert.match(css, /\.studio-transport/);
+});
+
+test("Studio owns library request generations and does not reload history for appended pages", async () => {
+  const [studio, api] = await Promise.all([
+    readFile(new URL("../src/studio/renderStudioView.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/api/musicApi.ts", import.meta.url), "utf8")
+  ]);
+
+  assert.match(api, /signal\?: AbortSignal/);
+  assert.match(api, /apiJson<MusicLibraryResponse>\([\s\S]*?\{ signal \}\)/);
+  assert.match(api, /listStudioPlaybackHistory = \(limit = 50, signal\?: AbortSignal\)/);
+  assert.match(studio, /libraryController\?\.abort\(\)/);
+  assert.match(studio, /requestGeneration !== libraryGeneration/);
+  assert.match(studio, /reset && personalPlayback[\s\S]*?listStudioPlaybackHistory\(50, requestController\.signal\)[\s\S]*?: Promise\.resolve\(null\)/);
+});
+
+test("Studio teardown and visualizer scheduling are bounded by the mounted active view", async () => {
+  const studio = await readFile(new URL("../src/studio/renderStudioView.ts", import.meta.url), "utf8");
+
+  assert.match(studio, /return \(\) => undefined/);
+  assert.match(studio, /const dispose = \(\) =>/);
+  assert.match(studio, /if \(viewDisposed\) return/);
+  assert.match(studio, /viewController\.abort\(\)/);
+  assert.match(studio, /return dispose/);
+  assert.match(studio, /document\.visibilityState === "visible"/);
+  assert.match(studio, /motionPreference\.matches/);
+  assert.match(studio, /!audioPlayer\.paused/);
+  assert.match(studio, /Boolean\(visualizer\)/);
+  assert.doesNotMatch(studio, /if \(!visualizer \|\| !context\) \{\s*animationFrame = window\.requestAnimationFrame/);
+});
+
+test("Studio artwork uses semantic lazy decoded images instead of CSS background URLs", async () => {
+  const [studio, css] = await Promise.all([
+    readFile(new URL("../src/studio/renderStudioView.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/styles.css", import.meta.url), "utf8")
+  ]);
+
+  assert.match(studio, /alt="\$\{escapeHtml\(`Cover art for \$\{entry\.title\}`\)\}"/);
+  assert.match(studio, /loading="lazy" decoding="async"/);
+  assert.doesNotMatch(studio, /background-image: url/);
+  assert.match(css, /\.studio-album-art\.has-poster img \{[\s\S]*?object-fit: cover/);
 });

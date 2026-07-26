@@ -22,13 +22,16 @@ export const createMusicRoutes = (storage, accountStore, {
     : [];
 
   const listMusicLibrary = async (request, response) => {
-    const metadata = await readMetadata(storage.cinemaMetadataPath);
+    const metadata = catalog?.repository?.listItemsPage ? {} : await readMetadata(storage.cinemaMetadataPath);
     const url = new URL(request.url ?? "/", "http://nebula.local");
     const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
     const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit")) || 100));
     const query = url.searchParams.get("query") ?? "";
     const page = catalog?.repository?.listItemsPage ? projectRepositoryItemsPage(catalog.repository, {
-      artworkJobForSource: (source) => jobs?.findByDedupe?.("artwork", artworkJobDedupeKey(source)) ?? null,
+      artworkJobsForSources: (sources) => jobs?.findByDedupeMany?.(
+        "artwork",
+        sources.map((source) => artworkJobDedupeKey(source))
+      ) ?? [],
       availability: "available",
       limit,
       mediaKind: "audio",
@@ -50,18 +53,10 @@ export const createMusicRoutes = (storage, accountStore, {
       });
     });
     const context = request.nebulaAuth;
-    let entries = libraryPermissions ? scanned.filter((entry) => libraryPermissions.canAccessPath(context, entry.path, "audio")) : scanned;
-    if (context) {
-      entries.forEach((entry) => {
-        const ticket = context.kind === "guest" ? guestService.issueMediaTicket({ contentPath: entry.path, mediaKind: "audio", sessionId: context.sessionId }) : accountStore.issueMediaTicket({
-          contentPath: entry.path,
-          mediaKind: "audio",
-          principalId: context.user?.id ?? context.principalId,
-          principalType: context.user ? "user" : "service"
-        });
-        entry.streamUrl = `/api/music/media?path=${encodeURIComponent(entry.path)}&ticket=${encodeURIComponent(ticket)}`;
-      });
-    }
+    let entries = libraryPermissions
+      ? libraryPermissions.filterPaths?.(context, scanned, "audio")
+        ?? scanned.filter((entry) => libraryPermissions.canAccessPath(context, entry.path, "audio"))
+      : scanned;
     const authorizeFederatedItem = federationAuthorization
       ? (itemId) => federationAuthorization.canAccessItem(context, itemId)
       : null;
@@ -139,6 +134,38 @@ export const createMusicRoutes = (storage, accountStore, {
       : null;
   };
 
+  const issueAudioTicket = async (request, response) => {
+    const body = await readBody(request);
+    const contentPath = storage.relativePath(body.path ?? "");
+    const absolutePath = storage.resolveContentPath(contentPath);
+    const stats = await stat(absolutePath).catch(() => null);
+    const context = request.nebulaAuth;
+    if (!stats?.isFile() || !isAudioFile(absolutePath) || !context
+      || (libraryPermissions && !libraryPermissions.canAccessPath(context, contentPath, "audio"))) {
+      json(response, 404, { error: "Audio file not found." });
+      return;
+    }
+    const ticket = context.kind === "guest"
+      ? guestService?.issueMediaTicket({
+          contentPath,
+          mediaKind: "audio",
+          sessionId: context.sessionId
+        })
+      : accountStore.issueMediaTicket({
+          contentPath,
+          mediaKind: "audio",
+          principalId: context.user?.id ?? context.principalId,
+          principalType: context.user ? "user" : "service"
+        });
+    if (!ticket) {
+      json(response, 403, { error: "Audio playback is not available." });
+      return;
+    }
+    json(response, 201, {
+      streamUrl: `/api/music/media?path=${encodeURIComponent(contentPath)}&ticket=${encodeURIComponent(ticket)}`
+    });
+  };
+
   const metadataContext = () => ({
     enqueue: (job) => jobs?.enqueue?.(job),
     reportProgress: () => undefined
@@ -201,6 +228,11 @@ export const createMusicRoutes = (storage, accountStore, {
 
     if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/music/media") {
       await streamMusicMedia(request, response, url);
+      return true;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/music/ticket") {
+      await issueAudioTicket(request, response);
       return true;
     }
 

@@ -87,7 +87,13 @@ test("Cinema, Files, Search, and Settings expose meaningful open and close paths
   await expect(page.locator("[data-cinema-category='tv']")).toBeVisible();
   await expect(page.locator("[data-cinema-grid]")).toContainText("E2E Movie");
   await expect(page.locator("[data-cinema-player]")).toHaveCount(0);
-  await closeActiveApp(page);
+  const cinemaSearch = page.getByPlaceholder("Search library");
+  await cinemaSearch.pressSequentially("E2E", { delay: 40 });
+  await expect(cinemaSearch).toBeFocused();
+  await expect(cinemaSearch).toHaveValue("E2E");
+  await expect(page.locator("[data-cinema-grid]")).toContainText("E2E Movie");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#app-surface")).toBeHidden();
 
   await openApp(page, "Files");
   await expect(page.locator("[data-file-list]")).toContainText("fixture-note.txt");

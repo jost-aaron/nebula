@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { Readable } from "node:stream";
 import test from "node:test";
 import { createAccountStore } from "../server/accountStore.mjs";
 import { createAccountRoutes } from "../server/accounts.mjs";
 import { createAuthGuard } from "../server/auth.mjs";
+import { createCinemaRoutes } from "../server/cinema.mjs";
 import { createGuestService } from "../server/guest/service.mjs";
+import { createStorage } from "../server/storage.mjs";
 
 const owner = { clientLabel: "test", displayName: "Owner", password: "correct horse battery", username: "owner" };
 
@@ -57,6 +62,43 @@ test("guest sessions expire, vanish on restart, and tickets stay session-bound i
   assert.equal(guests.authenticateSession(session.token), null);
   assert.equal(guests.authenticateMediaTicket({ contentPath: "movie.mp4", mediaKind: "video", token: ticket }), null);
   db.close();
+});
+
+test("guest playback tickets are minted lazily and stay bound to the requested media", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "nebula-guest-ticket-"));
+  const storage = await createStorage({ contentRoot: root });
+  await writeFile(path.join(root, "movie.mp4"), "video");
+  const db = new DatabaseSync(":memory:");
+  const accounts = await createAccountStore({ database: db });
+  const guests = createGuestService({ accountStore: accounts });
+  const session = guests.createSession();
+  const route = createCinemaRoutes(storage, accounts, { guestService: guests });
+  const request = Readable.from([Buffer.from(JSON.stringify({ path: "movie.mp4" }))]);
+  Object.assign(request, {
+    headers: { "content-type": "application/json" },
+    method: "POST",
+    nebulaAuth: { kind: "guest", sessionId: session.id, user: null }
+  });
+  const response = {
+    body: "",
+    end(value = "") { this.body += value; },
+    setHeader() {},
+    writeHead(status) { this.status = status; }
+  };
+  assert.equal(await route(request, response, new URL("http://nebula/api/cinema/ticket")), true);
+  assert.equal(response.status, 201);
+  const ticketUrl = new URL(JSON.parse(response.body).streamUrl, "http://nebula");
+  assert.equal(guests.authenticateMediaTicket({
+    contentPath: "movie.mp4",
+    mediaKind: "video",
+    token: ticketUrl.searchParams.get("ticket")
+  }).principalId, session.id);
+  assert.equal(guests.authenticateMediaTicket({
+    contentPath: "other.mp4",
+    mediaKind: "video",
+    token: ticketUrl.searchParams.get("ticket")
+  }), null);
+  t.after(async () => { accounts.close(); await rm(root, { recursive: true, force: true }); });
 });
 
 test("guest principal is denied persistence and administration but may read media", async () => {

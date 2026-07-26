@@ -112,7 +112,7 @@ const selectCandidate = (candidates, queryOrQueries, year) => {
   return first;
 };
 
-export const createTmdbMetadataService = ({ repository, tmdb, readLegacyMetadata, writeLegacyMetadata } = {}) => {
+export const createTmdbMetadataService = ({ repository, tmdb } = {}) => {
   if (!repository?.getSource || !repository?.getItem || !repository?.putExternalMetadata) {
     throw new TypeError("A catalog repository is required.");
   }
@@ -165,7 +165,12 @@ export const createTmdbMetadataService = ({ repository, tmdb, readLegacyMetadata
       tmdbMatchUpdatedAt: new Date().toISOString()
     };
     if (!match) {
-      repository.putExternalMetadata(item.id, { fields: matchFields, mode: "provider" });
+      repository.putExternalMetadata(item.id, {
+        expectedContentRevision: source.contentRevision,
+        expectedSourceId: source.id,
+        fields: matchFields,
+        mode: "provider"
+      });
       return {
         candidateCount: storedCandidates.length,
         matched: false,
@@ -182,6 +187,8 @@ export const createTmdbMetadataService = ({ repository, tmdb, readLegacyMetadata
       ? await tmdb.episodeDetails(match.id, normalized.seasonNumber, normalized.episodeNumber)
       : await tmdb.details(match.mediaType, match.id);
     repository.putExternalMetadata(item.id, {
+      expectedContentRevision: source.contentRevision,
+      expectedSourceId: source.id,
       externalIds: [{ id: match.id, mediaType: match.mediaType, provider: "tmdb" }],
       fields: { ...fields, ...matchFields },
       mode: "provider"
@@ -194,11 +201,6 @@ export const createTmdbMetadataService = ({ repository, tmdb, readLegacyMetadata
       type: "artwork"
     });
 
-    if (readLegacyMetadata && writeLegacyMetadata) {
-      const metadata = await readLegacyMetadata();
-      metadata[source.path] = { ...(metadata[source.path] ?? {}), ...fields, episode: fields.episode ?? null };
-      await writeLegacyMetadata(metadata);
-    }
     context.reportProgress?.(0.95, "tmdb-metadata-ready");
     return {
       confidence: Number(match.confidence.toFixed(3)),

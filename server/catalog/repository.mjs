@@ -68,16 +68,36 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
     ? "LEFT JOIN media_probe_results p ON p.source_id = s.id AND p.source_content_revision = s.content_revision"
     : "";
   const probeDurationSelect = hasProbeResults ? "p.duration_seconds" : "NULL";
+  const televisionTitleSql = `COALESCE(
+    NULLIF(TRIM(json_extract(i.metadata_json, '$.episode.seriesTitle')), ''),
+    CASE
+      WHEN instr(s.content_path, '/') > 0 THEN CASE
+        WHEN instr(substr(s.content_path, instr(s.content_path, '/') + 1), '/') > 0
+          THEN substr(substr(s.content_path, instr(s.content_path, '/') + 1), 1, instr(substr(s.content_path, instr(s.content_path, '/') + 1), '/') - 1)
+        ELSE substr(s.content_path, instr(s.content_path, '/') + 1)
+      END
+      ELSE i.title
+    END
+  )`;
+  const televisionKeySql = `CASE
+    WHEN x.provider_item_id IS NOT NULL THEN 'tmdb:' || x.provider_item_id
+    ELSE 'title:' || LOWER(${televisionTitleSql})
+  END`;
   const getLibrary = (id) => database.prepare("SELECT * FROM media_libraries WHERE id = ?").get(id) ?? null;
   const getRootByKey = (rootKey) => database.prepare("SELECT * FROM media_library_roots WHERE root_key = ?").get(rootKey) ?? null;
   const getItem = (id) => rowToItem(database.prepare("SELECT * FROM media_items WHERE id = ?").get(id));
-  const getSource = (id) => rowToSource(database.prepare("SELECT * FROM media_sources WHERE id = ?").get(id));
+  const getSource = (id) => rowToSource(database.prepare(hasProbeResults
+    ? `SELECT s.*, p.duration_seconds FROM media_sources s
+      LEFT JOIN media_probe_results p ON p.source_id = s.id AND p.source_content_revision = s.content_revision
+      WHERE s.id = ?`
+    : "SELECT * FROM media_sources WHERE id = ?").get(id));
   const resolveContentPath = (contentPath, rootId) => {
     const row = rootId
       ? database.prepare("SELECT * FROM media_sources WHERE root_id = ? AND content_path = ? AND availability != 'superseded'").get(rootId, contentPath)
       : database.prepare("SELECT * FROM media_sources WHERE content_path = ? AND availability != 'superseded' ORDER BY created_at LIMIT 1").get(contentPath);
     if (!row) return null;
-    return { ...rowToSource(row), item: getItem(row.item_id) };
+    const source = rowToSource(row);
+    return { ...source, item: getItem(row.item_id), source };
   };
 
   const listItems = ({ availability, libraryId, mediaKind } = {}) => {
@@ -142,21 +162,119 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
     return { items, limit: boundedLimit, offset: boundedOffset, total };
   };
 
-  const countTelevisionSeries = () => Number(database.prepare(`
-    SELECT COUNT(DISTINCT CASE
-      WHEN instr(s.content_path, '/') > 0 THEN LOWER(CASE
-        WHEN instr(substr(s.content_path, instr(s.content_path, '/') + 1), '/') > 0
-          THEN substr(substr(s.content_path, instr(s.content_path, '/') + 1), 1, instr(substr(s.content_path, instr(s.content_path, '/') + 1), '/') - 1)
-        ELSE substr(s.content_path, instr(s.content_path, '/') + 1)
-      END)
-      WHEN json_extract(i.metadata_json, '$.episode.seriesTitle') IS NOT NULL
-        THEN LOWER(json_extract(i.metadata_json, '$.episode.seriesTitle'))
-      ELSE i.id
-    END) AS count
+  const televisionEpisodesCte = `WITH television_episodes AS (
+    SELECT i.id, i.sort_title, s.content_path, ${televisionTitleSql} AS series_title,
+      ${televisionKeySql} AS series_key,
+      COALESCE(CAST(json_extract(i.metadata_json, '$.episode.seasonNumber') AS INTEGER), 0) AS season_number,
+      COALESCE(p.duration_seconds, 0) AS duration_seconds,
+      CASE WHEN EXISTS (
+        SELECT 1 FROM media_artwork a WHERE a.media_item_id = i.id
+          AND a.artwork_type = 'poster' AND (a.local_path != '' OR a.remote_url != '')
+      ) THEN 1 ELSE 0 END AS has_poster,
+      CASE WHEN x.provider_item_id IS NOT NULL THEN 1 ELSE 0 END AS has_tmdb
     FROM media_items i
     JOIN media_sources s ON s.item_id = i.id AND s.availability = 'available'
+    LEFT JOIN media_external_ids x ON x.media_item_id = i.id AND x.provider = 'tmdb'
+    ${hasProbeResults ? "LEFT JOIN media_probe_results p ON p.source_id = s.id AND p.source_content_revision = s.content_revision" : "LEFT JOIN (SELECT NULL AS source_id, NULL AS duration_seconds) p ON 0"}
     WHERE i.media_kind = 'video' AND i.item_type = 'episode'
-  `).get()?.count ?? 0);
+  )`;
+
+  const listTelevisionSeriesPage = ({ limit = 60, offset = 0, query = "" } = {}) => {
+    const boundedLimit = Math.max(1, Math.min(200, Number(limit) || 60));
+    const boundedOffset = Math.max(0, Number(offset) || 0);
+    const normalizedQuery = String(query).trim().toLowerCase();
+    const filter = normalizedQuery ? "WHERE LOWER(series_title) LIKE ? OR LOWER(content_path) LIKE ?" : "";
+    const values = normalizedQuery ? [`%${normalizedQuery}%`, `%${normalizedQuery}%`] : [];
+    const grouped = `SELECT series_key, MIN(series_title) AS title, COUNT(*) AS episode_count,
+      COUNT(DISTINCT season_number) AS season_count, GROUP_CONCAT(DISTINCT season_number) AS seasons,
+      CAST(SUM(duration_seconds) AS REAL) AS runtime_seconds
+      FROM television_episodes ${filter} GROUP BY series_key`;
+    const total = Number(database.prepare(`${televisionEpisodesCte} SELECT COUNT(*) AS count FROM (${grouped})`).get(...values)?.count ?? 0);
+    const rows = database.prepare(`${televisionEpisodesCte},
+      ranked AS (
+        SELECT *, ROW_NUMBER() OVER (
+          PARTITION BY series_key ORDER BY has_poster DESC, has_tmdb DESC, sort_title, id
+        ) AS representative_rank
+        FROM television_episodes ${filter}
+      ),
+      aggregates AS (${grouped})
+      SELECT aggregates.*, ranked.id AS representative_item_id
+      FROM aggregates JOIN ranked USING (series_key)
+      WHERE ranked.representative_rank = 1
+      ORDER BY LOWER(aggregates.title), aggregates.series_key LIMIT ? OFFSET ?`)
+      .all(...values, ...values, boundedLimit, boundedOffset);
+    return {
+      groups: rows.map((row) => ({
+        episodeCount: Number(row.episode_count),
+        key: row.series_key,
+        representativeItemId: row.representative_item_id,
+        runtimeSeconds: Number(row.runtime_seconds) || null,
+        seasonCount: Number(row.season_count),
+        seasons: String(row.seasons ?? "").split(",").map(Number).filter(Number.isFinite).sort((left, right) => left - right),
+        title: row.title
+      })),
+      limit: boundedLimit,
+      offset: boundedOffset,
+      total
+    };
+  };
+
+  const listTelevisionEpisodes = ({ limit = 200, offset = 0, seriesKey }) => {
+    const boundedLimit = Math.max(1, Math.min(500, Number(limit) || 200));
+    const boundedOffset = Math.max(0, Number(offset) || 0);
+    const from = `FROM media_items i
+      JOIN media_sources s ON s.item_id = i.id AND s.availability = 'available'
+      LEFT JOIN media_external_ids x ON x.media_item_id = i.id AND x.provider = 'tmdb'
+      ${probeJoin}
+      WHERE i.media_kind = 'video' AND i.item_type = 'episode' AND ${televisionKeySql} = ?`;
+    const total = Number(database.prepare(`SELECT COUNT(*) AS count ${from}`).get(seriesKey)?.count ?? 0);
+    const rows = database.prepare(`SELECT i.*,
+      s.id AS source_id, s.item_id AS source_item_id, s.root_id AS source_root_id, s.content_path AS source_content_path,
+      s.previous_path AS source_previous_path, s.source_type AS source_source_type,
+      s.media_kind AS source_media_kind, s.file_key AS source_file_key, s.size_bytes AS source_size_bytes,
+      s.modified_ms AS source_modified_ms, s.availability AS source_availability,
+      s.content_revision AS source_content_revision, s.first_seen_at AS source_first_seen_at,
+      s.last_seen_at AS source_last_seen_at, s.missing_since AS source_missing_since,
+      s.missing_scan_count AS source_missing_scan_count, s.cleanup_eligible_at AS source_cleanup_eligible_at,
+      ${probeDurationSelect} AS source_duration_seconds
+      ${from}
+      ORDER BY CAST(json_extract(i.metadata_json, '$.episode.seasonNumber') AS INTEGER),
+        CAST(json_extract(i.metadata_json, '$.episode.episodeNumber') AS INTEGER), i.sort_title, i.id
+      LIMIT ? OFFSET ?`).all(seriesKey, boundedLimit, boundedOffset);
+    return {
+      items: rows.map((row) => ({
+        ...rowToItem(row),
+        source: rowToSource(Object.fromEntries(Object.entries(row).filter(([key]) => key.startsWith("source_")).map(([key, value]) => [key.slice(7), value])))
+      })),
+      limit: boundedLimit,
+      offset: boundedOffset,
+      total
+    };
+  };
+
+  const listItemsByIds = (itemIds) => {
+    const ids = [...new Set((itemIds ?? []).map(String))];
+    if (!ids.length) return [];
+    const placeholders = ids.map(() => "?").join(",");
+    const rows = database.prepare(`SELECT i.*,
+      s.id AS source_id, s.item_id AS source_item_id, s.root_id AS source_root_id, s.content_path AS source_content_path,
+      s.previous_path AS source_previous_path, s.source_type AS source_source_type,
+      s.media_kind AS source_media_kind, s.file_key AS source_file_key, s.size_bytes AS source_size_bytes,
+      s.modified_ms AS source_modified_ms, s.availability AS source_availability,
+      s.content_revision AS source_content_revision, s.first_seen_at AS source_first_seen_at,
+      s.last_seen_at AS source_last_seen_at, s.missing_since AS source_missing_since,
+      s.missing_scan_count AS source_missing_scan_count, s.cleanup_eligible_at AS source_cleanup_eligible_at,
+      ${probeDurationSelect} AS source_duration_seconds
+      FROM media_items i JOIN media_sources s ON s.item_id = i.id AND s.availability != 'superseded'
+      ${probeJoin} WHERE i.id IN (${placeholders})`).all(...ids);
+    const byId = new Map(rows.map((row) => [row.id, {
+      ...rowToItem(row),
+      source: rowToSource(Object.fromEntries(Object.entries(row).filter(([key]) => key.startsWith("source_")).map(([key, value]) => [key.slice(7), value])))
+    }]));
+    return ids.map((id) => byId.get(id)).filter(Boolean);
+  };
+
+  const countTelevisionSeries = () => listTelevisionSeriesPage({ limit: 1 }).total;
 
   const ensureLibrary = ({ id = uuid(), name, mediaKind = "mixed" }) => {
     const timestamp = now();
@@ -279,9 +397,29 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
     return { error: message, id: scanId, rootId, scanType, status: "failed" };
   });
 
-  const putExternalMetadata = (itemId, { artwork = [], externalIds = [], fields = {}, lockedFields = [], mode = "provider" }) => transaction(database, () => {
+  const putExternalMetadata = (itemId, {
+    artwork = [],
+    expectedContentRevision = null,
+    expectedSourceId = null,
+    externalIds = [],
+    fields = {},
+    lockedFields = [],
+    mode = "provider"
+  }) => transaction(database, () => {
     const item = getItem(itemId);
     if (!item) throw new Error(`Unknown catalog item: ${itemId}`);
+    if (expectedSourceId !== null || expectedContentRevision !== null) {
+      const source = expectedSourceId === null
+        ? null
+        : database.prepare("SELECT item_id, availability, content_revision FROM media_sources WHERE id = ?").get(expectedSourceId);
+      if (!source || source.item_id !== itemId || source.availability !== "available"
+        || source.content_revision !== expectedContentRevision) {
+        throw Object.assign(new Error("Media changed before metadata could be published."), {
+          code: "METADATA_SOURCE_CHANGED",
+          retryable: true
+        });
+      }
+    }
     const timestamp = now();
     const locks = new Set(item.lockedFields);
     if (mode === "manual") lockedFields.forEach((field) => locks.add(field));
@@ -333,8 +471,8 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
       throw Object.assign(new Error("Media changed before cached artwork could be published."), { code: "ARTWORK_SOURCE_CHANGED" });
     }
     const timestamp = now();
-    database.prepare("DELETE FROM media_artwork WHERE media_item_id = ? AND provider = ?")
-      .run(source.item_id, CACHED_ARTWORK_PROVIDER);
+    database.prepare("DELETE FROM media_artwork WHERE media_item_id = ? AND provider IN (?, ?)")
+      .run(source.item_id, CACHED_ARTWORK_PROVIDER, GENERATED_ARTWORK_PROVIDER);
     database.prepare(`INSERT INTO media_artwork
       (id, media_item_id, artwork_type, provider, remote_url, local_path, width, height, created_at, updated_at)
       VALUES (?, ?, 'poster', ?, ?, ?, ?, ?, ?, ?)`)
@@ -365,7 +503,46 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
   const putProbeResult = () => { throw new Error("Probe persistence is reserved for the Wave 2 catalog migration."); };
   const listExternalIds = (itemId) => database.prepare("SELECT provider, provider_item_id AS id, media_type AS mediaType FROM media_external_ids WHERE media_item_id = ? ORDER BY provider").all(itemId).map((row) => ({ ...row }));
   const listArtwork = (itemId) => database.prepare("SELECT id, artwork_type AS type, provider, remote_url AS remoteUrl, local_path AS localPath, width, height FROM media_artwork WHERE media_item_id = ? ORDER BY artwork_type, id").all(itemId).map((row) => ({ ...row }));
+  const listArtworkMany = (itemIds) => {
+    const ids = [...new Set((itemIds ?? []).map(String))];
+    const result = new Map(ids.map((id) => [id, []]));
+    if (!ids.length) return result;
+    for (let offset = 0; offset < ids.length; offset += 200) {
+      const batch = ids.slice(offset, offset + 200);
+      const placeholders = batch.map(() => "?").join(",");
+      for (const row of database.prepare(`SELECT media_item_id, id, artwork_type AS type, provider,
+        remote_url AS remoteUrl, local_path AS localPath, width, height
+        FROM media_artwork WHERE media_item_id IN (${placeholders})
+        ORDER BY media_item_id, artwork_type, id`).all(...batch)) {
+        result.get(row.media_item_id)?.push({
+          height: row.height,
+          id: row.id,
+          localPath: row.localPath,
+          provider: row.provider,
+          remoteUrl: row.remoteUrl,
+          type: row.type,
+          width: row.width
+        });
+      }
+    }
+    return result;
+  };
+  const listExternalIdsMany = (itemIds) => {
+    const ids = [...new Set((itemIds ?? []).map(String))];
+    const result = new Map(ids.map((id) => [id, []]));
+    if (!ids.length) return result;
+    for (let offset = 0; offset < ids.length; offset += 200) {
+      const batch = ids.slice(offset, offset + 200);
+      const placeholders = batch.map(() => "?").join(",");
+      for (const row of database.prepare(`SELECT media_item_id, provider, provider_item_id AS id, media_type AS mediaType
+        FROM media_external_ids WHERE media_item_id IN (${placeholders})
+        ORDER BY media_item_id, provider`).all(...batch)) {
+        result.get(row.media_item_id)?.push({ id: row.id, mediaType: row.mediaType, provider: row.provider });
+      }
+    }
+    return result;
+  };
   const listCleanupCandidates = () => database.prepare("SELECT * FROM media_sources WHERE availability = 'missing' AND cleanup_eligible_at IS NOT NULL ORDER BY cleanup_eligible_at").all().map(rowToSource);
 
-  return { countTelevisionSeries, ensureLibrary, ensureRoot, getItem, getLibrary, getRootByKey, getSource, listArtwork, listCleanupCandidates, listExternalIds, listItems, listItemsPage, putCachedArtwork, putExternalMetadata, putGeneratedArtwork, putProbeResult, reconcileScan, recordScanFailure, resetMetadata, resolveContentPath };
+  return { countTelevisionSeries, ensureLibrary, ensureRoot, getItem, getLibrary, getRootByKey, getSource, listArtwork, listArtworkMany, listCleanupCandidates, listExternalIds, listExternalIdsMany, listItems, listItemsByIds, listItemsPage, listTelevisionEpisodes, listTelevisionSeriesPage, putCachedArtwork, putExternalMetadata, putGeneratedArtwork, putProbeResult, reconcileScan, recordScanFailure, resetMetadata, resolveContentPath };
 };

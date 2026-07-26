@@ -60,16 +60,24 @@ export const createArtworkService = ({
     }
     const item = repository.getItem(source.itemId);
     const existingArtwork = repository.listArtwork(source.itemId);
-    const existingLocal = currentLocalArtwork(existingArtwork, source);
-    if (existingLocal) {
-      context.reportProgress?.(0.95, "artwork-ready");
-      return { cached: existingLocal.provider !== "nebula-frame", contentRevision: source.contentRevision, sourceId: source.id };
-    }
     const remotePosterUrl = String(
       item?.metadata?.posterUrl
       || existingArtwork.find((entry) => entry.type === "poster" && entry.remoteUrl)?.remoteUrl
       || ""
     ).trim();
+    const existingLocal = currentLocalArtwork(existingArtwork, source);
+    const existingPath = existingLocal?.localPath
+      ? path.resolve(dataRoot, ...existingLocal.localPath.split("/"))
+      : null;
+    const existingFile = existingPath ? await stat(existingPath).catch(() => null) : null;
+    const existingIsCurrent = Boolean(existingFile?.isFile())
+      && (remotePosterUrl
+        ? existingLocal?.provider !== "nebula-frame" && existingLocal.remoteUrl === remotePosterUrl
+        : Boolean(existingLocal));
+    if (existingIsCurrent) {
+      context.reportProgress?.(0.95, "artwork-ready");
+      return { cached: existingLocal.provider !== "nebula-frame", contentRevision: source.contentRevision, sourceId: source.id };
+    }
     if (remotePosterUrl) {
       const url = new URL(remotePosterUrl);
       if (url.protocol !== "https:") {
@@ -85,7 +93,7 @@ export const createArtworkService = ({
       const timeout = setTimeout(() => controller.abort(), POSTER_TIMEOUT_MS);
       try {
         const response = await fetchImpl(url, {
-          headers: { accept: "image/avif,image/webp,image/jpeg,image/*" },
+          headers: { accept: "image/jpeg" },
           redirect: "follow",
           signal: controller.signal
         });
@@ -94,8 +102,8 @@ export const createArtworkService = ({
         }
         const contentType = String(response.headers.get("content-type") ?? "").toLowerCase();
         const declaredLength = Number(response.headers.get("content-length") ?? 0);
-        if (!contentType.startsWith("image/") || declaredLength > MAX_POSTER_BYTES) {
-          throw Object.assign(new Error("Remote poster response is not a supported image."), { code: "ARTWORK_REMOTE_INVALID" });
+        if (!/^image\/(?:jpeg|jpg)(?:;|$)/i.test(contentType) || declaredLength > MAX_POSTER_BYTES) {
+          throw Object.assign(new Error("Remote poster response is not a JPEG image."), { code: "ARTWORK_REMOTE_INVALID" });
         }
         const bytes = await readBoundedImage(response);
         if (bytes.length < 128 || bytes.length > MAX_POSTER_BYTES) {

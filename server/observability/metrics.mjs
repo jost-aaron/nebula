@@ -75,6 +75,35 @@ export const renderTranscodeAccelerationMetrics = (status = {}) => {
   return `${lines.join("\n")}\n`;
 };
 
+const RUNTIME_METHODS = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "OTHER"]);
+const RUNTIME_STATUSES = new Set(["1xx", "2xx", "3xx", "4xx", "5xx", "other"]);
+export const renderRuntimeMetrics = (snapshot = {}) => {
+  const memory = snapshot.memory ?? {};
+  const lines = [
+    "# HELP nebula_runtime_errors_total Unexpected runtime errors recorded by the server.",
+    "# TYPE nebula_runtime_errors_total counter",
+    `nebula_runtime_errors_total ${Math.max(0, Number(snapshot.errors) || 0)}`,
+    "# HELP nebula_process_memory_bytes Process memory by bounded class.",
+    "# TYPE nebula_process_memory_bytes gauge"
+  ];
+  for (const [kind, value] of [["rss", memory.rss], ["heap_used", memory.heapUsed], ["external", memory.external]]) {
+    lines.push(`nebula_process_memory_bytes{kind="${kind}"} ${Math.max(0, Number(value) || 0)}`);
+  }
+  lines.push(
+    "# HELP nebula_http_requests_total HTTP requests by bounded method and status class.",
+    "# TYPE nebula_http_requests_total counter",
+    "# HELP nebula_http_request_duration_seconds_total Aggregate HTTP request duration.",
+    "# TYPE nebula_http_request_duration_seconds_total counter"
+  );
+  for (const entry of Array.isArray(snapshot.requests) ? snapshot.requests : []) {
+    if (!RUNTIME_METHODS.has(entry.method) || !RUNTIME_STATUSES.has(entry.status)) continue;
+    const labels = `{method="${entry.method}",status="${entry.status}"}`;
+    lines.push(`nebula_http_requests_total${labels} ${Math.max(0, Number(entry.count) || 0)}`);
+    lines.push(`nebula_http_request_duration_seconds_total${labels} ${Math.max(0, Number(entry.durationMs) || 0) / 1_000}`);
+  }
+  return `${lines.join("\n")}\n`;
+};
+
 export const renderClusterOperationsMetrics = (snapshot = {}) => {
   const samples = Array.isArray(snapshot.samples) ? snapshot.samples : [];
   const lines = [];

@@ -6,6 +6,7 @@ import {
   cancelClusterCinemaDelivery,
   completeCinemaDelivery,
   createCinemaDelivery,
+  createCinemaMediaTicket,
   createClusterCinemaDelivery,
   failoverClusterCinemaDelivery,
   getCinemaArtworkStatus,
@@ -45,8 +46,11 @@ import { RENDITION_PROFILE_IDS, type MediaRendition, type PlaybackQualityPrefere
 import type { PlaybackPlanResponse } from "../shared/playbackPlanTypes";
 import type { FederatedAvailabilitySummary } from "../shared/federatedTypes";
 import { createBrowserUuid } from "../shared/browserUuid";
-import { createHlsPlayback, supportsHlsPlayback, type HlsPlaybackHandle } from "./hlsPlayback";
+import { supportsHlsPlayback } from "./hlsSupport";
+import type { HlsPlaybackHandle } from "./hlsPlayback";
 import { pollDeliveryUntilReady } from "../shared/deliveryPolling.js";
+import "./tmdb.css";
+import "./cinemaBrand.css";
 
 const cinemaBrandMarkUrl = new URL(
   "../assets/branding/cinema/nebula-cinema-symbol.svg",
@@ -491,8 +495,8 @@ const renderCinemaCards = (entries: CinemaEntry[], category: CinemaCategory, pla
         const sortLetter = /^[A-Z]$/.test(firstCharacter) ? firstCharacter : "#";
         return `
         <button class="cinema-card" type="button" data-cinema-path="${escapeHtml(entry.path)}" data-cinema-sort-letter="${sortLetter}">
-          <span class="cinema-poster" data-cinema-poster="${escapeHtml(entry.path)}" data-cinema-artwork-state="${entry.artworkState}"${posterStyle(entry)}>
-            ${entry.posterUrl ? "" : renderPosterFallback(entry)}
+          <span class="cinema-poster" data-cinema-poster="${escapeHtml(entry.path)}" data-cinema-artwork-state="${entry.artworkState}">
+            ${entry.posterUrl ? `<img class="cinema-poster-image" src="${escapeHtml(entry.posterUrl)}" alt="" aria-hidden="true" loading="lazy" decoding="async" width="320" height="480" />` : renderPosterFallback(entry)}
             ${entry.posterUrl ? renderArtworkProcessingOverlay(entry) : ""}
             <span class="cinema-poster-scrim"></span>
             <span class="cinema-card-badge">${escapeHtml(entry.federation ? federationLabel(entry.federation) : entry.series ? `${entry.series.seasonCount} Seasons` : entry.category === "tv" ? "Episode" : "Movie")}</span>
@@ -1080,7 +1084,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   const footer = container.querySelector<HTMLElement>("[data-cinema-footer]");
 
   if (!app || !topNav || !content || !editorHost || !footer) {
-    return;
+    return () => undefined;
   }
 
   let entries: CinemaEntry[] = [];
@@ -1110,15 +1114,24 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   let qualityPreference: PlaybackQualityPreference = { mode: "auto" };
   let renditionProfiles = fallbackRenditionProfiles;
   let libraryHasMore = false;
+  let libraryTruncated = false;
+  // Card height and column count change across responsive layouts, so spacer-based
+  // recycling would corrupt scroll/alphabet geometry. Bound the browse DOM and let
+  // server-side search expose titles outside this window.
+  const libraryBrowseLimit = 600;
   let libraryOffset = 0;
   let pageLoading = false;
   let posterObserver: IntersectionObserver | null = null;
   let pageObserver: IntersectionObserver | null = null;
   let artworkRefreshTimer = 0;
   let artworkQueueActive = true;
+  let artworkPollDelay = 1_000;
   let alphabetScrollHost: HTMLElement | null = null;
   let refreshAlphabetRail: (() => void) | null = null;
   let searchTimer = 0;
+  let libraryRequestController: AbortController | null = null;
+  let libraryRequestGeneration = 0;
+  let disposed = false;
 
   const deliveryCapabilities = (player: HTMLVideoElement) => {
     const mp4 = Boolean(player.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"'));
@@ -1152,6 +1165,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       );
 
   const thumbnailCache = new Map<string, Promise<string | null>>();
+  const maxThumbnailCacheEntries = 24;
   const remoteSubtitleState = (entry: CinemaEntry): SubtitleTracksResponse => {
     const tracks = entry.federation?.sources.flatMap((source) => source.subtitles ?? []) ?? [];
     const unique = [...new Map(tracks.map((track) => [track.id, track])).values()];
@@ -1167,12 +1181,13 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     }
 
     const thumbnail = (async () => {
+      if (!entry.path) return null;
       const video = document.createElement("video");
       video.crossOrigin = "anonymous";
       video.muted = true;
       video.playsInline = true;
       video.preload = "metadata";
-      video.src = entry.streamUrl;
+      video.src = await createCinemaMediaTicket(entry.path);
 
       try {
         await new Promise<void>((resolve, reject) => {
@@ -1216,6 +1231,11 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     })();
 
     thumbnailCache.set(cacheKey, thumbnail);
+    while (thumbnailCache.size > maxThumbnailCacheEntries) {
+      const oldest = thumbnailCache.keys().next().value;
+      if (typeof oldest !== "string") break;
+      thumbnailCache.delete(oldest);
+    }
     return thumbnail;
   };
 
@@ -1280,11 +1300,19 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     });
   };
 
-  const scheduleArtworkRefresh = () => {
+  const scheduleArtworkRefresh = (delay = artworkPollDelay) => {
     window.clearTimeout(artworkRefreshTimer);
-    if (!app.isConnected || view !== "library"
+    if (disposed || document.hidden || !app.isConnected || view !== "library"
       || (!artworkQueueActive && !entries.some((entry) => entry.artworkState === "queued" || entry.artworkState === "processing"))) return;
-    artworkRefreshTimer = window.setTimeout(() => void refreshArtworkStates(), 400);
+    artworkRefreshTimer = window.setTimeout(() => void refreshArtworkStates(), delay);
+  };
+  const onDocumentVisibilityChange = () => {
+    if (document.hidden) {
+      window.clearTimeout(artworkRefreshTimer);
+      return;
+    }
+    artworkPollDelay = 1_000;
+    scheduleArtworkRefresh(0);
   };
 
   const updateArtworkActivity = (activity: CinemaArtworkStatusResponse["activity"]) => {
@@ -1324,14 +1352,18 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       if (poster.dataset.cinemaPoster !== entry.path) return;
       poster.dataset.cinemaArtworkState = entry.artworkState;
       const fallback = poster.querySelector<HTMLElement>(".cinema-poster-fallback");
+      const image = poster.querySelector<HTMLImageElement>(".cinema-poster-image");
       poster.querySelector<HTMLElement>(".cinema-artwork-processing-overlay")?.remove();
       if (entry.posterUrl) {
-        poster.style.backgroundImage = `url("${entry.posterUrl.replaceAll('"', '\\"')}")`;
+        if (image) image.src = entry.posterUrl;
+        else poster.insertAdjacentHTML("afterbegin", `<img class="cinema-poster-image" src="${escapeHtml(entry.posterUrl)}" alt="" aria-hidden="true" loading="lazy" decoding="async" width="320" height="480" />`);
+        poster.style.backgroundImage = "";
         poster.classList.add("ready");
         fallback?.remove();
         if (entry.artworkState === "processing") poster.insertAdjacentHTML("afterbegin", renderArtworkProcessingOverlay(entry));
         return;
       }
+      image?.remove();
       poster.style.backgroundImage = "";
       poster.classList.remove("ready");
       if (fallback) fallback.outerHTML = renderPosterFallback(entry);
@@ -1340,13 +1372,21 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   };
 
   const refreshArtworkStates = async () => {
-    if (!app.isConnected || view !== "library") return;
+    if (disposed || document.hidden || !app.isConnected || view !== "library") return;
     try {
-      const sourceIds = entries
-        .filter((entry) => entry.category === activeCategory && typeof entry.sourceId === "string")
-        .map((entry) => entry.sourceId as string);
+      const hydratedPaths = new Set(
+        Array.from(content.querySelectorAll<HTMLElement>("[data-cinema-poster][data-cinema-hydrated='true']"))
+          .map((poster) => poster.dataset.cinemaPoster)
+          .filter((path): path is string => Boolean(path))
+      );
+      const sourceIds = [...new Set(entries
+        .filter((entry) => entry.category === activeCategory
+          && typeof entry.sourceId === "string"
+          && (hydratedPaths.has(entry.path) || entry.artworkState === "processing"))
+        .map((entry) => entry.sourceId as string))];
       const status = await getCinemaArtworkStatus(sourceIds);
       artworkQueueActive = status.activity.queued > 0 || Boolean(status.activity.processing);
+      artworkPollDelay = status.activity.processing ? 1_000 : status.activity.queued > 0 ? 5_000 : 15_000;
       updateArtworkActivity(status.activity);
       const bySource = new Map(status.entries.map((entry) => [entry.sourceId, entry]));
       entries = entries.map((entry) => {
@@ -1359,6 +1399,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       });
     } catch {
       // Keep the current placeholders and retry; library browsing remains usable.
+      artworkPollDelay = Math.min(15_000, Math.max(2_000, artworkPollDelay * 2));
     } finally {
       scheduleArtworkRefresh();
     }
@@ -1367,14 +1408,23 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   const bindLibraryPageObserver = () => {
     pageObserver?.disconnect();
     content.querySelector("[data-cinema-page-sentinel]")?.remove();
-    if (view !== "library" || !libraryHasMore) return;
+    content.querySelector("[data-cinema-window-limit]")?.remove();
     const scrollHost = content.querySelector<HTMLElement>(".cinema-library.browsing");
+    if (view === "library" && libraryTruncated && scrollHost) {
+      scrollHost.insertAdjacentHTML("beforeend", `
+        <p class="media-window-limit" data-cinema-window-limit role="status">
+          Showing the first ${libraryBrowseLimit} matching titles. Search narrows the full library without growing this view further.
+        </p>
+      `);
+      return;
+    }
+    if (view !== "library" || !libraryHasMore) return;
     scrollHost?.insertAdjacentHTML("beforeend", `<div data-cinema-page-sentinel aria-label="Loading more titles" style="height:1px"></div>`);
     const sentinel = scrollHost?.querySelector<HTMLElement>("[data-cinema-page-sentinel]");
     if (!scrollHost || !sentinel) return;
     pageObserver = new IntersectionObserver((observations) => {
       if (observations.some((observation) => observation.isIntersecting)) void loadLibrary(false);
-    }, { root: scrollHost, rootMargin: "0px 0px 3200px 0px" });
+    }, { root: scrollHost, rootMargin: "0px 0px 1200px 0px" });
     pageObserver.observe(sentinel);
   };
 
@@ -1388,14 +1438,28 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       return;
     }
     let frame = 0;
+    let markers: Array<{ letter: string; top: number }> = [];
+    const letters = Array.from(rail.querySelectorAll<HTMLElement>("[data-cinema-letter]"));
+    const rebuildMarkers = () => {
+      const seen = new Set<string>();
+      markers = Array.from(scrollHost.querySelectorAll<HTMLElement>(".cinema-card[data-cinema-sort-letter]"))
+        .flatMap((card) => {
+          const letter = card.dataset.cinemaSortLetter ?? "#";
+          if (seen.has(letter)) return [];
+          seen.add(letter);
+          return [{ letter, top: card.offsetTop }];
+        })
+        .sort((left, right) => left.top - right.top);
+    };
     const update = () => {
       frame = 0;
-      const cards = Array.from(scrollHost.querySelectorAll<HTMLElement>(".cinema-card[data-cinema-sort-letter]"));
-      const hostBounds = scrollHost.getBoundingClientRect();
-      const marker = hostBounds.top + 1;
-      const current = cards.find((card) => card.getBoundingClientRect().bottom >= marker) ?? cards.at(-1);
-      const activeLetter = current?.dataset.cinemaSortLetter ?? "#";
-      const letters = Array.from(rail.querySelectorAll<HTMLElement>("[data-cinema-letter]"));
+      const marker = scrollHost.scrollTop + 1;
+      let current = markers[0];
+      for (const candidate of markers) {
+        if (candidate.top > marker) break;
+        current = candidate;
+      }
+      const activeLetter = current?.letter ?? "#";
       const activeIndex = Math.max(0, letters.findIndex((letter) => letter.dataset.cinemaLetter === activeLetter));
       const windowSize = 9;
       const windowStart = Math.max(0, Math.min(activeIndex - 4, letters.length - windowSize));
@@ -1414,8 +1478,11 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     };
     scrollHost.addEventListener("scroll", schedule, { passive: true });
     alphabetScrollHost = scrollHost;
-    refreshAlphabetRail = update;
-    update();
+    refreshAlphabetRail = () => {
+      rebuildMarkers();
+      update();
+    };
+    refreshAlphabetRail();
   };
 
   const renderFooter = () => {
@@ -1429,11 +1496,34 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     `;
   };
 
+  const renderTopNavState = () => {
+    if (!topNav.querySelector(".cinema-top-nav")) {
+      topNav.innerHTML = renderTopNav(view);
+    }
+    topNav.querySelectorAll<HTMLButtonElement>("[data-cinema-action]").forEach((button) => {
+      const action = button.dataset.cinemaAction;
+      const active = action === "library"
+        ? view === "library" || view === "title-detail" || view === "player"
+        : action === "watchlist"
+          ? view === "watchlist"
+          : action === "identify-nav"
+            ? view === "identify"
+            : action === "servers" && view === "servers";
+      button.classList.toggle("active", active);
+      if (["library", "watchlist", "identify-nav", "servers"].includes(action ?? "")) {
+        if (active) button.setAttribute("aria-current", "page");
+        else button.removeAttribute("aria-current");
+      }
+    });
+    const search = topNav.querySelector<HTMLInputElement>("[data-cinema-search]");
+    if (search && document.activeElement !== search) search.value = query;
+  };
+
   const render = () => {
     const previousLibraryScrollTop = view === "library" && !isScanning
       ? content.querySelector<HTMLElement>(".cinema-library.browsing")?.scrollTop ?? null
       : null;
-    topNav.innerHTML = renderTopNav(view);
+    renderTopNavState();
     content.classList.toggle("scanning", isScanning);
 
     if (view === "library") {
@@ -1468,11 +1558,6 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
 
     if (view === "identify") {
       content.innerHTML = renderIdentifyView(selected);
-    }
-
-    const search = topNav.querySelector<HTMLInputElement>("[data-cinema-search]");
-    if (search) {
-      search.value = query;
     }
 
     content.querySelectorAll<HTMLButtonElement>("[data-cinema-category]").forEach((button) => {
@@ -1900,16 +1985,28 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
       };
       const useFallback = (position = startPosition) => {
         if (generation !== deliveryGeneration) return;
-        if (!playingEntry.streamUrl) { setStatus("No compatible remote delivery is available."); return; }
+        if (!playingEntry.path) { setStatus("No compatible remote delivery is available."); return; }
         hlsPlayback?.destroy();
         hlsPlayback = null;
-        setStatus("Using local compatibility playback.");
-        player.src = playingEntry.streamUrl;
-        player.load();
-        seekWhenReady(position);
-        void player.play().catch(() => setStatus("Ready. Press Play to start playback."));
+        setStatus("Authorizing local compatibility playback…");
+        void createCinemaMediaTicket(playingEntry.path).then((streamUrl) => {
+          if (generation !== deliveryGeneration) return;
+          setStatus("Using local compatibility playback.");
+          player.src = streamUrl;
+          player.load();
+          seekWhenReady(position);
+          void player.play().catch(() => setStatus("Ready. Press Play to start playback."));
+        }).catch((error) => {
+          if (generation !== deliveryGeneration) return;
+          setStatus(error instanceof Error ? error.message : "Playback could not be authorized.");
+        });
       };
-      const attachDelivery = async (created: Awaited<ReturnType<typeof createCinemaDelivery>>, targetPosition: number | null, shouldPlay: boolean) => {
+      const attachDelivery = async (
+        created: Awaited<ReturnType<typeof createCinemaDelivery>>,
+        targetPosition: number | null,
+        shouldPlay: boolean,
+        expectedRequest: number | null = null
+      ) => {
         hlsPlayback?.destroy();
         hlsPlayback = null;
         const source = apiUrl(created.session.deliveryUrl);
@@ -1921,12 +2018,18 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
           remoteSubtitleUrl = scoped.href;
         }
         if (created.plan.output.protocol === "hls") {
-          hlsPlayback = createHlsPlayback({
+          const { createHlsPlayback } = await import("./hlsPlayback");
+          if (
+            generation !== deliveryGeneration
+            || (expectedRequest !== null && expectedRequest !== requestGeneration)
+          ) return;
+          const playback = createHlsPlayback({
             manifestUrl: source,
             media: player,
             onError: (error) => setStatus(error.message)
           });
-          await hlsPlayback.ready;
+          hlsPlayback = playback;
+          await playback.ready;
         } else {
           player.src = source;
           player.load();
@@ -1998,7 +2101,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
           pollingCompleted = true;
           const delivery = current.session;
           if (delivery.status !== "ready" || generation !== deliveryGeneration || localRequest !== requestGeneration) throw new Error("Delivery did not become ready.");
-          await attachDelivery({ ...current, session: delivery }, targetPosition, shouldPlay);
+          await attachDelivery({ ...current, session: delivery }, targetPosition, shouldPlay, localRequest);
           if (generation !== deliveryGeneration || localRequest !== requestGeneration) {
             void (remote ? cancelClusterCinemaDelivery(delivery.id) : cancelCinemaDelivery(delivery.id)).catch(() => {});
             return false;
@@ -2073,12 +2176,13 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     });
 
   const captureIdentificationFrames = async (entry: CinemaEntry): Promise<CinemaIdentificationFrame[]> => {
+    if (!entry.path) return [];
     const video = document.createElement("video");
     video.crossOrigin = "anonymous";
     video.muted = true;
     video.playsInline = true;
     video.preload = "metadata";
-    video.src = entry.streamUrl;
+    video.src = await createCinemaMediaTicket(entry.path);
 
     await waitForVideoEvent(video, "loadedmetadata");
 
@@ -2336,28 +2440,51 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
   };
 
   const loadLibrary = async (reset = true, preserveSelected = false) => {
-    if (pageLoading) return;
+    if (reset) {
+      libraryRequestGeneration += 1;
+      libraryRequestController?.abort();
+    } else if (pageLoading) {
+      return;
+    }
+    const generation = libraryRequestGeneration;
+    const controller = new AbortController();
+    libraryRequestController = controller;
+    const requestCategory = activeCategory;
+    const requestQuery = query;
     pageLoading = true;
     if (reset) {
       isScanning = true;
       libraryError = null;
       entries = [];
       libraryHasMore = false;
+      libraryTruncated = false;
       render();
     }
 
     let appendedEntries: CinemaEntry[] = [];
     let failed = false;
     try {
-      const library = await listCinemaLibrary({ category: activeCategory, limit: 60, offset: reset ? 0 : libraryOffset, query });
+      const library = await listCinemaLibrary({
+        category: requestCategory,
+        limit: Math.min(60, Math.max(1, libraryBrowseLimit - (reset ? 0 : entries.length))),
+        offset: reset ? 0 : libraryOffset,
+        query: requestQuery,
+        signal: controller.signal
+      });
+      if (disposed || generation !== libraryRequestGeneration
+        || requestCategory !== activeCategory || requestQuery !== query) return;
       appendedEntries = library.entries;
       entries = reset ? library.entries : [...entries, ...library.entries];
       categoryTotals = library.totals;
       libraryHasMore = library.page.hasMore;
       libraryOffset = library.page.nextOffset;
+      libraryTruncated = library.page.hasMore && entries.length >= libraryBrowseLimit;
+      if (libraryTruncated) libraryHasMore = false;
       if (reset) try {
         const catalog = await listCinemaCatalog();
         const continuing = options.personalPlayback === false ? { entries: [] } : await listCinemaContinueWatching();
+        if (disposed || generation !== libraryRequestGeneration
+          || requestCategory !== activeCategory || requestQuery !== query) return;
         const byPath = new Map(catalog.items.map((item) => [item.path ?? item.source?.path ?? "", item]));
         entries = entries.map((entry) => {
           const item = (entry.id ? catalog.items.find((candidate) => candidate.id === entry.id) : undefined) ?? byPath.get(entry.path);
@@ -2379,11 +2506,16 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
         selected = selected ? entries.find((entry) => entry.path === selected?.path) ?? selected : null;
       }
     } catch (error) {
+      if (controller.signal.aborted) return;
       failed = true;
       if (reset) libraryError = error instanceof Error ? error.message : "Unable to scan content.";
     } finally {
+      if (libraryRequestController !== controller) return;
+      libraryRequestController = null;
       isScanning = false;
       pageLoading = false;
+      if (disposed || generation !== libraryRequestGeneration
+        || requestCategory !== activeCategory || requestQuery !== query) return;
       if (!reset && !failed) {
         const grid = content.querySelector<HTMLElement>("[data-cinema-grid]");
         grid?.insertAdjacentHTML("beforeend", renderCinemaCards(appendedEntries, activeCategory, playback));
@@ -2867,6 +2999,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     });
   });
 
+  document.addEventListener("visibilitychange", onDocumentVisibilityChange);
   render();
   void listRenditionProfiles().then((response) => {
     renditionProfiles = response.profiles;
@@ -2878,4 +3011,23 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     render();
   }).catch(() => {});
   void loadLibrary();
+  return () => {
+    if (disposed) return;
+    disposed = true;
+    libraryRequestGeneration += 1;
+    libraryRequestController?.abort();
+    libraryRequestController = null;
+    stopActivePlayback?.();
+    stopActivePlayback = null;
+    posterObserver?.disconnect();
+    posterObserver = null;
+    pageObserver?.disconnect();
+    pageObserver = null;
+    window.clearTimeout(artworkRefreshTimer);
+    window.clearTimeout(searchTimer);
+    document.removeEventListener("visibilitychange", onDocumentVisibilityChange);
+    alphabetScrollHost = null;
+    refreshAlphabetRail = null;
+    thumbnailCache.clear();
+  };
 };

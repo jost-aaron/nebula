@@ -7,21 +7,23 @@
     "dev": "node server/dev.mjs",
     "check": "tsc --noEmit",
     "test": "node --test tests/*.test.mjs",
+    "test:ci": "node --test --test-concurrency=2 tests/*.test.mjs",
+    "test:coverage": "node --test --experimental-test-coverage --test-concurrency=2 tests/*.test.mjs",
     "test:e2e": "playwright test",
     "build": "tsc && vite build",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
-    "@capacitor/cli": "^8.4.1",
-    "@capacitor/core": "^8.4.1",
-    "@capacitor/ios": "^8.4.1",
-    "hls.js": "1.6.16",
-    "lucide": "^0.468.0",
     "undici": "7.28.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.4.1",
+    "@capacitor/core": "^8.4.1",
+    "@capacitor/ios": "^8.4.1",
     "@playwright/test": "1.61.1",
     "@webgpu/types": "^0.1.64",
+    "hls.js": "1.6.16",
+    "lucide": "^0.468.0",
     "typescript": "^5.8.3",
     "vite": "^7.0.0"
   }

@@ -291,15 +291,39 @@ test("episode items can share a provider series external ID", async (t) => {
   const episodes = repository.listItems({ mediaKind: "video" });
   assert.equal(episodes.length, 2);
   assert.ok(episodes.every((episode) => episode.itemType === "episode"));
-  for (const episode of episodes) {
+  for (const [index, episode] of episodes.entries()) {
     repository.putExternalMetadata(episode.id, {
-      externalIds: [{ id: "98765", mediaType: "tv", provider: "tmdb" }]
+      externalIds: [{ id: "98765", mediaType: "tv", provider: "tmdb" }],
+      fields: { episode: { episodeNumber: index + 1, seasonNumber: 1, seriesTitle: "Series" } }
     });
   }
   assert.deepEqual(episodes.map((episode) => repository.listExternalIds(episode.id)), [
     [{ id: "98765", mediaType: "tv", provider: "tmdb" }],
     [{ id: "98765", mediaType: "tv", provider: "tmdb" }]
   ]);
+  const seriesPage = repository.listTelevisionSeriesPage({ limit: 1 });
+  assert.equal(seriesPage.total, 1);
+  assert.deepEqual(seriesPage.groups.map(({ episodeCount, key, seasonCount, title }) => ({ episodeCount, key, seasonCount, title })), [
+    { episodeCount: 2, key: "tmdb:98765", seasonCount: 1, title: "Series" }
+  ]);
+  assert.deepEqual(repository.listTelevisionEpisodes({ seriesKey: "tmdb:98765" }).items.map(({ id }) => id), episodes.map(({ id }) => id));
+});
+
+test("provider metadata writes reject stale source revisions", async (t) => {
+  const { contentRoot, repository, root } = await setup(t);
+  const filePath = path.join(contentRoot, "Track.mp3");
+  await writeFile(filePath, "first");
+  await scanLocalRoot({ absoluteRoot: contentRoot, repository, rootId: root.id });
+  const initial = repository.resolveContentPath("Track.mp3", root.id);
+  await writeFile(filePath, "changed content");
+  await scanLocalRoot({ absoluteRoot: contentRoot, repository, rootId: root.id });
+  assert.throws(() => repository.putExternalMetadata(initial.item.id, {
+    expectedContentRevision: initial.contentRevision,
+    expectedSourceId: initial.id,
+    fields: { title: "Stale title" },
+    mode: "provider"
+  }), (error) => error.code === "METADATA_SOURCE_CHANGED");
+  assert.notEqual(repository.getItem(initial.item.id).title, "Stale title");
 });
 
 test("compatibility projection preserves Cinema and Studio fields while adding catalog IDs", async (t) => {

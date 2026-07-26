@@ -146,6 +146,32 @@ test("sessions expire, revoke, logout, and rotate after password changes", async
   assert.equal(api.accountStore.authenticateSession(logoutLogin.session.token), null);
 });
 
+test("media tickets can be issued as one page batch without changing path binding", async (t) => {
+  const api = await startApi();
+  t.after(() => api.close());
+  const owner = await setupOwner(api, "native");
+  const requests = ["A.mp3", "B.mp3", "C.mp3"].map((contentPath) => ({
+    contentPath,
+    mediaKind: "audio",
+    principalId: owner.data.user.id,
+    principalType: "user"
+  }));
+  const tickets = api.accountStore.issueMediaTickets(requests);
+  assert.equal(tickets.length, requests.length);
+  tickets.forEach((ticket, index) => {
+    assert.deepEqual(api.accountStore.authenticateMediaTicket({
+      contentPath: requests[index].contentPath,
+      mediaKind: "audio",
+      token: ticket
+    }), { principalId: owner.data.user.id, principalType: "user" });
+    assert.equal(api.accountStore.authenticateMediaTicket({
+      contentPath: "wrong.mp3",
+      mediaKind: "audio",
+      token: ticket
+    }), null);
+  });
+});
+
 test("cookie sessions require CSRF while native bearer sessions do not", async (t) => {
   const api = await startApi();
   t.after(() => api.close());
@@ -243,7 +269,13 @@ test("protected media ranges and Files streamed/resumable uploads work with acco
   const bearer = owner.data.sessionToken;
   await writeFile(path.join(api.storage.contentRoot, "movie.mp4"), "0123456789");
   const library = await jsonRequest(`${api.baseUrl}/api/cinema/library`, { bearer }).then((response) => response.json());
-  const media = await fetch(new URL(library.entries[0].streamUrl, api.baseUrl), { headers: { range: "bytes=2-5" } });
+  assert.equal(new URL(library.entries[0].streamUrl, api.baseUrl).searchParams.has("ticket"), false);
+  const ticket = await jsonRequest(`${api.baseUrl}/api/cinema/ticket`, {
+    bearer,
+    body: { path: library.entries[0].path },
+    method: "POST"
+  }).then((response) => response.json());
+  const media = await fetch(new URL(ticket.streamUrl, api.baseUrl), { headers: { range: "bytes=2-5" } });
   assert.equal(media.status, 206);
   assert.equal(await media.text(), "2345");
   const stream = await fetch(`${api.baseUrl}/api/files/upload?path=&name=streamed.txt`, { body: "streamed", headers: { authorization: `Bearer ${bearer}` }, method: "PUT" });
@@ -255,7 +287,7 @@ test("protected media ranges and Files streamed/resumable uploads work with acco
   assert.equal((await jsonRequest(`${api.baseUrl}/api/files/uploads/${session.id}/complete`, { bearer, body: {}, method: "POST" })).status, 201);
   assert.equal(await readFile(path.join(api.storage.contentRoot, "chunked.bin"), "utf8"), "abcd");
   assert.equal((await jsonRequest(`${api.baseUrl}/api/auth/logout`, { bearer, body: {}, method: "POST" })).status, 200);
-  assert.equal((await fetch(new URL(library.entries[0].streamUrl, api.baseUrl), { headers: { range: "bytes=0-1" } })).status, 401);
+  assert.equal((await fetch(new URL(ticket.streamUrl, api.baseUrl), { headers: { range: "bytes=0-1" } })).status, 401);
 });
 
 test("Cinema watchlists are per-user and migrate legacy owner state once", async (t) => {
