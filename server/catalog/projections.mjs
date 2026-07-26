@@ -31,6 +31,7 @@ const artworkProjection = ({ artwork, job = null, item, source }) => {
 export const projectCompatibilityEntry = ({ artwork = [], artworkJob = null, externalIds = [], item, source, watchlisted = false }) => {
   const metadata = item.metadata ?? {};
   const tmdb = externalIds.find((entry) => entry.provider === "tmdb");
+  const musicbrainz = externalIds.find((entry) => entry.provider === "musicbrainz");
   const folder = source.path.includes("/") ? source.path.slice(0, source.path.lastIndexOf("/")) : "";
   const name = source.path.slice(source.path.lastIndexOf("/") + 1);
   const poster = artworkProjection({ artwork, item, job: artworkJob, source });
@@ -49,6 +50,12 @@ export const projectCompatibilityEntry = ({ artwork = [], artworkJob = null, ext
     id: item.id,
     mediaKind: item.mediaKind,
     modifiedAt: new Date(source.modifiedMs).toISOString(),
+    musicbrainzImportedAt: metadata.musicbrainzImportedAt || "",
+    musicbrainzMatchCandidateCount: Array.isArray(metadata.musicbrainzMatchCandidates) ? metadata.musicbrainzMatchCandidates.length : 0,
+    musicbrainzMatchStatus: metadata.musicbrainzMatchStatus || "",
+    musicbrainzRecordingId: musicbrainz?.id ?? null,
+    musicbrainzReleaseGroupId: metadata.musicbrainzReleaseGroupId || "",
+    musicbrainzReleaseId: metadata.musicbrainzReleaseId || "",
     name,
     path: source.path,
     posterUrl: poster.posterUrl,

@@ -71,7 +71,7 @@ const safeNonNegativeInteger = (value) => {
 export const createProbeCatalogWriter = (database, { now = () => new Date().toISOString(), uuid = randomUUID } = {}) => ({
   putProbeResult(sourceId, result, { expectedContentRevision } = {}) {
     return transaction(database, () => {
-      const source = database.prepare("SELECT content_revision FROM media_sources WHERE id = ?").get(sourceId);
+      const source = database.prepare("SELECT * FROM media_sources WHERE id = ?").get(sourceId);
       if (!source) throw new Error(`Unknown catalog source: ${sourceId}`);
       const sourceContentRevision = expectedContentRevision ?? source.content_revision;
       if (source.content_revision !== sourceContentRevision) {
@@ -86,6 +86,39 @@ export const createProbeCatalogWriter = (database, { now = () => new Date().toIS
         duration_seconds = excluded.duration_seconds, bitrate = excluded.bitrate,
         size_bytes = excluded.size_bytes, probed_at = excluded.probed_at`)
         .run(sourceId, sourceContentRevision, format.name, format.longName, format.durationSeconds, format.bitrate, format.sizeBytes, now());
+      const tags = format.tags ?? {};
+      const taggedFields = {
+        ...(tags.album ? { album: tags.album, embeddedAlbum: tags.album } : {}),
+        ...(tags.albumArtist ? { albumArtist: tags.albumArtist } : {}),
+        ...(tags.artist ? { artist: tags.artist, embeddedArtist: tags.artist } : {}),
+        ...(tags.date ? { releaseYear: /^\d{4}/.exec(tags.date)?.[0] ?? "", embeddedDate: tags.date } : {}),
+        ...(tags.disc ? { discNumber: tags.disc } : {}),
+        ...(tags.genre ? { genres: tags.genre.split(/[;,/]/).map((value) => value.trim()).filter(Boolean).slice(0, 12) } : {}),
+        ...(tags.musicbrainzArtistId ? { musicbrainzArtistId: tags.musicbrainzArtistId } : {}),
+        ...(tags.musicbrainzRecordingId ? { musicbrainzEmbeddedRecordingId: tags.musicbrainzRecordingId } : {}),
+        ...(tags.musicbrainzReleaseGroupId ? { musicbrainzReleaseGroupId: tags.musicbrainzReleaseGroupId } : {}),
+        ...(tags.musicbrainzReleaseId ? { musicbrainzReleaseId: tags.musicbrainzReleaseId } : {}),
+        ...(tags.title ? { embeddedTitle: tags.title } : {}),
+        ...(tags.track ? { trackNumber: tags.track } : {})
+      };
+      if (source.item_id && Object.keys(taggedFields).length) {
+        const row = database.prepare("SELECT metadata_json, title FROM media_items WHERE id = ?").get(source.item_id);
+        const current = JSON.parse(row?.metadata_json || "{}");
+        const identified = current.musicbrainzMatchStatus === "identified";
+        const metadata = {
+          ...current,
+          ...taggedFields,
+          ...(!identified && tags.title ? { sortTitle: tags.title, title: tags.title } : {})
+        };
+        database.prepare("UPDATE media_items SET title = ?, sort_title = ?, metadata_json = ?, updated_at = ? WHERE id = ?")
+          .run(
+            identified ? row.title : tags.title || row.title,
+            identified ? current.sortTitle || row.title : tags.title || row.title,
+            JSON.stringify(metadata),
+            now(),
+            source.item_id
+          );
+      }
       database.prepare("DELETE FROM media_streams WHERE source_id = ?").run(sourceId);
       database.prepare("DELETE FROM media_chapters WHERE source_id = ?").run(sourceId);
       const insertStream = database.prepare(`INSERT INTO media_streams

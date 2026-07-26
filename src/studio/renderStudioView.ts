@@ -1,15 +1,19 @@
 import { createElement, icons } from "lucide";
 import { apiUrl, getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken } from "../api/http";
 import {
+  applyMusicBrainzMatch,
   cancelClusterMusicDelivery,
   createClusterMusicDelivery,
   failoverClusterMusicDelivery,
   getClusterMusicDelivery,
+  listMusicBrainzCandidates,
   listMusicLibrary,
   listStudioPlaybackHistory,
-  reportStudioPlayback
+  refreshMusicBrainzMetadata,
+  reportStudioPlayback,
+  searchMusicBrainz
 } from "../api/musicApi";
-import type { MusicEntry } from "../shared/musicTypes";
+import type { MusicBrainzCandidate, MusicEntry } from "../shared/musicTypes";
 import { addMediaListItem, createMediaList, listMediaLists } from "../api/mediaListsApi";
 import type { MediaList } from "../shared/mediaListTypes";
 import type { PlaybackEventKind, PlaybackHistoryEntry } from "../shared/playbackTypes";
@@ -128,6 +132,8 @@ const renderArtwork = (entry: MusicEntry | null, fallbackLabel = "S") => {
           ? ""
           : `<img src="${studioFallbackArtworkUrl}" alt="" aria-hidden="true" /><span aria-hidden="true">${escapeHtml(initial)}</span>`
       }
+      ${entry?.artworkState === "processing" ? `<span class="studio-artwork-status is-processing">${renderStudioIcon("LoaderCircle")}<b>Downloading cover</b></span>` : ""}
+      ${entry?.artworkState === "queued" ? `<span class="studio-artwork-status is-queued">${renderStudioIcon("Clock3")}<b>Cover queued</b></span>` : ""}
     </div>
   `;
 };
@@ -332,6 +338,45 @@ const renderResumeDialog = (entry: MusicEntry, state: PlaybackHistoryEntry) => `
     </div>
   </section>`;
 
+const renderMusicMatchDialog = (
+  entry: MusicEntry,
+  candidates: MusicBrainzCandidate[],
+  { busy = false, error = "" }: { busy?: boolean; error?: string } = {}
+) => `
+  <section class="studio-resume-sheet studio-match-sheet" role="presentation">
+    <div class="studio-resume-dialog studio-match-dialog" role="dialog" aria-modal="true" aria-labelledby="studio-match-title">
+      <button type="button" data-studio-action="close-music-match" aria-label="Close music identification">${renderStudioIcon("X")}</button>
+      <span class="studio-resume-mark">${renderStudioIcon("Disc3")}</span>
+      <div>
+        <p class="eyebrow">MusicBrainz identification</p>
+        <h3 id="studio-match-title">${entry.musicbrainzRecordingId ? "Change this match" : "Identify this track"}</h3>
+        <p>Search recordings by title, artist, and album. Cover art is downloaded locally after a match.</p>
+      </div>
+      <form class="studio-match-search" data-studio-match-form>
+        <label><span>Title</span><input name="query" value="${escapeHtml(entry.title)}" maxlength="180" required /></label>
+        <label><span>Artist</span><input name="artist" value="${escapeHtml(entry.artist)}" maxlength="180" /></label>
+        <label><span>Album</span><input name="album" value="${escapeHtml(entry.album)}" maxlength="180" /></label>
+        <button type="submit" ${busy ? "disabled" : ""}>${renderStudioIcon(busy ? "LoaderCircle" : "Search")} ${busy ? "Searching…" : "Search MusicBrainz"}</button>
+      </form>
+      ${error ? `<p class="studio-match-error" role="alert">${escapeHtml(error)}</p>` : ""}
+      <div class="studio-match-results" aria-live="polite">
+        ${busy && candidates.length === 0 ? `<div class="studio-match-loading">${renderStudioIcon("LoaderCircle")}<span>Looking for likely recordings…</span></div>` : ""}
+        ${!busy && candidates.length === 0 ? `<p>No saved candidates yet. Adjust the fields above and search MusicBrainz.</p>` : candidates.map((candidate) => `
+          <article>
+            <div>
+              <strong>${escapeHtml(candidate.title)}</strong>
+              <span>${escapeHtml([candidate.artist, candidate.album, candidate.releaseYear].filter(Boolean).join(" / ") || "Recording")}</span>
+              <small>${Math.round(candidate.confidence * 100)}% confidence</small>
+            </div>
+            <button type="button" data-studio-action="apply-music-match" data-recording-id="${escapeHtml(candidate.recordingId)}" data-release-id="${escapeHtml(candidate.releaseId)}" ${busy ? "disabled" : ""}>Use this match</button>
+          </article>
+        `).join("")}
+      </div>
+      <p class="studio-match-attribution">Metadata by MusicBrainz · Artwork by Cover Art Archive</p>
+    </div>
+  </section>
+`;
+
 const queueEntries = (entries: MusicEntry[], selected: MusicEntry | null) =>
   entries.filter((entry) => entry.playable !== false && entry.path !== selected?.path).slice(0, 8);
 
@@ -505,7 +550,16 @@ const renderNowPlaying = (entry: MusicEntry, entries: MusicEntry[]) => {
             <canvas data-studio-visualizer data-studio-visualizer-mode="ambient"></canvas>
           </div>
           ${entry.playable === false ? `<div class="studio-remote-playback-note">${renderStudioIcon("ServerOff")}<span><strong>No compatible shard is online</strong><small>This track remains in the unified library and will become playable when an eligible source reconnects.</small></span></div>` : renderTransportControls()}
-          ${entry.playable !== false && entry.id ? `<button class="studio-playlist-command" type="button" data-studio-action="save-playlist">${renderStudioIcon("ListPlus")} Save to playlist</button>` : ""}
+          <div class="studio-metadata-actions">
+            ${entry.playable !== false && entry.id ? `<button class="studio-playlist-command" type="button" data-studio-action="save-playlist">${renderStudioIcon("ListPlus")} Save to playlist</button>` : ""}
+            ${entry.sourceId ? `<button class="studio-playlist-command" type="button" data-studio-action="open-music-match">${renderStudioIcon(entry.musicbrainzRecordingId ? "BadgeCheck" : "ScanSearch")} ${entry.musicbrainzRecordingId ? "Incorrect match?" : "Identify music"}</button>` : ""}
+            ${entry.sourceId ? `<button class="studio-playlist-command" type="button" data-studio-action="refresh-music-metadata">${renderStudioIcon("RefreshCw")} Refresh metadata</button>` : ""}
+          </div>
+          <p class="studio-match-state">${entry.musicbrainzMatchStatus === "identified"
+            ? "Matched with MusicBrainz"
+            : entry.musicbrainzMatchStatus === "needs-review"
+              ? `${entry.musicbrainzMatchCandidateCount} possible matches need review`
+              : entry.musicbrainzMatchStatus === "not-found" ? "No confident MusicBrainz match" : "Music identification queued"}</p>
         </div>
       </section>
       ${renderQueue(entries, entry)}
@@ -588,6 +642,9 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   let collections: MediaList[] = [];
   let history = new Map<string, PlaybackHistoryEntry>();
   let pendingResume: { entry: MusicEntry; state: PlaybackHistoryEntry } | null = null;
+  let musicMatchCandidates: MusicBrainzCandidate[] = [];
+  let musicMatchBusy = false;
+  let musicMatchError = "";
   const personalPlayback = options.personalPlayback !== false;
   const playbackDeviceId = createBrowserUuid();
   let libraryHasMore = false;
@@ -1162,6 +1219,80 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     queueMicrotask(() => content.querySelector<HTMLButtonElement>("[data-studio-play-toggle]")?.focus({ preventScroll: true }));
   };
 
+  const renderMusicMatch = () => {
+    if (!selected) return;
+    dialogHost.hidden = false;
+    dialogHost.innerHTML = renderMusicMatchDialog(selected, musicMatchCandidates, {
+      busy: musicMatchBusy,
+      error: musicMatchError
+    });
+  };
+
+  const closeMusicMatch = () => {
+    musicMatchCandidates = [];
+    musicMatchBusy = false;
+    musicMatchError = "";
+    dialogHost.hidden = true;
+    dialogHost.innerHTML = "";
+  };
+
+  const openMusicMatch = async () => {
+    if (!selected) return;
+    musicMatchBusy = true;
+    musicMatchError = "";
+    musicMatchCandidates = [];
+    renderMusicMatch();
+    try {
+      musicMatchCandidates = (await listMusicBrainzCandidates(selected.path)).candidates;
+    } catch (error) {
+      musicMatchError = error instanceof Error ? error.message : "Unable to load MusicBrainz candidates.";
+    } finally {
+      musicMatchBusy = false;
+      renderMusicMatch();
+    }
+  };
+
+  const runMusicSearch = async (form: HTMLFormElement) => {
+    if (!selected || musicMatchBusy) return;
+    const values = new FormData(form);
+    musicMatchBusy = true;
+    musicMatchError = "";
+    renderMusicMatch();
+    try {
+      musicMatchCandidates = (await searchMusicBrainz({
+        album: String(values.get("album") ?? ""),
+        artist: String(values.get("artist") ?? ""),
+        path: selected.path,
+        query: String(values.get("query") ?? "")
+      })).candidates;
+    } catch (error) {
+      musicMatchError = error instanceof Error ? error.message : "MusicBrainz search failed.";
+    } finally {
+      musicMatchBusy = false;
+      renderMusicMatch();
+    }
+  };
+
+  const applyMusicMatch = async (button: HTMLButtonElement) => {
+    if (!selected || musicMatchBusy) return;
+    musicMatchBusy = true;
+    musicMatchError = "";
+    renderMusicMatch();
+    try {
+      await applyMusicBrainzMatch({
+        path: selected.path,
+        recordingId: button.dataset.recordingId ?? "",
+        releaseId: button.dataset.releaseId ?? ""
+      });
+      closeMusicMatch();
+      await loadLibrary(true);
+    } catch (error) {
+      musicMatchError = error instanceof Error ? error.message : "Unable to save this match.";
+      musicMatchBusy = false;
+      renderMusicMatch();
+    }
+  };
+
   const playSelected = (positionSeconds = 0, restartSession = false) => {
     if (!selected || selected.playable === false) return;
     setPlayerEntry(selected, restartSession);
@@ -1309,6 +1440,18 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     }
 
     if (actionButton?.dataset.studioAction === "close-resume") { closeResumePrompt(); return; }
+    if (actionButton?.dataset.studioAction === "close-music-match") { closeMusicMatch(); return; }
+    if (actionButton?.dataset.studioAction === "open-music-match") { void openMusicMatch(); return; }
+    if (actionButton?.dataset.studioAction === "apply-music-match") { void applyMusicMatch(actionButton); return; }
+    if (actionButton?.dataset.studioAction === "refresh-music-metadata" && selected) {
+      actionButton.disabled = true;
+      actionButton.textContent = "Metadata queued";
+      void refreshMusicBrainzMetadata(selected.path).catch((error) => {
+        actionButton.disabled = false;
+        actionButton.textContent = error instanceof Error ? error.message : "Could not queue metadata";
+      });
+      return;
+    }
     if (actionButton?.dataset.studioAction === "resume-play" || actionButton?.dataset.studioAction === "restart-play") {
       const request = pendingResume;
       if (!request) return;
@@ -1387,6 +1530,13 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       content.scrollTop = 0;
       input.focus();
     }
+  });
+
+  app.addEventListener("submit", (event) => {
+    const form = (event.target as HTMLElement).closest<HTMLFormElement>("[data-studio-match-form]");
+    if (!form) return;
+    event.preventDefault();
+    void runMusicSearch(form);
   });
 
   playerCleanup = bindPlayer();

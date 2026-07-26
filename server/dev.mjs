@@ -38,6 +38,8 @@ import { createArtworkScheduler, createArtworkService } from "./artwork/index.mj
 import { readMetadata, writeMetadata } from "./mediaLibrary.mjs";
 import { createTmdbClient } from "./tmdb.mjs";
 import { createTmdbMetadataService } from "./metadata/tmdbService.mjs";
+import { createMusicBrainzClient } from "./musicbrainz.mjs";
+import { createMusicBrainzMetadataService } from "./metadata/musicbrainzService.mjs";
 import {
   clusterKeyRotationMigration, clusterMigration, clusterOperationsMigration, clusterFederationMigration, createClusterIngressRoutes, createClusterManifestClient,
   createClusterManifestService, createClusterPairingClient, createClusterRepository, createClusterSyncService,
@@ -317,6 +319,10 @@ const tmdbMetadata = createTmdbMetadataService({
   }),
   writeLegacyMetadata: (metadata) => writeMetadata(storage.cinemaMetadataPath, metadata)
 });
+const musicMetadata = createMusicBrainzMetadataService({
+  client: createMusicBrainzClient(),
+  repository: catalogRepository
+});
 const renditionPolicy = createRenditionPolicyService({ audit: auditService, jobs: jobsService,
   repository: renditionPolicyRepository, store: renditionStore });
 const renditionService = createRenditionService({
@@ -343,11 +349,14 @@ const jobsWorker = createJobsWorker({
         : { intervalMs: 0, queued: 0 };
       const enrichmentStart = Date.now() + 60_000;
       let enrichmentIndex = 0;
+      const probedAudioSources = new Set();
       for (const item of catalogRepository.listItems({ availability: "available" })) {
         const probe = probeReader.get(item.source.id);
         if (probe.sourceContentRevision !== item.source.contentRevision) {
           context.enqueue({ type: "probe", payload: { sourceId: item.source.id }, dedupeKey: `${item.source.id}:${item.source.contentRevision}`, maxAttempts: 1, reuseTerminal: true, availableAt: enrichmentStart + enrichmentIndex * 10_000 });
           enrichmentIndex += 1;
+        } else if (item.source.mediaKind === "audio") {
+          probedAudioSources.add(item.source.id);
         }
         if (clusterService) {
           const fingerprint = fingerprintRepository.get(item.source.id);
@@ -357,20 +366,49 @@ const jobsWorker = createJobsWorker({
           }
         }
       }
+      const music = musicMetadata.enqueueMissing(context.enqueue, {
+        availableAt: Date.now() + 60_000,
+        batchId: payload.batchId ?? `scan-${Date.now()}`,
+        sourceFilter: (source) => probedAudioSources.has(source.id)
+      });
       const metadataActivity = jobsService.activity("metadata");
       const metadataPending = Number(metadataActivity.counts.queued ?? 0) + Number(metadataActivity.counts.running ?? 0) > 0;
       const artworkStart = payload?.refreshTmdb
         ? Date.now() + 30_000 + metadata.queued * metadata.intervalMs
         : metadataPending ? Date.now() + 60 * 60_000 : Date.now() + 30_000;
       const artwork = artworkScheduler.enqueueMissing(context.enqueue, { availableAt: artworkStart });
-      return { ...scan, artworkQueued: artwork.queued, metadataQueued: metadata.queued, purged };
+      return { ...scan, artworkQueued: artwork.queued, metadataQueued: metadata.queued, musicMetadataQueued: music.queued, purged };
     },
-    probeSource: async ({ sourceId }) => { const result = await probeService.probeSource(sourceId); await syncLocalProjection(); return result; },
+    probeSource: async ({ sourceId }, context) => {
+      const result = await probeService.probeSource(sourceId);
+      const source = catalogRepository.getSource(sourceId);
+      const music = source?.mediaKind === "audio"
+        ? musicMetadata.enqueueMissing(context.enqueue, {
+            availableAt: Date.now() + 1_000,
+            batchId: "after-probe",
+            sourceFilter: (candidate) => candidate.id === sourceId
+          })
+        : { queued: 0 };
+      await syncLocalProjection();
+      return { ...result, musicMetadataQueued: music.queued };
+    },
     fingerprintSource: async ({ sourceId }, context) => { const result = await fingerprintService.fingerprintSource(sourceId, context); await syncLocalProjection(); return result; },
     buildRendition: async (payload, context) => { const result = await renditionService.build(payload, context); await syncLocalProjection(); return result; },
-    refreshMetadata: async (payload, context) => payload?.sourceId
-      ? tmdbMetadata.refreshSource(payload, context)
-      : tmdbMetadata.enqueueAll(context.enqueue, { availableAt: Date.now() + 1_000, batchId: `manual-${Date.now()}` }),
+    refreshMetadata: async (payload, context) => {
+      if (payload?.sourceId) {
+        const source = catalogRepository.getSource(payload.sourceId);
+        return source?.mediaKind === "audio"
+          ? musicMetadata.refreshSource(payload, context)
+          : tmdbMetadata.refreshSource(payload, context);
+      }
+      const batchId = `manual-${Date.now()}`;
+      const video = tmdbMetadata.enqueueAll(context.enqueue, { availableAt: Date.now() + 1_000, batchId });
+      const audio = musicMetadata.enqueueMissing(context.enqueue, {
+        availableAt: Date.now() + 1_000 + video.queued * video.intervalMs,
+        batchId
+      });
+      return { audio, video };
+    },
     cacheArtwork: async (payload, context) => payload?.sourceId
       ? artworkService.generate(payload, context)
       : artworkScheduler.enqueueMissing(context.enqueue, { availableAt: Date.now() + 1_000 }),
@@ -443,6 +481,7 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   } } : {}),
   jobs: jobsService,
   mediaLocations,
+  musicMetadata,
   guestService,
   libraryPermissions,
   mediaLists,

@@ -1,5 +1,5 @@
 import { apiFetch, apiJson, apiUrl } from "./http";
-import type { MusicLibraryResponse } from "../shared/musicTypes";
+import type { MusicBrainzCandidatesResponse, MusicLibraryResponse } from "../shared/musicTypes";
 import type { PlaybackEventRequest, PlaybackEventResponse, PlaybackHistoryResponse } from "../shared/playbackTypes";
 import type { PlaybackClientCapabilities } from "../shared/playbackPlanTypes";
 import type { ClusterPlaybackCreateResponse } from "../shared/clusterTypes";
@@ -41,4 +41,28 @@ export const failoverClusterMusicDelivery = (id: string, failedNodeId: string) =
 export const cancelClusterMusicDelivery = (id: string) =>
   apiFetch(`/api/cluster/playback-sessions/${encodeURIComponent(id)}`, { method: "DELETE" }).then((response) => {
     if (!response.ok && response.status !== 404) throw new Error(`Cluster delivery cancellation failed: ${response.status}`);
+  });
+
+export const listMusicBrainzCandidates = (path: string) =>
+  apiJson<MusicBrainzCandidatesResponse>(`/api/music/metadata/candidates?path=${encodeURIComponent(path)}`);
+
+export const searchMusicBrainz = (body: { album?: string; artist?: string; path: string; query: string }) =>
+  apiJson<MusicBrainzCandidatesResponse>("/api/music/metadata/search", {
+    body: JSON.stringify(body),
+    headers: { "content-type": "application/json" },
+    method: "POST"
+  });
+
+export const applyMusicBrainzMatch = (body: { path: string; recordingId: string; releaseId?: string }) =>
+  apiJson<{ artworkQueued: boolean; matched: boolean }>("/api/music/metadata/apply", {
+    body: JSON.stringify(body),
+    headers: { "content-type": "application/json" },
+    method: "POST"
+  });
+
+export const refreshMusicBrainzMetadata = (path: string) =>
+  apiJson<{ ok: boolean }>("/api/music/metadata/refresh", {
+    body: JSON.stringify({ path }),
+    headers: { "content-type": "application/json" },
+    method: "POST"
   });

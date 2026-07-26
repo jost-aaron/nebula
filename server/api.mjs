@@ -37,7 +37,15 @@ export const createApiHandler = (storage, accountStore, authGuard, options = {})
     ...(options.jobs ? [createJobsRoutes(options.jobs, options.audit)] : []),
     ...(options.mediaLocations && options.jobs ? [createMediaLocationsRoutes({ audit: options.audit, jobs: options.jobs, service: options.mediaLocations })] : []),
     createCinemaRoutes(storage, accountStore, { ...options.cinema, catalog: options.catalog, federation: options.cluster?.federation, federationAuthorization: options.cluster?.federationAuthorization, guestService: options.guestService, jobs: options.jobs, libraryPermissions: options.libraryPermissions }),
-    createMusicRoutes(storage, accountStore, { catalog: options.catalog, federation: options.cluster?.federation, federationAuthorization: options.cluster?.federationAuthorization, guestService: options.guestService, libraryPermissions: options.libraryPermissions }),
+    createMusicRoutes(storage, accountStore, {
+      catalog: options.catalog,
+      federation: options.cluster?.federation,
+      federationAuthorization: options.cluster?.federationAuthorization,
+      guestService: options.guestService,
+      jobs: options.jobs,
+      libraryPermissions: options.libraryPermissions,
+      metadata: options.musicMetadata
+    }),
     createFilesRoutes(storage)
   ];
 
@@ -50,7 +58,7 @@ export const createApiHandler = (storage, accountStore, authGuard, options = {})
           name: "Nebula Server",
           status: "online",
           serverTime: new Date().toISOString(),
-          capabilities: ["audit-history", "background-jobs", "catalog", "cinema-library", "cinema-identify", "collections", "files", "hardware-transcode", "library-permissions", "metadata-editing", "music-library", "persistent-renditions", "scheduled-renditions", "rendition-storage-policy", "playback-delivery", "playback-policy", "playback-state", "playlists", "probe", "rendition-profiles", "subtitles"]
+          capabilities: ["audit-history", "background-jobs", "catalog", "cinema-library", "cinema-identify", "collections", "files", "hardware-transcode", "library-permissions", "metadata-editing", "music-identify", "music-library", "persistent-renditions", "scheduled-renditions", "rendition-storage-policy", "playback-delivery", "playback-policy", "playback-state", "playlists", "probe", "rendition-profiles", "subtitles"]
         });
         return true;
       }

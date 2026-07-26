@@ -166,6 +166,36 @@ test("artwork service downloads and publishes a TMDB poster for offline use", as
   assert.equal((await readFile(path.join(dataRoot, ...cached.localPath.split("/")))).length, 512);
 });
 
+test("artwork service downloads MusicBrainz cover art for audio without video capture", async (t) => {
+  const { contentRoot, dataRoot, repository, root } = await setup(t);
+  await writeFile(path.join(contentRoot, "Track.flac"), "audio fixture");
+  await scanLocalRoot({ absoluteRoot: contentRoot, repository, rootId: root.id });
+  const item = repository.listItems({ mediaKind: "audio" })[0];
+  repository.putExternalMetadata(item.id, {
+    fields: { posterUrl: "https://coverartarchive.org/release/example/front-500" },
+    mode: "provider"
+  });
+  let captureCalls = 0;
+  const service = createArtworkService({
+    contentRoot,
+    dataRoot,
+    fetchImpl: async () => new Response(Buffer.alloc(512, 4), {
+      headers: { "content-type": "image/jpeg" },
+      status: 200
+    }),
+    repository,
+    resolveSource: (sourceId) => repository.getSource(sourceId),
+    runner: async () => { captureCalls += 1; }
+  });
+  const result = await service.generate({
+    contentRevision: item.source.contentRevision,
+    sourceId: item.source.id
+  });
+  assert.equal(result.cached, true);
+  assert.equal(captureCalls, 0);
+  assert.equal(repository.listArtwork(item.id).some(({ localPath }) => localPath), true);
+});
+
 test("FFmpeg title-card arguments capture one bounded portrait frame without a shell", () => {
   const args = buildArtworkArguments("/media/input movie.mkv", "/cache/output.jpg");
   assert.deepEqual(args.slice(0, 8), ["-nostdin", "-v", "error", "-ss", "12", "-i", "/media/input movie.mkv", "-map"]);

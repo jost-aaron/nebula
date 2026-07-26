@@ -96,6 +96,15 @@ Studio groups music with these rules:
 - `GET /api/music/library` - recursively scan `content/` for supported audio.
 - `GET /api/music/media?path=<path>` - stream an audio file.
 - `HEAD /api/music/media?path=<path>` - return audio metadata headers.
+- `GET /api/music/metadata/status` - report MusicBrainz and Cover Art Archive
+  availability and attribution.
+- `GET /api/music/metadata/candidates?path=<path>` - return the bounded saved
+  candidate set for manual review.
+- `POST /api/music/metadata/search` - search MusicBrainz with an owner-supplied
+  title, artist, and album.
+- `POST /api/music/metadata/apply` - apply a selected MusicBrainz recording and
+  queue its cover for persistent local caching.
+- `POST /api/music/metadata/refresh` - schedule matching again for one track.
 - `GET /api/playback/history` - return the authenticated user's recent playback
   state, including completed tracks.
 - `POST /api/playback/events` - record authenticated Studio playback lifecycle
@@ -119,6 +128,26 @@ write this personal history.
 Authenticated library responses issue expiring, audio-path-bound media tickets
 so browser and Capacitor `<audio>` playback can use byte ranges without exposing
 an account session token.
+
+## Music Metadata And Offline Artwork
+
+Audio probes import embedded title, artist, album, album artist, genre, date,
+track/disc number, and MusicBrainz identifiers before online matching. A valid
+embedded recording identifier is authoritative. Otherwise the metadata worker
+searches MusicBrainz using the embedded/path-derived title, artist, and album,
+and uses probed duration to distinguish recordings when available.
+
+Only a dominant high-confidence result is applied automatically. Up to eight
+alternatives are retained when a result is ambiguous, and Studio exposes them
+through its `Identify music` / `Incorrect match?` sheet. MusicBrainz calls use a
+meaningful Nebula user agent and are serialized to respect the public API rate
+limit.
+
+After identification, the worker resolves front cover art from the Cover Art
+Archive and passes it through the existing revision-bound artwork job. The image
+is downloaded into `/app/data/artwork`, published through the local artwork
+endpoint, and remains usable without internet access. Studio distinguishes
+queued cover work from an actively downloading cover.
 
 ## Boundary With Cinema
 

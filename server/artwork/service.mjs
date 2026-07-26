@@ -52,8 +52,8 @@ export const createArtworkService = ({
   const generate = async ({ contentRevision, sourceId }, context = {}) => {
     context.throwIfCancelled?.();
     const source = await resolveSource(sourceId);
-    if (!source || source.availability !== "available" || source.mediaKind !== "video") {
-      throw Object.assign(new Error(`Unknown or unavailable video source: ${sourceId}`), { code: "ARTWORK_SOURCE_MISSING" });
+    if (!source || source.availability !== "available" || !["audio", "video"].includes(source.mediaKind)) {
+      throw Object.assign(new Error(`Unknown or unavailable media source: ${sourceId}`), { code: "ARTWORK_SOURCE_MISSING" });
     }
     if (source.contentRevision !== contentRevision) {
       throw Object.assign(new Error("Media changed before its artwork job started."), { code: "ARTWORK_SOURCE_CHANGED" });
@@ -121,6 +121,10 @@ export const createArtworkService = ({
         clearTimeout(timeout);
         await rm(temporaryPath, { force: true }).catch(() => {});
       }
+    }
+    if (source.mediaKind === "audio") {
+      context.reportProgress?.(0.95, "no-cover-art");
+      return { cached: false, contentRevision: source.contentRevision, reason: "no_remote_artwork", sourceId: source.id };
     }
     const inputPath = await resolveProbePath(contentRoot, source.path);
     const relativePath = generatedArtworkRelativePath(source.id, source.contentRevision);

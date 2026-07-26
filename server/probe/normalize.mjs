@@ -9,6 +9,15 @@ const integer = (value) => {
 };
 
 const text = (value) => typeof value === "string" && value.trim() ? value.trim() : null;
+const tagValue = (tags, ...names) => {
+  if (!tags || typeof tags !== "object") return null;
+  const entries = new Map(Object.entries(tags).map(([key, value]) => [key.toLowerCase(), value]));
+  for (const name of names) {
+    const value = text(entries.get(name.toLowerCase()));
+    if (value) return value;
+  }
+  return null;
+};
 
 const frameRate = (value) => {
   if (!value || value === "0/0") return null;
@@ -49,13 +58,28 @@ const common = (stream) => ({
 export const normalizeFfprobe = (raw) => {
   if (!raw || typeof raw !== "object") throw new TypeError("FFprobe result must be an object.");
   const streams = Array.isArray(raw.streams) ? raw.streams : [];
+  const formatTags = {
+    album: tagValue(raw.format?.tags, "album"),
+    albumArtist: tagValue(raw.format?.tags, "album_artist", "albumartist", "album artist"),
+    artist: tagValue(raw.format?.tags, "artist"),
+    date: tagValue(raw.format?.tags, "date", "year"),
+    disc: tagValue(raw.format?.tags, "disc", "discnumber"),
+    genre: tagValue(raw.format?.tags, "genre"),
+    musicbrainzArtistId: tagValue(raw.format?.tags, "musicbrainz_artistid", "musicbrainz artist id"),
+    musicbrainzRecordingId: tagValue(raw.format?.tags, "musicbrainz_trackid", "musicbrainz recording id"),
+    musicbrainzReleaseGroupId: tagValue(raw.format?.tags, "musicbrainz_releasegroupid", "musicbrainz release group id"),
+    musicbrainzReleaseId: tagValue(raw.format?.tags, "musicbrainz_albumid", "musicbrainz release id"),
+    title: tagValue(raw.format?.tags, "title"),
+    track: tagValue(raw.format?.tags, "track", "tracknumber")
+  };
   return {
     format: {
       name: text(raw.format?.format_name),
       longName: text(raw.format?.format_long_name),
       durationSeconds: number(raw.format?.duration),
       bitrate: integer(raw.format?.bit_rate),
-      sizeBytes: integer(raw.format?.size)
+      sizeBytes: integer(raw.format?.size),
+      ...(Object.values(formatTags).some(Boolean) ? { tags: formatTags } : {})
     },
     video: streams.filter((stream) => stream.codec_type === "video").map((stream) => ({
       ...common(stream),

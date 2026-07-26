@@ -70,6 +70,7 @@ export const capabilityForRoute = (request, url) => {
   if (path.startsWith("/api/renditions/items/")) return ["GET", "HEAD"].includes(method) ? "media.read" : "server.admin";
   if (path === "/api/cinema/watchlist") return "watchlist.write";
   if (path === "/api/cinema/metadata" || path === "/api/cinema/identify" || path.startsWith("/api/cinema/tmdb/")) return "media.manage";
+  if (path.startsWith("/api/music/metadata/")) return ["GET", "HEAD"].includes(method) ? "media.read" : "media.manage";
   if (path.startsWith("/api/cinema/") || path.startsWith("/api/music/")) return "media.read";
   return "dashboard.use";
 };
