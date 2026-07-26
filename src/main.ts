@@ -155,17 +155,58 @@ if (!grid || !featuredTitle || !featuredDescription || !launchButton || !details
   throw new Error("Dashboard controls failed to initialize.");
 }
 
+type CompactVideoPosition = { left: number; top: number };
+let compactVideoPosition: CompactVideoPosition | null = null;
+let compactVideoDragState: {
+  dragging: boolean;
+  originLeft: number;
+  originTop: number;
+  pointerId: number;
+  stage: HTMLElement;
+  startX: number;
+  startY: number;
+} | null = null;
+let suppressCompactVideoClick = false;
+const compactVideoViewportInset = 10;
+
+const clampCompactVideoPosition = (stage: HTMLElement, left: number, top: number): CompactVideoPosition => {
+  const bounds = stage.getBoundingClientRect();
+  return {
+    left: Math.min(Math.max(compactVideoViewportInset, left), Math.max(compactVideoViewportInset, window.innerWidth - bounds.width - compactVideoViewportInset)),
+    top: Math.min(Math.max(compactVideoViewportInset, top), Math.max(compactVideoViewportInset, window.innerHeight - bounds.height - compactVideoViewportInset))
+  };
+};
+
+const applyCompactVideoPosition = (stage: HTMLElement, position: CompactVideoPosition) => {
+  const clamped = clampCompactVideoPosition(stage, position.left, position.top);
+  compactVideoPosition = clamped;
+  stage.style.left = `${clamped.left}px`;
+  stage.style.top = `${clamped.top}px`;
+  stage.style.right = "auto";
+  stage.style.bottom = "auto";
+};
+
+const clearCompactVideoPositionStyles = (stage: HTMLElement | null) => {
+  stage?.style.removeProperty("left");
+  stage?.style.removeProperty("top");
+  stage?.style.removeProperty("right");
+  stage?.style.removeProperty("bottom");
+};
+
 const syncBackgroundMediaPlayers = () => {
   const cinema = mediaSurfaceCache.get("cinema")?.element;
+  const videoStage = cinema?.querySelector<HTMLElement>(".cinema-video-stage") ?? null;
   const backgroundVideoStage = cinema?.classList.contains("background-media-app")
-    ? cinema.querySelector<HTMLElement>(".cinema-video-stage")
+    ? videoStage
     : null;
   const hasBackgroundVideo = Boolean(backgroundVideoStage?.querySelector("[data-cinema-player]"));
   if (hasBackgroundVideo && backgroundVideoStage) {
     backgroundVideoStage.append(backgroundVideoReturn, backgroundVideoClose);
+    if (compactVideoPosition) applyCompactVideoPosition(backgroundVideoStage, compactVideoPosition);
   } else {
     if (backgroundVideoReturn.parentElement !== backgroundMediaHost) backgroundMediaHost.append(backgroundVideoReturn);
     if (backgroundVideoClose.parentElement !== backgroundMediaHost) backgroundMediaHost.append(backgroundVideoClose);
+    clearCompactVideoPositionStyles(videoStage);
   }
   backgroundVideoReturn.hidden = !hasBackgroundVideo;
   backgroundVideoClose.hidden = !hasBackgroundVideo;
@@ -745,6 +786,69 @@ const launchApp = async (app: DashboardApp, options: { settingsSection?: string 
 backgroundVideoReturn.addEventListener("click", () => {
   const cinema = availableApps.find((app) => app.id === "cinema");
   if (cinema) void launchApp(cinema);
+});
+
+const compactVideoInteractiveSelector = "button, input, select, textarea, a, [role='button'], [role='slider']";
+
+backgroundMediaHost.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  const target = event.target as HTMLElement;
+  const stage = target.closest<HTMLElement>(".cinema-shell.background-media-app .cinema-video-stage");
+  if (!stage || target.closest(compactVideoInteractiveSelector)) return;
+  const bounds = stage.getBoundingClientRect();
+  compactVideoDragState = {
+    dragging: false,
+    originLeft: bounds.left,
+    originTop: bounds.top,
+    pointerId: event.pointerId,
+    stage,
+    startX: event.clientX,
+    startY: event.clientY
+  };
+  stage.setPointerCapture(event.pointerId);
+});
+
+backgroundMediaHost.addEventListener("pointermove", (event) => {
+  const state = compactVideoDragState;
+  if (!state || state.pointerId !== event.pointerId) return;
+  const deltaX = event.clientX - state.startX;
+  const deltaY = event.clientY - state.startY;
+  if (!state.dragging && Math.hypot(deltaX, deltaY) < 5) return;
+  state.dragging = true;
+  state.stage.classList.add("dragging");
+  applyCompactVideoPosition(state.stage, {
+    left: state.originLeft + deltaX,
+    top: state.originTop + deltaY
+  });
+  event.preventDefault();
+});
+
+const finishCompactVideoDrag = (event: PointerEvent) => {
+  const state = compactVideoDragState;
+  if (!state || state.pointerId !== event.pointerId) return;
+  if (state.stage.hasPointerCapture(event.pointerId)) state.stage.releasePointerCapture(event.pointerId);
+  state.stage.classList.remove("dragging");
+  suppressCompactVideoClick = state.dragging;
+  if (state.dragging) window.setTimeout(() => { suppressCompactVideoClick = false; }, 0);
+  compactVideoDragState = null;
+};
+
+backgroundMediaHost.addEventListener("pointerup", finishCompactVideoDrag);
+backgroundMediaHost.addEventListener("pointercancel", finishCompactVideoDrag);
+backgroundMediaHost.addEventListener("click", (event) => {
+  if (!suppressCompactVideoClick) return;
+  const target = event.target as HTMLElement;
+  if (!target.closest(".cinema-video-stage") || target.closest(compactVideoInteractiveSelector)) return;
+  suppressCompactVideoClick = false;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}, true);
+
+window.addEventListener("resize", () => {
+  const stage = mediaSurfaceCache.get("cinema")?.element.querySelector<HTMLElement>(".cinema-video-stage");
+  if (stage?.closest(".background-media-app") && compactVideoPosition) {
+    applyCompactVideoPosition(stage, compactVideoPosition);
+  }
 });
 
 backgroundVideoClose.addEventListener("click", () => {

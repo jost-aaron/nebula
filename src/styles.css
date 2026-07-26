@@ -4122,9 +4122,21 @@ h1 {
   visibility: visible;
   pointer-events: auto;
   background: #000;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
   box-shadow:
     0 24px 90px rgba(0, 0, 0, 0.7),
     0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+.cinema-shell.background-media-app .cinema-video-stage.dragging {
+  cursor: grabbing;
+}
+
+.cinema-shell.background-media-app .cinema-video-stage :is(button, input, select, textarea, a, [role="button"], [role="slider"]) {
+  cursor: auto;
+  touch-action: auto;
 }
 
 .background-media-host:has(.studio-mini-player:not([hidden])) .cinema-shell.background-media-app .cinema-video-stage {

@@ -19,6 +19,12 @@ test("Nebula keeps music and video playback alive across app navigation", async 
   assert.match(main, /mediaSurfaceCache\.set\("cinema", \{ dispose, element \}\)/);
   assert.match(main, /document\.addEventListener\("play"[\s\S]*?media\.pause\(\)/);
   assert.match(main, /backgroundVideoReturn\.addEventListener\("click"/);
+  assert.match(main, /backgroundMediaHost\.addEventListener\("pointerdown"/);
+  assert.match(main, /backgroundMediaHost\.addEventListener\("pointermove"/);
+  assert.match(main, /compactVideoInteractiveSelector/);
+  assert.match(main, /Math\.hypot\(deltaX, deltaY\) < 5/);
+  assert.match(main, /const clampCompactVideoPosition/);
+  assert.match(main, /window\.addEventListener\("resize"/);
   assert.match(main, /backgroundVideoClose\.addEventListener\("click"[\s\S]*?backToTitle\.click\(\)/);
   assert.match(studio, /miniPlayer\.hidden = !playingEntry/);
   assert.match(studio, /data-studio-action="close-player"/);
@@ -28,5 +34,7 @@ test("Nebula keeps music and video playback alive across app navigation", async 
   assert.match(styles, /\.foreground-media-app/);
   assert.match(styles, /\.studio-shell\.background-media-app \.studio-mini-player:not\(\[hidden\]\)/);
   assert.match(styles, /\.cinema-shell\.background-media-app \.cinema-video-stage/);
+  assert.match(styles, /\.cinema-shell\.background-media-app \.cinema-video-stage\.dragging/);
+  assert.match(styles, /cursor: grab/);
   assert.match(styles, /\.background-media-host:has\(\.studio-mini-player:not\(\[hidden\]\)\)/);
 });
