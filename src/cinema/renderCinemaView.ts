@@ -50,7 +50,6 @@ import { supportsHlsPlayback } from "./hlsSupport";
 import type { HlsPlaybackHandle } from "./hlsPlayback";
 import { pollDeliveryUntilReady } from "../shared/deliveryPolling.js";
 import "./tmdb.css";
-import "./cinemaBrand.css";
 
 const cinemaBrandMarkUrl = new URL(
   "../assets/branding/cinema/nebula-cinema-symbol.svg",

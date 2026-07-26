@@ -25,6 +25,7 @@ import { createShellState, transitionShellState } from "./shell/state";
 import { startRenderer } from "./webgpuRenderer";
 import type { AccountSessionState, CurrentSessionState } from "./shared/accountTypes";
 import "./styles.css";
+import "./cinema/cinemaBrand.css";
 import "./settings/settingsApp.css";
 import "./settings/tailscaleAdmin.css";
 

@@ -20,7 +20,8 @@ test("Cinema and Studio load as lifecycle-safe app chunks", async () => {
   assert.match(main, /data-app-module-retry/);
   assert.match(main, /disposeActiveApp = mediaModule\.bindCinemaView/);
   assert.match(main, /disposeActiveApp = mediaModule\.bindStudioView/);
-  assert.match(cinema, /import "\.\/cinemaBrand\.css"/);
+  assert.match(main, /import "\.\/cinema\/cinemaBrand\.css"/);
+  assert.doesNotMatch(cinema, /import "\.\/cinemaBrand\.css"/);
 });
 
 test("Cinema defers the HLS engine until an HLS delivery is attached", async () => {
