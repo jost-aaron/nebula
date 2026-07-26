@@ -58,6 +58,22 @@ test("Studio uses a persistent custom player and responsive mini-player instead 
   assert.match(css, /\.studio-transport/);
 });
 
+test("Studio reserves a dedicated grid row for background jobs", async () => {
+  const [studio, css] = await Promise.all([
+    readFile(new URL("../src/studio/renderStudioView.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/styles.css", import.meta.url), "utf8")
+  ]);
+
+  assert.match(
+    studio,
+    /studio-job-activity[\s\S]*?<main class="studio-content"/
+  );
+  assert.match(
+    css,
+    /\.studio-shell\s*\{[\s\S]*?grid-template-rows:\s*auto auto minmax\(0, 1fr\) auto auto;/
+  );
+});
+
 test("Studio owns library request generations and does not reload history for appended pages", async () => {
   const [studio, api] = await Promise.all([
     readFile(new URL("../src/studio/renderStudioView.ts", import.meta.url), "utf8"),
