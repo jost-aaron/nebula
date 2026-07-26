@@ -143,11 +143,14 @@ export const createMusicBrainzMetadataService = ({ client, repository } = {}) =>
     const current = sourceContext(sourceId);
     if (!current) return { candidates: [], reason: "source_unavailable", sourceId };
     const hints = {
-      album: cleanTitle(album) || current.hints.album,
-      artist: cleanTitle(artist) || current.hints.artist,
+      album: cleanTitle(album),
+      artist: cleanTitle(artist),
       title: cleanTitle(query) || current.hints.title
     };
-    const ranked = rankCandidates(await client.search(hints), hints);
+    const ranked = rankCandidates(await client.search(hints), {
+      ...hints,
+      durationMs: current.hints.durationMs
+    });
     const candidates = storedCandidates(ranked);
     repository.putExternalMetadata(current.item.id, {
       expectedContentRevision: current.source.contentRevision,

@@ -128,3 +128,39 @@ test("embedded MusicBrainz recording IDs bypass fuzzy search", async () => {
   assert.equal(searches, 0);
   assert.equal(details, 1);
 });
+
+test("manual MusicBrainz search keeps blank artist and album optional", async () => {
+  const source = {
+    availability: "available", contentRevision: 1, durationSeconds: 279,
+    id: "source-93", itemId: "item-93", mediaKind: "audio",
+    path: "Music/Zero 7/Another Late Night- Mixed by Zero 7/'93 'Til Infinity.flac"
+  };
+  const item = { id: "item-93", metadata: {}, source, title: "'93 'Til Infinity" };
+  let requestedHints = null;
+  const service = createMusicBrainzMetadataService({
+    client: {
+      details: async () => ({}),
+      search: async (hints) => {
+        requestedHints = hints;
+        return [{
+          album: "93 'til Infinity", artist: "Souls of Mischief", durationMs: 279_000,
+          recordingId, releaseId, score: 100, title: "93 ’til Infinity"
+        }];
+      }
+    },
+    repository: {
+      getItem: () => item,
+      getSource: () => source,
+      listItems: () => [],
+      putExternalMetadata: (_id, value) => { item.metadata = { ...item.metadata, ...value.fields }; }
+    }
+  });
+
+  const result = await service.searchSource({
+    album: "", artist: "", query: "'93 'Til Infinity", sourceId: source.id
+  });
+
+  assert.deepEqual(requestedHints, { album: "", artist: "", title: "'93 'Til Infinity" });
+  assert.equal(result.candidates[0].artist, "Souls of Mischief");
+  assert.deepEqual(result.hints, { album: "", artist: "", title: "'93 'Til Infinity" });
+});

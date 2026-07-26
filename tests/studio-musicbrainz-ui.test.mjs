@@ -10,6 +10,8 @@ test("Studio exposes MusicBrainz review, local cover progress, and provider attr
   ]);
   assert.match(view, /Incorrect match\?/);
   assert.match(view, /Search MusicBrainz/);
+  assert.match(view, /No MusicBrainz matches found/);
+  assert.match(view, /musicMatchSearch = \{/);
   assert.match(view, /Cover Art Archive/);
   assert.match(view, /Downloading cover/);
   assert.match(api, /\/api\/music\/metadata\/apply/);

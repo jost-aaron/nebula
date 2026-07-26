@@ -52,6 +52,12 @@ interface StudioLibraryScope {
   tracks: MusicEntry[];
 }
 
+interface MusicMatchSearch {
+  album: string;
+  artist: string;
+  query: string;
+}
+
 const studioBrandMarkUrl = new URL(
   "../assets/branding/nebula-studio-eclipse-thin-groove.png",
   import.meta.url
@@ -351,7 +357,12 @@ const renderResumeDialog = (entry: MusicEntry, state: PlaybackHistoryEntry) => `
 const renderMusicMatchDialog = (
   entry: MusicEntry,
   candidates: MusicBrainzCandidate[],
-  { busy = false, error = "" }: { busy?: boolean; error?: string } = {}
+  {
+    busy = false,
+    error = "",
+    search = { album: entry.album, artist: entry.artist, query: entry.title },
+    searched = false
+  }: { busy?: boolean; error?: string; search?: MusicMatchSearch; searched?: boolean } = {}
 ) => `
   <section class="studio-resume-sheet studio-match-sheet" role="presentation">
     <div class="studio-resume-dialog studio-match-dialog" role="dialog" aria-modal="true" aria-labelledby="studio-match-title">
@@ -363,15 +374,17 @@ const renderMusicMatchDialog = (
         <p>Search recordings by title, artist, and album. Cover art is downloaded locally after a match.</p>
       </div>
       <form class="studio-match-search" data-studio-match-form>
-        <label><span>Title</span><input name="query" value="${escapeHtml(entry.title)}" maxlength="180" required /></label>
-        <label><span>Artist</span><input name="artist" value="${escapeHtml(entry.artist)}" maxlength="180" /></label>
-        <label><span>Album</span><input name="album" value="${escapeHtml(entry.album)}" maxlength="180" /></label>
+        <label><span>Title</span><input name="query" value="${escapeHtml(search.query)}" maxlength="180" required /></label>
+        <label><span>Artist</span><input name="artist" value="${escapeHtml(search.artist)}" maxlength="180" /></label>
+        <label><span>Album</span><input name="album" value="${escapeHtml(search.album)}" maxlength="180" /></label>
         <button type="submit" ${busy ? "disabled" : ""}>${renderStudioIcon(busy ? "LoaderCircle" : "Search")} ${busy ? "Searching…" : "Search MusicBrainz"}</button>
       </form>
       ${error ? `<p class="studio-match-error" role="alert">${escapeHtml(error)}</p>` : ""}
       <div class="studio-match-results" aria-live="polite">
         ${busy && candidates.length === 0 ? `<div class="studio-match-loading">${renderStudioIcon("LoaderCircle")}<span>Looking for likely recordings…</span></div>` : ""}
-        ${!busy && candidates.length === 0 ? `<p>No saved candidates yet. Adjust the fields above and search MusicBrainz.</p>` : candidates.map((candidate) => `
+        ${!busy && !error && candidates.length === 0 ? `<p>${searched
+          ? "No MusicBrainz matches found. Try the title by itself or add the correct artist."
+          : "No saved candidates yet. Adjust the fields above and search MusicBrainz."}</p>` : candidates.map((candidate) => `
           <article>
             <div>
               <strong>${escapeHtml(candidate.title)}</strong>
@@ -662,6 +675,8 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   let musicMatchCandidates: MusicBrainzCandidate[] = [];
   let musicMatchBusy = false;
   let musicMatchError = "";
+  let musicMatchSearch: MusicMatchSearch = { album: "", artist: "", query: "" };
+  let musicMatchSearched = false;
   const personalPlayback = options.personalPlayback !== false;
   const playbackDeviceId = createBrowserUuid();
   let libraryHasMore = false;
@@ -1376,7 +1391,9 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     dialogHost.hidden = false;
     dialogHost.innerHTML = renderMusicMatchDialog(selected, musicMatchCandidates, {
       busy: musicMatchBusy,
-      error: musicMatchError
+      error: musicMatchError,
+      search: musicMatchSearch,
+      searched: musicMatchSearched
     });
   };
 
@@ -1384,6 +1401,8 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     musicMatchCandidates = [];
     musicMatchBusy = false;
     musicMatchError = "";
+    musicMatchSearch = { album: "", artist: "", query: "" };
+    musicMatchSearched = false;
     dialogHost.hidden = true;
     dialogHost.innerHTML = "";
   };
@@ -1393,6 +1412,8 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     musicMatchBusy = true;
     musicMatchError = "";
     musicMatchCandidates = [];
+    musicMatchSearch = { album: selected.album, artist: selected.artist, query: selected.title };
+    musicMatchSearched = false;
     renderMusicMatch();
     try {
       musicMatchCandidates = (await listMusicBrainzCandidates(selected.path)).candidates;
@@ -1407,15 +1428,21 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   const runMusicSearch = async (form: HTMLFormElement) => {
     if (!selected || musicMatchBusy) return;
     const values = new FormData(form);
+    musicMatchSearch = {
+      album: String(values.get("album") ?? ""),
+      artist: String(values.get("artist") ?? ""),
+      query: String(values.get("query") ?? "")
+    };
+    musicMatchSearched = true;
     musicMatchBusy = true;
     musicMatchError = "";
     renderMusicMatch();
     try {
       musicMatchCandidates = (await searchMusicBrainz({
-        album: String(values.get("album") ?? ""),
-        artist: String(values.get("artist") ?? ""),
+        album: musicMatchSearch.album,
+        artist: musicMatchSearch.artist,
         path: selected.path,
-        query: String(values.get("query") ?? "")
+        query: musicMatchSearch.query
       })).candidates;
     } catch (error) {
       musicMatchError = error instanceof Error ? error.message : "MusicBrainz search failed.";
