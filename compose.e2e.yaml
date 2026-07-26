@@ -15,6 +15,7 @@ services:
       NEBULA_DATA_ROOT: /app/data
       NEBULA_REQUIRE_AUTH: "true"
       NEBULA_AUTH_ALLOW_LOCALHOST: "false"
+      NEBULA_STARTUP_SCAN_DELAY_MS: "0"
       NEBULA_VITE_ALLOWED_HOSTS: dashboard
 
   playwright:

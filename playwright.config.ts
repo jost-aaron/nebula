@@ -3,10 +3,13 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests/e2e",
   outputDir: "test-results/artifacts",
-  fullyParallel: true,
+  // The browser suite intentionally shares one local server, account fixture,
+  // playback history, and media catalog. Run it serially so one scenario
+  // cannot replace another scenario's active player or persisted browse state.
+  fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  workers: process.env.CI ? 1 : undefined,
   reporter: [["line"], ["html", { open: "never", outputFolder: "playwright-report" }]],
   expect: { timeout: 10_000 },
   use: {

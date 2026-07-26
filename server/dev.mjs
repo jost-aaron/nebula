@@ -61,6 +61,13 @@ import {
   createRuntimeTelemetry,
   createWorkerCheck
 } from "./observability/index.mjs";
+import {
+  createPartyAttachmentService,
+  createPartyEvents,
+  createPartyRepository,
+  createPartyService,
+  partyMigration
+} from "./party/index.mjs";
 
 const runtimeConfig = readRuntimeConfig();
 const runtimeTelemetry = createRuntimeTelemetry();
@@ -78,11 +85,26 @@ const accountStore = await createAccountStore({ database });
 const guestService = createGuestService({ accountStore });
 const tailscaleEnrollment = createTailscaleEnrollmentService();
 accountStore.setOwnerCreatedHook(() => guestService.revokeAll());
-applyDomainMigrations(database, [catalogMigration, catalogQueryIndexesMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, mediaLocationsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration, subtitleMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration, clusterOperationsMigration, clusterKeyRotationMigration, clusterFederationMigration]);
+applyDomainMigrations(database, [catalogMigration, catalogQueryIndexesMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, mediaLocationsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, partyMigration, mediaListsMigration, subtitleMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration, clusterOperationsMigration, clusterKeyRotationMigration, clusterFederationMigration]);
 const auditService = createAuditService({
   db: database,
   maxEvents: runtimeConfig.auditMaxEvents,
   retentionDays: runtimeConfig.auditRetentionDays
+});
+const partyRepository = createPartyRepository({ database });
+const partyAttachments = createPartyAttachmentService({
+  dataRoot: storage.dataRoot,
+  getAttachment: partyRepository.getAttachment,
+  getConversationAttachmentBytes: partyRepository.getConversationAttachmentBytes,
+  isConversationMember: partyRepository.isMember
+});
+await partyAttachments.initialize();
+const partyEvents = createPartyEvents({ isConversationMember: partyRepository.isMember });
+const partyService = createPartyService({
+  audit: auditService,
+  events: partyEvents,
+  listUsers: accountStore.listUsers,
+  repository: partyRepository
 });
 const clusterEnabled = process.env.NEBULA_CLUSTER_ENABLED === "true";
 const clusterRepository = createClusterRepository(database);
@@ -490,6 +512,7 @@ const handleApi = createApiHandler(storage, accountStore, authGuard, {
   libraryPermissions,
   mediaLists,
   onError: (error, fields) => runtimeTelemetry.recordError(error, fields),
+  party: { attachments: partyAttachments, events: partyEvents, service: partyService },
   playback: playbackService,
   playbackPlanner,
   playbackDelivery,
@@ -520,7 +543,7 @@ const enqueueScheduledScan = (reason) => jobsService.enqueue({
   type: "scan",
   payload: { reason, rootId: catalogRoot.id },
   dedupeKey: `library:${catalogRoot.id}`,
-  availableAt: Date.now() + (reason === "startup" ? 120_000 : 0)
+  availableAt: Date.now() + (reason === "startup" ? runtimeConfig.startupScanDelayMs : 0)
 });
 enqueueScheduledScan("startup");
 const libraryScanInterval = setInterval(() => enqueueScheduledScan("daily"), 24 * 60 * 60 * 1000);
@@ -587,6 +610,7 @@ const shutdown = async () => {
   clearInterval(jobHistoryInterval);
   clearInterval(libraryScanInterval);
   renditionCleanupScheduler.stop();
+  partyEvents.close();
   await new Promise((resolve) => httpServer.close(resolve));
   await jobsWorker.stop();
   await clusterPlayback?.shutdown();

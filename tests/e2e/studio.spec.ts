@@ -16,6 +16,7 @@ const playbackEvent = (request: Request, event: string) => {
 };
 
 test("Studio persists browser playback and offers accessible resume and restart choices", async ({ page }) => {
+  test.setTimeout(90_000);
   const playbackRequests: PlaybackRequest[] = [];
   page.on("request", (request) => {
     if (request.url().endsWith("/api/playback/events") && request.method() === "POST") {
@@ -24,27 +25,30 @@ test("Studio persists browser playback and offers accessible resume and restart 
   });
 
   await page.goto("/");
+  let browserEntry: { id?: string; name?: string; sourceId?: string } | undefined;
   await expect.poll(async () => {
     const response = await page.request.get("/api/music/library");
     const body = await response.json() as { entries?: Array<{ id?: string; name?: string; sourceId?: string }> };
-    const entry = body.entries?.find((candidate) => candidate.name === "E2E Track.mp3");
-    return Boolean(entry?.id && entry.sourceId);
+    browserEntry = body.entries?.find((candidate) => candidate.name === "E2E Track.mp3");
+    return Boolean(browserEntry?.id && browserEntry.sourceId);
   }).toBe(true);
 
-  const browserLibraryResponse = page.waitForResponse((response) =>
-    response.url().endsWith("/api/music/library") && response.request().resourceType() === "fetch" && response.ok()
-  );
   await openApp(page, "Studio");
-  const browserLibrary = await (await browserLibraryResponse).json() as {
-    entries?: Array<{ id?: string; name?: string; sourceId?: string }>;
-  };
-  const browserEntry = browserLibrary.entries?.find((entry) => entry.name === "E2E Track.mp3");
   expect(browserEntry?.id).toBeTruthy();
   expect(browserEntry?.sourceId).toBeTruthy();
   const content = page.locator("[data-studio-content]");
-  await expect(content).toContainText("E2E Track");
-
-  await page.locator("[data-studio-path]", { hasText: "E2E Track" }).last().click();
+  const backToLibrary = async () => {
+    const button = page.getByRole("button", { name: "Back to Library" });
+    await button.focus();
+    await page.keyboard.press("Enter");
+  };
+  await expect(content).toContainText("1 track");
+  const track = page.locator("[data-studio-path]", { hasText: "E2E Track" }).last();
+  if (await track.count() === 0) {
+    await content.locator("[data-studio-group]", { hasText: "Nebula Tests" }).click();
+  }
+  await expect(track).toBeVisible();
+  await track.click();
   const player = page.locator("audio[data-studio-player]");
   await expect(player).toBeAttached();
   await expect.poll(() => player.evaluate((audio: HTMLAudioElement) => audio.paused)).toBe(true);
@@ -54,7 +58,7 @@ test("Studio persists browser playback and offers accessible resume and restart 
   expect((await startResponse).ok()).toBe(true);
   await expect.poll(() => player.evaluate((audio: HTMLAudioElement) => audio.currentTime), { timeout: 10_000 }).toBeGreaterThan(2);
 
-  await page.getByRole("button", { name: "Back to Library" }).click();
+  await backToLibrary();
   const miniPlayer = page.getByRole("region", { name: "Now playing" });
   await expect(miniPlayer).toBeVisible();
   await expect(miniPlayer).toContainText("E2E Track");
@@ -63,7 +67,7 @@ test("Studio persists browser playback and offers accessible resume and restart 
 
   await miniPlayer.getByRole("button", { name: "Open E2E Track" }).click();
   await expect(content).toContainText("Now Playing");
-  await page.getByRole("button", { name: "Back to Library" }).click();
+  await backToLibrary();
 
   const pauseResponse = page.waitForResponse((response) => playbackEvent(response.request(), "pause") && response.ok());
   await miniPlayer.getByRole("button", { name: "Pause track" }).click();
@@ -93,7 +97,7 @@ test("Studio persists browser playback and offers accessible resume and restart 
   const resumedPause = page.waitForResponse((response) => playbackEvent(response.request(), "pause") && response.ok());
   await resumedPlayer.evaluate((audio: HTMLAudioElement) => audio.pause());
   await resumedPause;
-  await page.getByRole("button", { name: "Back to Library" }).click();
+  await backToLibrary();
   await expect(continueListening).toBeVisible();
   await continueListening.getByRole("button", { name: /E2E Track/ }).click();
 

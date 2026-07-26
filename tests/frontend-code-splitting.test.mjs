@@ -4,26 +4,31 @@ import test from "node:test";
 
 const read = (file) => readFile(new URL(file, import.meta.url), "utf8");
 
-test("Cinema and Studio load as lifecycle-safe app chunks", async () => {
-  const [main, cinema] = await Promise.all([
+test("Cinema, Studio, and Party load as lifecycle-safe app chunks", async () => {
+  const [main, cinema, party] = await Promise.all([
     read("../src/main.ts"),
-    read("../src/cinema/renderCinemaView.ts")
+    read("../src/cinema/renderCinemaView.ts"),
+    read("../src/party/renderPartyView.ts")
   ]);
 
   assert.doesNotMatch(main, /from "\.\/cinema\/renderCinemaView"/);
   assert.doesNotMatch(main, /from "\.\/studio\/renderStudioView"/);
   assert.match(main, /import\("\.\/cinema\/renderCinemaView"\)/);
   assert.match(main, /import\("\.\/studio\/renderStudioView"\)/);
+  assert.doesNotMatch(main, /from "\.\/party\/renderPartyView"/);
+  assert.match(main, /import\("\.\/party\/renderPartyView"\)/);
   assert.match(main, /const launchGeneration = \+\+activeAppLaunchGeneration/);
   assert.match(main, /launchGeneration !== activeAppLaunchGeneration/);
   assert.match(main, /activeAppLaunchGeneration \+= 1/);
   assert.match(main, /data-app-module-retry/);
   assert.match(main, /const dispose = mediaModule\.bindCinemaView/);
   assert.match(main, /const dispose = mediaModule\.bindStudioView/);
+  assert.match(main, /disposeActiveApp = partyModule\.bindPartyView/);
   assert.match(main, /mediaSurfaceCache\.set\("cinema", \{ dispose, element \}\)/);
   assert.match(main, /mediaSurfaceCache\.set\("studio", \{ dispose, element \}\)/);
   assert.match(main, /import "\.\/cinema\/cinemaBrand\.css"/);
   assert.doesNotMatch(cinema, /import "\.\/cinemaBrand\.css"/);
+  assert.match(party, /import "\.\/party\.css"/);
 });
 
 test("Cinema defers the HLS engine until an HLS delivery is attached", async () => {

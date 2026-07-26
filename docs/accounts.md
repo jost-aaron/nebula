@@ -29,6 +29,7 @@ Roles map to centralized capabilities:
 | Edit shared Cinema metadata or run identification | Yes | No |
 | Administer server | Yes | No |
 | Browse/play media libraries | All | Owner-selected libraries |
+| Use Party with enabled local accounts | Yes | Yes |
 
 The first account is always `owner`. Owners can create and enable/disable member
 accounts after setup. Version one does not support promoting another owner,
@@ -214,6 +215,9 @@ explicitly allowed origin, and no arbitrary origin is reflected.
   or only a selected set in Settings / Account. The same grant governs browse,
   stable-item lookup, playback state, planning, and delivery.
 - Search history is not persisted.
+- Party conversation membership, message history, read position, and unread
+  counts are per account in shared SQLite. Party is unavailable to guests and
+  service-token identities because they do not represent a local user.
 - Server URL and legacy API token remain device-local client settings. Native
   account session tokens are device-only Keychain items and are excluded from
   Nebula backups.
@@ -256,6 +260,8 @@ provide encrypted database-at-rest support.
 | Privilege escalation | Central route capabilities, server-side checks | Owner compromise grants full local administration |
 | Setup race | SQLite immediate transaction and unique owner invariant | Physical database access remains trusted |
 | CORS abuse | Explicit allowlist, API-only headers | A compromised allowed origin is trusted |
+| Party conversation/attachment IDOR | Membership checks on every list/read/send/upload/download/range operation | A compromised member session can read that member's conversations |
+| Party server or backup disclosure | Private data-root storage, no public paths, protected backup workflow | Party is not E2EE; the server and backup operator can read all content |
 
 ## Version-One Limitations
 
@@ -266,6 +272,8 @@ provide encrypted database-at-rest support.
 - One role per account; media permissions are library-level, with no folder- or
   item-level ACLs.
 - No encrypted database-at-rest support.
+- Party has no end-to-end encryption, federation, message deletion/retention
+  policy, or external push notifications.
 - Direct HTTP development cannot set a Secure cookie; production should use
   HTTPS and set `NEBULA_EXTERNAL_HTTPS=true` when TLS terminates before Nebula.
 - Studio queue/history and Search history are not server-persistent.

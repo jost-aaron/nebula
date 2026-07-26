@@ -95,13 +95,15 @@ The app has these main layers:
 8. `src/library/` owns the installed-app Library grid.
 9. `src/files/` owns the local content file browser UI.
 10. `src/studio/` owns the local music library and native audio playback UI.
-11. `src/account/` and `server/accountStore.mjs` own local accounts, sessions,
+11. `src/party/` and `server/party/` own local account messaging, membership,
+    live change hints, and protected attachments.
+12. `src/account/` and `server/accountStore.mjs` own local accounts, sessions,
     authorization, personal watchlists, and the account gate.
-12. `server/catalog/` owns stable media identities, indexed sources, metadata
+13. `server/catalog/` owns stable media identities, indexed sources, metadata
     records, scan reconciliation, and compatibility projections.
-13. `server/playback/` owns per-user playback state, sessions, idempotent events,
+14. `server/playback/` owns per-user playback state, sessions, idempotent events,
     and Continue Watching queries.
-14. `server/cluster/` owns disabled-by-default shard trust, signed path-free
+15. `server/cluster/` owns disabled-by-default shard trust, signed path-free
     manifests, exact source identity, and the coordinator catalog projection.
 
 The UI is currently framework-free TypeScript. DOM is rendered with template
@@ -153,6 +155,9 @@ Mouse behavior:
   progress, cancel, resumable 64 MB chunks for files larger than 64 MB, and
   iOS-compatible Server URL/API token routing.
 - `Settings` and `Search` are ready shell/system apps.
+- `Party` is a ready local messaging app for enabled accounts with direct/group
+  conversations, unread state, SSE resynchronization, and protected
+  attachments. It is server-readable and does not claim end-to-end encryption.
 - First-run owner setup, sign-in, identity, Account Settings, member
   creation/disable, password changes, and session revocation are ready.
 - The media backend indexes the shared content root into stable catalog UUIDs,
@@ -171,7 +176,7 @@ Mouse behavior:
   Phase 5 has persistent owner controls for shard display aliases, scheduling
   priority, stream/live-transcode capacity, and maintenance drain. Readiness,
   key rotation, mixed-version rolling tests, and real-tailnet acceptance remain.
-- `Arcade` and `Party` are still planned placeholders.
+- `Arcade` is still a planned placeholder.
 
 ## Content And Media
 
@@ -223,6 +228,12 @@ Browser checks:
 - GPU status shows either `WebGPU · ...` or `Canvas fallback`.
 - Search, Settings, Files, and Cinema are available from the Applications strip.
 - Studio is available from the Applications strip as the music app.
+- Party opens from the Applications strip for enabled owner/member accounts;
+  guests and service identities cannot use it.
+- Two accounts can resolve one canonical DM, exchange messages in both
+  directions, and observe unread/read state without reload.
+- Party attachment upload/download and byte ranges reauthorize conversation
+  membership; the mobile layout at 390x844 has no horizontal overflow.
 - The Applications strip scrolls horizontally, including when focus moves to an
   off-screen app tile.
 - App selection follows hover, clamps at both ends for arrow/scroll navigation,
@@ -254,6 +265,7 @@ Media platform changes must also preserve:
 - `docs/arcade-moonlight.md`
 - `docs/webgpu-renderer.md`
 - `docs/files.md`
+- `docs/party.md`
 - `docs/library.md`
 - `docs/search.md`
 - `docs/settings-diagnostics.md`

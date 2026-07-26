@@ -7,9 +7,10 @@ eventually including a native-style video player surface. The current app is a
 browser-hosted prototype with a WebGPU background renderer, app registry, shell
 navigation, Search, Library, Settings/Diagnostics, detail panels, and animated
 full-screen app launch surfaces. It also has product-shaped Files, Cinema, and
-Studio apps: Files manages local ignored content with resumable uploads and iOS
-client support, Cinema scans video into a Plex-like Movies/TV Shows library, and
-Studio scans local audio into a dedicated music player.
+Studio, and Party apps: Files manages local ignored content with resumable
+uploads and iOS client support, Cinema scans video into a Plex-like Movies/TV
+Shows library, Studio scans local audio into a dedicated music player, and Party
+provides private messaging between enabled accounts on the same Nebula server.
 
 Nebula starts with deliberate local owner setup and requires an account for the
 dashboard. Browser sessions use cookies and CSRF protection; Capacitor uses
@@ -25,6 +26,10 @@ Owners also have a bounded, redacted Activity history for account, authorization
 scan/job, backup, and other server-administration actions.
 Accounts can keep ordered video and audio playlists, while owners can publish
 shared collections whose visible items follow each member's library grants.
+Party supports canonical direct conversations, managed groups, per-account
+unread state, local live updates, and membership-protected attachments. It is
+not end-to-end encrypted; see [docs/party.md](docs/party.md) before exposing it
+beyond trusted localhost.
 
 ## Local development
 
@@ -109,6 +114,8 @@ without either configuration source.
 - `src/cinema/` - Plex-like local video library and lazy web player.
 - `src/studio/` - local music library and native audio player.
 - `src/files/` - local content file browser UI.
+- `src/party/` - responsive local messaging view, SSE resynchronization, and
+  attachment interaction.
 - `src/api/` - shared API base URL, token, fetch, and XHR helpers.
 - `src/account/` - account gate, identity menu, profile, security, member, and
   device/session UI.
@@ -120,6 +127,8 @@ without either configuration source.
 - `server/playbackPolicy/` - persisted generated-stream limits, race-safe
   admission accounting, aggregate status, and stable policy denials.
 - `server/audit/` - structured audit migration, retention, redaction, and API.
+- `server/party/` - Party migration, repository/service/routes, scoped SSE, and
+  private attachment storage.
 - `content/` - ignored local content root for Files and Cinema.
 - `ios/` - Capacitor iOS shell.
 - `scripts/ios-sync*.sh` - Docker-first Capacitor web asset sync helpers.
@@ -150,6 +159,7 @@ Start with:
 - [docs/arcade-moonlight.md](docs/arcade-moonlight.md)
 - [docs/webgpu-renderer.md](docs/webgpu-renderer.md)
 - [docs/files.md](docs/files.md)
+- [docs/party.md](docs/party.md)
 - [docs/library.md](docs/library.md)
 - [docs/search.md](docs/search.md)
 - [docs/settings-diagnostics.md](docs/settings-diagnostics.md)

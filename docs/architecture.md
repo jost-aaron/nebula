@@ -54,6 +54,7 @@ flowchart TD
   Search["src/search"]
   Library["src/library"]
   Files["src/files"]
+  Party["src/party"]
   Account["src/account"]
   Activity["src/activity-admin"]
   Server["server/dev.mjs"]
@@ -74,6 +75,7 @@ flowchart TD
   Search --> Main
   Library --> Main
   Files --> Main
+  Party --> Main
   Account --> Main
   Activity --> Main
   Registry --> Search
@@ -83,6 +85,7 @@ flowchart TD
   Files --> Server
   Cinema --> Server
   Studio --> Server
+  Party --> Server
   Styles --> Shell
   Styles --> Canvas
 ```
@@ -194,6 +197,15 @@ flowchart TD
 - Uses the shared API URL helper so file APIs can move to a separate server
   origin later.
 
+`src/party/`
+
+- Owns Party's lazy-loaded responsive conversation UI, controller/keyboard
+  behavior, bounded client state, upload progress, and SSE reconnect/resync
+  lifecycle.
+- Uses `src/api/partyApi.ts` and `src/shared/partyTypes.ts`; it renders escaped
+  text and treats attachment URLs as authenticated browser objects, not public
+  storage paths.
+
 `server/dev.mjs`
 
 - Wraps Vite middleware.
@@ -268,8 +280,9 @@ flowchart TD
 
 `server/backup/` and `server/observability/`
 
-- Export integrity-checked admin backups of the shared SQLite database plus
-  catalog-referenced metadata cache files without copying `content/`.
+- Export integrity-checked admin backups of the shared SQLite database,
+  catalog-referenced metadata cache files, and every referenced Party
+  attachment without copying `content/`.
 - Keep restore explicitly offline and staged into alternate roots so live
   SQLite state is never overwritten through an online request.
 - Expose public liveness and opaque readiness endpoints while protecting
@@ -346,6 +359,19 @@ flowchart TD
 
 - Owns local file browsing, creation, upload, resumable upload, rename, and
   delete routes.
+
+`server/party/`
+
+- Owns the centrally composed `party-v1` migration, canonical DMs, group
+  membership/roles, message sequencing/idempotency, keyset pagination, per-user
+  read state, and the `/api/party` route surface.
+- Publishes content-free, membership-filtered SSE change hints with bounded
+  connections and heartbeats; clients resynchronize through normal authorized
+  reads.
+- Stores validated attachment bytes beneath the private data root, separate
+  from `content/`, and reauthorizes upload, GET, HEAD, download, and byte ranges.
+- Defines an account-membership privacy boundary, not end-to-end encryption.
+  See `docs/party.md`.
 
 `server/http.mjs`
 

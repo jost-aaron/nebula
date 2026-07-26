@@ -409,6 +409,8 @@ const loadMediaApp = (appId: "cinema" | "studio") =>
     ? import("./cinema/renderCinemaView")
     : import("./studio/renderStudioView");
 
+const loadPartyApp = () => import("./party/renderPartyView");
+
 const bindSettingsTabs = (container: ParentNode, initialSection = "all") => {
   const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>("[data-diagnostic-tab]"));
   const sections = Array.from(container.querySelectorAll<HTMLElement>("[data-diagnostic-section]"));
@@ -566,6 +568,7 @@ const launchApp = async (app: DashboardApp, options: { settingsSection?: string 
   const isFilesApp = app.id === "files";
   const isCinemaApp = app.id === "cinema";
   const isStudioApp = app.id === "studio";
+  const isPartyApp = app.id === "party";
 
   const launchGeneration = ++activeAppLaunchGeneration;
   deactivateActiveApp();
@@ -636,6 +639,42 @@ const launchApp = async (app: DashboardApp, options: { settingsSection?: string 
     if (launchGeneration !== activeAppLaunchGeneration || shellState.activeAppId !== app.id) return;
   }
 
+  let partyModule: Awaited<ReturnType<typeof loadPartyApp>> | null = null;
+  if (isPartyApp) {
+    appSurface.hidden = false;
+    shellRoot.inert = true;
+    appSurface.setAttribute("aria-label", app.name);
+    appSurface.className = "app-surface launching party-app-surface";
+    appSurface.style.setProperty("--accent", app.accent);
+    appSurface.innerHTML = `
+      <section class="app-module-state" role="status" aria-live="polite" aria-busy="true">
+        <span class="app-module-spinner" aria-hidden="true"></span>
+        <strong>Opening ${app.name}</strong>
+        <small>Connecting to local conversations&hellip;</small>
+      </section>
+    `;
+    try {
+      partyModule = await loadPartyApp();
+    } catch {
+      if (launchGeneration !== activeAppLaunchGeneration || shellState.activeAppId !== app.id) return;
+      appSurface.innerHTML = `
+        <section class="app-module-state is-error" role="alert">
+          <strong>${app.name} could not be opened</strong>
+          <small>The app module did not load. You can retry without reloading the dashboard.</small>
+          <div>
+            <button type="button" data-app-module-retry>Retry</button>
+            <button type="button" data-app-module-close>Close</button>
+          </div>
+        </section>
+      `;
+      appSurface.querySelector<HTMLButtonElement>("[data-app-module-retry]")?.addEventListener("click", () => void launchApp(app), { once: true });
+      appSurface.querySelector<HTMLButtonElement>("[data-app-module-close]")?.addEventListener("click", closeActiveApp, { once: true });
+      appSurface.classList.add("open");
+      return;
+    }
+    if (launchGeneration !== activeAppLaunchGeneration || shellState.activeAppId !== app.id) return;
+  }
+
   const body = isSearchApp
     ? renderSearchView(availableApps, "app")
     : isSettingsApp
@@ -646,6 +685,8 @@ const launchApp = async (app: DashboardApp, options: { settingsSection?: string 
           ? mediaModule && "renderCinemaView" in mediaModule ? mediaModule.renderCinemaView() : ""
           : isStudioApp
             ? mediaModule && "renderStudioView" in mediaModule ? mediaModule.renderStudioView() : ""
+            : isPartyApp
+              ? partyModule?.renderPartyView() ?? ""
     : `
       <section class="app-window-body">
         <div>
@@ -665,9 +706,9 @@ const launchApp = async (app: DashboardApp, options: { settingsSection?: string 
   appSurface.hidden = false;
   shellRoot.inert = true;
   appSurface.setAttribute("aria-label", app.name);
-  appSurface.className = `app-surface launching ${isSearchApp ? "search-app-surface" : ""} ${isSettingsApp ? "settings-app-surface" : ""} ${isFilesApp ? "files-app-surface" : ""} ${isCinemaApp ? "cinema-app-surface" : ""} ${isStudioApp ? "studio-app-surface" : ""}`;
+  appSurface.className = `app-surface launching ${isSearchApp ? "search-app-surface" : ""} ${isSettingsApp ? "settings-app-surface" : ""} ${isFilesApp ? "files-app-surface" : ""} ${isCinemaApp ? "cinema-app-surface" : ""} ${isStudioApp ? "studio-app-surface" : ""} ${isPartyApp ? "party-app-surface" : ""}`;
   appSurface.style.setProperty("--accent", app.accent);
-  appSurface.innerHTML = isCinemaApp || isStudioApp
+  appSurface.innerHTML = isCinemaApp || isStudioApp || isPartyApp
     ? body
     : `
       <article class="app-window ${isSearchApp ? "search-window" : ""} ${isSettingsApp ? "settings-window" : ""} ${isFilesApp ? "files-window" : ""}">
@@ -724,6 +765,14 @@ const launchApp = async (app: DashboardApp, options: { settingsSection?: string 
       }
     });
     document.querySelector<HTMLButtonElement>("[data-file-close]")?.addEventListener("click", closeActiveApp);
+  }
+
+  if (isPartyApp) {
+    if (!partyModule || !accountSession.user) return;
+    disposeActiveApp = partyModule.bindPartyView(appSurface, {
+      currentUserId: accountSession.user.id,
+      onClose: closeActiveApp
+    });
   }
 
   if (isCinemaApp) {

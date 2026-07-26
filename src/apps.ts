@@ -51,10 +51,10 @@ export const dashboardApps: DashboardApp[] = [
     id: "party",
     name: "Party",
     kind: "social",
-    status: "planned",
+    status: "ready",
     accent: "#ff7bbf",
-    icon: "UsersRound",
-    description: "Presence, friends, voice, and shared watch sessions."
+    icon: "MessageCircleMore",
+    description: "Private local conversations, groups, messages, and attachments for Nebula accounts."
   },
   {
     id: "settings",

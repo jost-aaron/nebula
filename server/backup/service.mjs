@@ -56,10 +56,29 @@ export const createBackupService = ({ database, databasePath, dataRoot, backupRo
     const schema = validateDatabase(resolveInside(bundleRoot, DATABASE_ENTRY), { requiredTables });
     const cacheEntries = manifest.files.filter(({ role }) => role === "metadata-cache");
     const declared = new Set(cacheEntries.map(({ databaseReference }) => databaseReference));
+    const partyEntries = manifest.files.filter(({ role }) => role === "party-attachment");
+    const declaredPartyAttachments = new Set(partyEntries.map(({ databaseReference }) => databaseReference));
     const snapshot = new DatabaseSync(resolveInside(bundleRoot, DATABASE_ENTRY), { readOnly: true });
     try {
       for (const { local_path: reference } of snapshot.prepare("SELECT local_path FROM media_artwork WHERE local_path != ''").all()) {
         if (!declared.has(reference)) throw new BackupError("cache_incomplete", "Backup omits a referenced cached metadata file.");
+      }
+      const expectedPartyAttachments = new Map(snapshot.prepare(
+        "SELECT storage_key, size_bytes, sha256 FROM party_attachments ORDER BY storage_key"
+      ).all().map((row) => [row.storage_key, row]));
+      for (const storageKey of expectedPartyAttachments.keys()) {
+        if (!declaredPartyAttachments.has(storageKey)) {
+          throw new BackupError("party_attachments_incomplete", "Backup omits a referenced Party attachment.");
+        }
+      }
+      if (partyEntries.length !== expectedPartyAttachments.size || partyEntries.some((entry) =>
+        !expectedPartyAttachments.has(entry.databaseReference)
+        || entry.path !== `party-attachments/${entry.databaseReference}`
+        || entry.sourceDataPath !== `party-attachments/${entry.databaseReference}`
+        || entry.size !== expectedPartyAttachments.get(entry.databaseReference).size_bytes
+        || entry.sha256 !== expectedPartyAttachments.get(entry.databaseReference).sha256
+      )) {
+        throw new BackupError("invalid_party_attachments", "Backup contains an invalid Party attachment entry.");
       }
     } finally { snapshot.close(); }
     return { manifest, schema };
@@ -92,6 +111,37 @@ export const createBackupService = ({ database, databasePath, dataRoot, backupRo
           await mkdir(path.dirname(destination), { recursive: true });
           await copyFile(source.absolutePath, destination, constants.COPYFILE_EXCL);
           files.push({ path: bundlePath, role: "metadata-cache", databaseReference: reference, sourceDataPath: source.dataPath, size: source.size, sha256: await sha256File(destination, signal) });
+        }
+        const partyAttachments = snapshot.prepare(
+          "SELECT storage_key, size_bytes, sha256 FROM party_attachments ORDER BY storage_key"
+        ).all();
+        for (const {
+          storage_key: storageKey,
+          size_bytes: expectedSize,
+          sha256: expectedSha256
+        } of partyAttachments) {
+          throwIfAborted(signal);
+          const reference = `party-attachments/${storageKey}`;
+          const source = await resolveReferencedCache(dataRoot, reference);
+          if (source.dataPath !== reference) {
+            throw new BackupError("unsafe_party_attachment", "A Party attachment reference does not match its protected storage path.");
+          }
+          const bundlePath = `party-attachments/${storageKey}`;
+          const destination = resolveInside(stagingRoot, bundlePath);
+          await mkdir(path.dirname(destination), { recursive: true });
+          await copyFile(source.absolutePath, destination, constants.COPYFILE_EXCL);
+          const checksum = await sha256File(destination, signal);
+          if (source.size !== expectedSize || checksum !== expectedSha256) {
+            throw new BackupError("party_attachment_corrupt", "A Party attachment does not match its database metadata.");
+          }
+          files.push({
+            path: bundlePath,
+            role: "party-attachment",
+            databaseReference: storageKey,
+            sourceDataPath: source.dataPath,
+            size: source.size,
+            sha256: checksum
+          });
         }
       } finally { snapshot.close(); }
       const manifest = { backupId, createdAt: now().toISOString(), databaseFile: path.basename(databasePath), format: BACKUP_FORMAT, formatVersion: BACKUP_FORMAT_VERSION, files, migrations: schema.migrations, includesContentMedia: false };
@@ -142,13 +192,25 @@ export const createBackupService = ({ database, databasePath, dataRoot, backupRo
     try {
       await atomicNoClobberFile(resolveInside(bundleRoot, DATABASE_ENTRY), destinationDatabasePath);
       written.push(destinationDatabasePath);
-      if (restoreMetadataCache) for (const entry of manifest.files.filter(({ role }) => role === "metadata-cache")) {
+      const restoredMetadata = [];
+      const restoredPartyAttachments = [];
+      const restorable = manifest.files.filter(({ role }) =>
+        (restoreMetadataCache && role === "metadata-cache") || role === "party-attachment"
+      );
+      for (const entry of restorable) {
         throwIfAborted(signal);
         const destination = resolveInside(destinationDataRoot, entry.sourceDataPath);
         await atomicNoClobberFile(resolveInside(bundleRoot, entry.path), destination);
         written.push(destination);
+        if (entry.role === "metadata-cache") restoredMetadata.push(destination);
+        else restoredPartyAttachments.push(destination);
       }
-      return { backupId, databasePath: destinationDatabasePath, metadataCacheFiles: written.length - 1 };
+      return {
+        backupId,
+        databasePath: destinationDatabasePath,
+        metadataCacheFiles: restoredMetadata.length,
+        partyAttachmentFiles: restoredPartyAttachments.length
+      };
     } catch (error) {
       await Promise.all(written.map((file) => rm(file, { force: true })));
       throw error;

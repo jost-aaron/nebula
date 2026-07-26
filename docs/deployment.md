@@ -24,9 +24,10 @@ runs as an explicit UID/GID, and checks liveness. No image is published.
   on them. Direct byte-range playback may still work when conversion does not.
 - Three host directories on one durable host: content, data, and backups.
   Content contains user media and Files uploads. Data contains `nebula.sqlite`,
-  WAL state, settings, catalog state, artwork metadata, and disposable delivery
-  cache (including the embedded Vite cache). Backups contain database/metadata
-  bundles but **never media**.
+  WAL state, settings, catalog state, artwork metadata, private Party
+  attachments, and disposable delivery cache (including the embedded Vite
+  cache). Backups contain database/metadata bundles and Party attachments but
+  **never Files/Cinema/Studio content media**.
 
 ## Operator CLIs and fresh-host install
 
@@ -175,6 +176,12 @@ Secure when created, rotated, and cleared. This explicit setting does not trust
 `NEBULA_VITE_HMR=false` outside development and list only exact external
 hostnames in `NEBULA_VITE_ALLOWED_HOSTS`. Wildcards, URL values, port-qualified
 values, and parent-domain suffixes are rejected.
+
+Party live updates use a long-lived authenticated `text/event-stream` response.
+Configure the proxy to disable response buffering for that route, preserve
+cookies/authorization headers, and allow idle connections beyond the heartbeat
+interval. Do not cache `/api/party/*`. HTTPS is mandatory outside trusted
+localhost because Party is not end-to-end encrypted.
 
 For direct LAN evaluation, set `NEBULA_BIND_ADDRESS=0.0.0.0`, allow only the
 chosen TCP port in the host firewall, and connect to
@@ -447,10 +454,12 @@ disk independently because backups exclude content.
 
 Owners or a service admin can create and inspect online backup bundles through
 the authenticated `/api/admin/backups` API (there is not yet a dedicated backup
-UI). A bundle contains a consistent SQLite copy and catalog-referenced metadata
-cache, with a versioned manifest, sizes, and SHA-256 hashes. It excludes content media,
-resumable upload partials, delivery cache, Keychain credentials, and arbitrary
-host paths. Protect the bundle as a secret because SQLite contains password
+UI). A bundle contains a consistent SQLite copy, catalog-referenced metadata
+cache, and every database-referenced Party attachment, with a versioned
+manifest, sizes, and SHA-256 hashes. It excludes Files/Cinema/Studio content
+media, resumable upload partials, stale Party upload temporaries, delivery
+cache, Keychain credentials, and arbitrary host paths. Protect the bundle as a
+secret because SQLite contains password
 verifiers, hashed sessions, account metadata, audit history, and reversible
 server settings such as the TMDB credential.
 
@@ -508,7 +517,8 @@ over the current data root:
 6. Mount the staged root in a disposable Compose project on a free loopback port,
    with a copied deterministic/readonly content snapshot. Confirm `/readyz`,
    owner sign-in, account/member state, catalog, playback state, audit history,
-   and backup listing. Do not point this rehearsal at the live content path.
+   Party history/attachment download, and backup listing. Do not point this
+   rehearsal at the live content path.
 7. Change only `NEBULA_DATA_PATH` to the staged root and start the normal project.
    Keep the old root untouched for rollback.
 

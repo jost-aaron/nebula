@@ -17,11 +17,13 @@ import { createRenditionPolicyRoutes } from "./renditionPolicy/routes.mjs";
 import { createTailscaleEnrollmentRoutes } from "./tailscaleEnrollment.mjs";
 import { createClusterAdminRoutes, createClusterPlaybackRoutes } from "./cluster/index.mjs";
 import { createMediaLocationsRoutes } from "./mediaLocations/index.mjs";
+import { createPartyRoutes } from "./party/index.mjs";
 
 export const createApiHandler = (storage, accountStore, authGuard, options = {}) => {
   const routeHandlers = [
     createAccountRoutes(accountStore, authGuard, options.libraryPermissions, options.audit, options.guestService),
     ...(options.audit ? [createAuditRoutes(options.audit)] : []),
+    ...(options.party ? [createPartyRoutes(options.party)] : []),
     ...(options.backup ? [createBackupRoutes(options.backup, options.audit)] : []),
     ...(options.playbackPolicy ? [createPlaybackPolicyRoutes(options.playbackPolicy)] : []),
     ...(options.transcodeAcceleration ? [createAccelerationRoutes(options.transcodeAcceleration)] : []),
@@ -58,7 +60,7 @@ export const createApiHandler = (storage, accountStore, authGuard, options = {})
           name: "Nebula Server",
           status: "online",
           serverTime: new Date().toISOString(),
-          capabilities: ["audit-history", "background-jobs", "catalog", "cinema-library", "cinema-identify", "collections", "files", "hardware-transcode", "library-permissions", "metadata-editing", "music-identify", "music-library", "persistent-renditions", "scheduled-renditions", "rendition-storage-policy", "playback-delivery", "playback-policy", "playback-state", "playlists", "probe", "rendition-profiles", "subtitles"]
+          capabilities: ["audit-history", "background-jobs", "catalog", "cinema-library", "cinema-identify", "collections", "files", "hardware-transcode", "library-permissions", "metadata-editing", "music-identify", "music-library", "party-messaging", "persistent-renditions", "scheduled-renditions", "rendition-storage-policy", "playback-delivery", "playback-policy", "playback-state", "playlists", "probe", "rendition-profiles", "subtitles"]
         });
         return true;
       }

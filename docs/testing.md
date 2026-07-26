@@ -352,6 +352,18 @@ owner-only collection mutation, playlist cross-user isolation, library grant
 filtering, and path-free API projections. Cinema and Studio source contracts
 cover focused stable-ID save controls and 390×844 responsive behavior.
 
+Party coverage includes strict/idempotent migration, canonical DM
+deduplication, minimal enabled-account discovery, group role enforcement,
+content-free audit records, message idempotency/ordering/keyset pagination,
+unread isolation, read-position clamping, cross-account denial, bounded SSE
+membership/teardown, upload quota/type/signature/UTF-8 checks, abort and commit
+cleanup, path containment, and membership-protected GET/HEAD/range delivery.
+Run the focused server suites with:
+
+```sh
+docker compose run --rm dashboard node --test tests/server-party*.test.mjs
+```
+
 ## API Smoke Checks
 
 ```sh
@@ -466,6 +478,17 @@ Check:
 - Cinema does not show MP3, FLAC, M4A, WAV, AAC, or OGG files as Cinema titles.
 - Studio opens the local music browser and shows supported audio from
   `content/`.
+- Party opens for enabled owner/member accounts but not guests or service
+  identities. Resolving the same owner/member DM in either direction returns
+  one conversation.
+- Party exchanges messages in both directions, updates the other account
+  through SSE without carrying content in event frames, and keeps unread state
+  per account.
+- Party group owners can create a group and manage roles/membership; ordinary
+  members cannot mutate group administration.
+- Party uploads a small text/image fixture with progress, renders a safe
+  attachment card, and downloads identical authorized bytes. A non-member
+  attachment request and range request return not found.
 - Studio groups tracks by artist first, then album; untagged tracks remain
   individual tiles.
 - Studio search filters tracks by title, artist, album, folder, and genre.
@@ -610,6 +633,16 @@ wait only for bounded forward progress and validate the resume/restart positions
 reported by the app. If the pinned headless Chromium image loses MP3 playback
 support, the Studio scenario fails explicitly at `HTMLMediaElement.play()`; it
 must not be marked passed by mocking media time or playback events.
+
+The Party owner project opens a second browser context from the setup-created
+member storage state. It creates a uniquely suffixed DM/group, sends in both
+directions, waits for live resynchronization, uploads/downloads a real UTF-8
+fixture, and checks the 390x844 list/thread transition plus Escape teardown.
+Narrow it with:
+
+```sh
+./scripts/test-e2e.sh --project=owner --grep "Party"
+```
 
 ## iOS Safe-Area Test
 

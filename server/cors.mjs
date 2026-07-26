@@ -1,5 +1,5 @@
 const apiMethods = "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS";
-const apiHeaders = "authorization,content-type,range,x-nebula-csrf";
+const apiHeaders = "authorization,content-type,range,x-nebula-csrf,x-nebula-file-name";
 const defaultAllowedOrigins = [
   "capacitor://localhost",
   "http://localhost:5173",

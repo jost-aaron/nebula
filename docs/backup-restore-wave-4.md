@@ -1,9 +1,10 @@
 # Wave 4 Backup And Restore Handoff
 
 Wave 4 adds an isolated backup domain under `server/backup/`. It provides a
-versioned, integrity-checked export of Nebula's shared SQLite database and any
-catalog artwork cache files referenced by `media_artwork.local_path`. It never
-copies `content/`, upload partials, delivery caches, or arbitrary host paths.
+versioned, integrity-checked export of Nebula's shared SQLite database, catalog
+artwork cache files referenced by `media_artwork.local_path`, and attachment
+blobs referenced by `party_attachments.storage_key`. It never copies `content/`,
+upload partials, delivery caches, or arbitrary host paths.
 
 ## Service boundary
 
@@ -35,6 +36,7 @@ Each backup is a directory under the injected backup root:
   manifest.json
   database/nebula.sqlite
   metadata-cache/<catalog-referenced relative paths>
+  party-attachments/<server-generated sharded storage keys>
 ```
 
 The manifest identifies `nebula-backup` format version 1, creation time,
@@ -45,10 +47,12 @@ server settings, so backup storage must be protected like the live data volume.
 Errors never include database rows, credentials, host paths, or SQLite error
 details in user-facing messages.
 
-Cached files are accepted only when their canonical real path remains under the
-injected data root and they are regular files. Bundle-relative paths are checked
-against traversal. Missing or unsafe references fail the backup rather than
-silently producing an incomplete export.
+Cached files and Party attachments are accepted only when their canonical real
+path remains under the injected data root and they are regular files.
+Bundle-relative paths and Party's generated storage-key grammar are checked
+against traversal. Missing, extra, unsafe, or checksum-mismatched Party
+attachments fail inspection rather than silently producing an incomplete
+private-message export.
 
 ## Authorization and routing integration requests
 
@@ -70,9 +74,14 @@ changed. The integration owner should:
 ## Verification
 
 Focused coverage lives in `tests/server-backup.test.mjs` and proves online WAL
-capture, account/watchlist/catalog/playback/jobs/probe retention, migration
-metadata, cache inclusion and restore, tamper rejection, no-clobber behavior,
-and cancellation cleanup.
+capture, account/watchlist/catalog/playback/jobs/probe/Party retention,
+migration metadata, cache and referenced Party attachment inclusion/restore,
+tamper or omission rejection, no-clobber behavior, and cancellation cleanup.
+
+Party history is retained indefinitely in version one, and its attachments are
+included in bundles even though shared `content/` media is not. Treat backups as
+private message archives. A staged recovery acceptance pass must open Party as
+two restored members and download a referenced attachment before promotion.
 
 Run only through Docker Compose:
 

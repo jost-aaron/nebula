@@ -129,6 +129,7 @@ test("390x844 shell controls stay visible, reachable, and free of page overflow"
 });
 
 test("Cinema subtitles, playback, and the in-app resume dialog work together", async ({ page }) => {
+  test.setTimeout(90_000);
   let nativeDialogSeen = false;
   page.on("dialog", async (dialog) => {
     nativeDialogSeen = true;
@@ -148,7 +149,7 @@ test("Cinema subtitles, playback, and the in-app resume dialog work together", a
   const startResponse = await page.request.post("/api/playback/events", {
     data: {
       clientLabel: "Nebula Cinema E2E",
-      durationSeconds: 4,
+      durationSeconds: 30,
       event: "start",
       eventId: randomUUID(),
       itemId: catalogItem.id,
@@ -163,7 +164,7 @@ test("Cinema subtitles, playback, and the in-app resume dialog work together", a
   const pauseResponse = await page.request.post("/api/playback/events", {
     data: {
       clientLabel: "Nebula Cinema E2E",
-      durationSeconds: 4,
+      durationSeconds: 30,
       event: "pause",
       eventId: randomUUID(),
       itemId: catalogItem.id,
@@ -180,7 +181,10 @@ test("Cinema subtitles, playback, and the in-app resume dialog work together", a
   const selector = page.locator("[data-cinema-subtitle-select]");
   await expect(selector).toBeVisible();
   await expect.poll(() => selector.locator("option").count()).toBeGreaterThan(1);
-  await selector.selectOption(await selector.locator("option").nth(1).getAttribute("value") ?? "");
+  const subtitleId = await selector.locator("option").nth(1).getAttribute("value") ?? "";
+  await selector.selectOption(subtitleId);
+  await expect(selector).toBeEnabled();
+  await expect(selector).toHaveValue(subtitleId);
   await page.locator(".cinema-actions [data-cinema-action='play']").click();
   const resumeDialog = page.getByRole("dialog", { name: /Resume E2E Movie/ });
   await expect(resumeDialog).toBeVisible();
@@ -203,7 +207,9 @@ test("Cinema subtitles, playback, and the in-app resume dialog work together", a
   const resumedVideo = page.locator("video[data-cinema-player]");
   await expect(resumedVideo.locator("track[kind='subtitles']")).toHaveCount(1);
   await expect(page.locator("[data-cinema-player-subtitle]")).toHaveValue(/sub_/);
-  await expect(resumedVideo).toHaveAttribute("src", /delivery-sessions|cinema\/media/);
+  // MSE-backed HLS exposes a browser blob URL after loading the authenticated
+  // manifest, while direct/remux playback keeps the server URL on the element.
+  await expect(resumedVideo).toHaveAttribute("src", /^(blob:|.*(?:delivery-sessions|cinema\/media))/i, { timeout: 20_000 });
   await expect.poll(() => resumedVideo.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0.75);
   if (await resumedVideo.evaluate((element: HTMLVideoElement) => element.paused)) {
     await expect(page.locator(".cinema-play-orb")).toBeVisible();

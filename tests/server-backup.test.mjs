@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -19,6 +20,7 @@ import { mediaListsMigration } from "../server/mediaLists/index.mjs";
 import { subtitleMigration } from "../server/subtitles/index.mjs";
 import { renditionPolicyMigrations } from "../server/renditionPolicy/index.mjs";
 import { mediaLocationsMigration } from "../server/mediaLocations/index.mjs";
+import { partyMigration } from "../server/party/index.mjs";
 import {
   clusterFederationMigration, clusterKeyRotationMigration, clusterMigration, clusterOperationsMigration,
   createClusterRepository, createClusterTrustService
@@ -34,6 +36,7 @@ const fixture = async (t) => {
   applyDomainMigrations(database, [
     catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, mediaLocationsMigration,
     libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration,
+    partyMigration,
     subtitleMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration,
     clusterOperationsMigration, clusterKeyRotationMigration, clusterFederationMigration
   ]);
@@ -64,6 +67,28 @@ test("online backup captures WAL state and restores every persisted domain", asy
   scope.database.prepare(`INSERT INTO audit_events
     (id, event_type, actor_kind, principal_id, actor_role, target_type, target_id, occurred_at, outcome, metadata_json)
     VALUES ('audit', 'job.enqueued', 'account', 'owner', 'owner', 'job', 'job', ?, 'success', '{"jobType":"probe"}')`).run(now);
+  scope.database.prepare(`INSERT INTO party_conversations
+    (id, kind, direct_key, created_by_user_id, next_sequence, created_at, updated_at)
+    VALUES ('party-conversation', 'direct', 'owner:party-member', 'owner', 2, ?, ?)`).run(now, now);
+  scope.database.prepare(`INSERT INTO party_conversation_members
+    (conversation_id, user_id, role, joined_at)
+    VALUES ('party-conversation', 'owner', 'member', ?)`).run(now);
+  scope.database.prepare(`INSERT INTO party_messages
+    (id, conversation_id, sequence, sender_user_id, body_text, client_id, created_at)
+    VALUES ('party-message', 'party-conversation', 1, 'owner', NULL, 'backup-party-message', ?)`).run(now);
+  const partyStorageKey = "aa/bb/00000000-0000-4000-8000-000000000001.blob";
+  const partyAttachmentPath = path.join(scope.dataRoot, "party-attachments", ...partyStorageKey.split("/"));
+  await import("node:fs/promises").then(({ mkdir }) => mkdir(path.dirname(partyAttachmentPath), { recursive: true }));
+  await writeFile(partyAttachmentPath, "party attachment");
+  scope.database.prepare(`INSERT INTO party_attachments
+    (id, message_id, conversation_id, uploader_user_id, storage_key, display_name, mime_type,
+      size_bytes, sha256, created_at)
+    VALUES ('party-attachment', 'party-message', 'party-conversation', 'owner', ?, 'note.txt',
+      'text/plain', 16, ?, ?)`).run(
+        partyStorageKey,
+        createHash("sha256").update("party attachment").digest("hex"),
+        now
+      );
   scope.database.prepare(`INSERT INTO cluster_nodes
     (node_id, cluster_id, name, role, endpoint, public_key, capabilities_json, state, key_version, paired_at, last_seen_at, updated_at)
     VALUES ('node-backup', 'cluster-backup', 'Backup shard', 'shard', 'https://backup.example-tail.ts.net/', 'public-key', '{}', 'online', 1, ?, ?, ?)`)
@@ -75,18 +100,28 @@ test("online backup captures WAL state and restores every persisted domain", asy
   const service = createBackupService({ ...scope, now: () => new Date(now) });
   const manifest = await service.create({ backupId: "wave4" });
   assert.equal(manifest.includesContentMedia, false);
-  assert.deepEqual(manifest.files.map(({ role }) => role), ["database"]);
+  assert.deepEqual(manifest.files.map(({ role }) => role), ["database", "party-attachment"]);
   assert.ok(manifest.migrations.some(({ migration_id }) => migration_id === "probe-v1"));
   await service.inspect({ backupId: "wave4" });
   const destination = path.join(scope.root, "restore", "nebula.sqlite");
-  const restored = await service.restore({ backupId: "wave4", destinationDatabasePath: destination });
+  const restored = await service.restore({
+    backupId: "wave4",
+    destinationDatabasePath: destination,
+    destinationDataRoot: path.dirname(destination)
+  });
   assert.equal(restored.metadataCacheFiles, 0);
+  assert.equal(restored.partyAttachmentFiles, 1);
+  assert.equal(
+    await readFile(path.join(path.dirname(destination), "party-attachments", ...partyStorageKey.split("/")), "utf8"),
+    "party attachment"
+  );
   const db = new DatabaseSync(destination, { readOnly: true });
   t.after(() => db.close());
   assert.equal(db.prepare("SELECT position_seconds FROM playback_states WHERE user_id = 'owner'").get().position_seconds, 42);
   assert.equal(db.prepare("SELECT state FROM background_jobs WHERE id = 'job'").get().state, "queued");
   assert.equal(db.prepare("SELECT format_name FROM media_probe_results WHERE source_id = 'source'").get().format_name, "mp4");
   assert.equal(db.prepare("SELECT event_type FROM audit_events WHERE id = 'audit'").get().event_type, "job.enqueued");
+  assert.equal(db.prepare("SELECT display_name FROM party_attachments WHERE id = 'party-attachment'").get().display_name, "note.txt");
   assert.deepEqual({ ...db.prepare("SELECT display_name, priority, max_concurrent_streams, max_concurrent_transcodes, maintenance_drain FROM cluster_node_controls WHERE node_id = 'node-backup'").get() }, {
     display_name: "Archive rack", maintenance_drain: 1, max_concurrent_streams: 4,
     max_concurrent_transcodes: 1, priority: 25

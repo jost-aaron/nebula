@@ -16,6 +16,7 @@ export const REQUIRED_TABLES = Object.freeze([
   "media_sources", "media_source_fingerprints", "media_external_ids", "media_artwork", "media_scan_runs",
   "playback_states", "playback_sessions", "playback_events", "background_jobs",
   "audit_events", "user_media_access_policies", "user_library_permissions", "media_lists", "media_list_items",
+  "party_conversations", "party_conversation_members", "party_messages", "party_attachments",
   "subtitle_preferences", "subtitle_provider_config", "rendition_storage_policy", "media_locations",
   "cluster_identity", "cluster_nodes", "cluster_pairing_codes", "cluster_request_nonces",
   "cluster_identity_rotations", "cluster_identity_rotation_peers", "cluster_node_key_rotations",

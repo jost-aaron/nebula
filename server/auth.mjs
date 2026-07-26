@@ -45,8 +45,8 @@ const constantTimeTokenMatch = (actual, expected) => {
 };
 
 export const capabilitiesForRole = (role) => new Set(role === "owner"
-  ? ["account.use", "dashboard.use", "files.read", "files.write", "media.manage", "media.read", "playback.persist", "server.admin", "watchlist.write"]
-  : ["account.use", "dashboard.use", "files.read", "media.read", "playback.persist", "watchlist.write"]);
+  ? ["account.use", "dashboard.use", "files.read", "files.write", "media.manage", "media.read", "party.use", "playback.persist", "server.admin", "watchlist.write"]
+  : ["account.use", "dashboard.use", "files.read", "media.read", "party.use", "playback.persist", "watchlist.write"]);
 
 export const guestCapabilities = () => new Set(["account.use", "dashboard.use", "media.read"]);
 
@@ -58,6 +58,7 @@ export const capabilityForRoute = (request, url) => {
   if (path === "/api/admin/observability/readiness" || path === "/api/admin/audit" || path === "/api/admin/backups" || path.startsWith("/api/admin/backups/") || path.startsWith("/api/admin/cluster") || path.startsWith("/api/admin/media-locations") || path.startsWith("/api/admin/playback-policy") || path.startsWith("/api/admin/tailscale") || path.startsWith("/api/admin/transcode-acceleration") || path.startsWith("/api/admin/rendition-policy") || path.startsWith("/api/admin/renditions")) return "server.admin";
   if (path.startsWith("/api/collections")) return ["GET", "HEAD"].includes(method) ? "media.read" : "server.admin";
   if (path.startsWith("/api/playlists")) return "media.read";
+  if (path.startsWith("/api/party")) return "party.use";
   if (path.startsWith("/api/auth/")) return "account.use";
   if (path === "/api/server/info") return "dashboard.use";
   if (path.startsWith("/api/files")) return ["GET", "HEAD"].includes(method) ? "files.read" : "files.write";

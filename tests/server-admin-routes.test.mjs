@@ -25,6 +25,7 @@ import { createRenditionStore } from "../server/renditions/index.mjs";
 import { createRenditionPolicyRepository, createRenditionPolicyService, renditionPolicyMigrations } from "../server/renditionPolicy/index.mjs";
 import { clusterFederationMigration, clusterKeyRotationMigration, clusterMigration, clusterOperationsMigration } from "../server/cluster/index.mjs";
 import { subtitleMigration } from "../server/subtitles/index.mjs";
+import { partyMigration } from "../server/party/index.mjs";
 import {
   createCatalogCheck,
   createDatabaseCheck,
@@ -77,6 +78,7 @@ const startAdminServer = async ({ serviceToken = "admin-service-secret" } = {}) 
   applyDomainMigrations(database, [
     catalogMigration, PLAYBACK_MIGRATION, probeMigration, jobsMigration, mediaLocationsMigration,
     libraryPermissionsMigration, playbackPolicyMigration, auditMigration, mediaListsMigration,
+    partyMigration,
     subtitleMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration,
     clusterOperationsMigration, clusterKeyRotationMigration, clusterFederationMigration
   ]);

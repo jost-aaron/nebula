@@ -5,6 +5,7 @@ import { MEMBER, OWNER, openApp } from "./helpers";
 test.describe.configure({ mode: "serial" });
 
 test("eligible first run offers a temporary guest without personal history or owner apps", async ({ page }) => {
+  test.setTimeout(60_000);
   const playbackRequests: string[] = [];
   page.on("request", (request) => {
     if (request.url().includes("/api/playback/")) playbackRequests.push(request.url());
@@ -23,10 +24,22 @@ test("eligible first run offers a temporary guest without personal history or ow
   await page.locator("[data-studio-path]", { hasText: "E2E Track" }).last().click();
   const player = page.locator("audio[data-studio-player]");
   await expect(player).toBeAttached();
-  await player.evaluate((audio: HTMLAudioElement) => audio.play());
+  await expect.poll(async () => {
+    try {
+      return await player.evaluate(async (audio: HTMLAudioElement) => {
+        await audio.play();
+        return !audio.paused;
+      });
+    } catch {
+      // A catalog refresh can replace the audio source once while Studio mounts.
+      return false;
+    }
+  }).toBe(true);
   await expect.poll(() => player.evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThan(0.2);
   await player.evaluate((audio: HTMLAudioElement) => audio.pause());
-  await page.getByRole("button", { name: "Back to Library" }).click();
+  const backToLibrary = page.getByRole("button", { name: "Back to Library" });
+  await backToLibrary.focus();
+  await page.keyboard.press("Enter");
   await expect(page.getByRole("region", { name: "Continue listening" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Recently played" })).toHaveCount(0);
   expect(playbackRequests).toEqual([]);
@@ -39,6 +52,7 @@ test("eligible first run offers a temporary guest without personal history or ow
 });
 
 test("first owner setup, restored sign-in, sign-out, and deterministic member fixture", async ({ browser, page }) => {
+  test.setTimeout(90_000);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Make this server yours" })).toBeVisible();
   await page.getByLabel("Account name").fill(OWNER.username);
@@ -59,6 +73,16 @@ test("first owner setup, restored sign-in, sign-out, and deterministic member fi
   await createMember.getByLabel("Temporary password").fill(MEMBER.password);
   await createMember.getByRole("button", { name: "Add member" }).click();
   await expect(page.locator("[data-account-members]")).toContainText(MEMBER.displayName);
+
+  // The E2E overlay starts the initial scan immediately. Let its probe,
+  // metadata, and the 15-second artwork backfill settle before parallel media
+  // scenarios share this fixture.
+  await page.waitForTimeout(16_000);
+  await expect.poll(async () => {
+    const response = await page.request.get("/api/jobs?limit=1");
+    const overview = await response.json() as { summary?: { counts?: { queued?: number; running?: number } } };
+    return (overview.summary?.counts?.queued ?? 0) + (overview.summary?.counts?.running ?? 0);
+  }, { timeout: 60_000 }).toBe(0);
 
   await mkdir("test-results/auth", { recursive: true });
   await page.context().storageState({ path: "test-results/auth/owner.json" });

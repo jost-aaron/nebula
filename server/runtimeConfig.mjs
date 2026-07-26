@@ -24,7 +24,7 @@ export const readRuntimeConfig = (env = process.env) => ({
   jobConcurrency: integer(env, "NEBULA_MEDIA_JOB_CONCURRENCY", 1, { min: 1, max: 2 }),
   jobHistoryDays: integer(env, "NEBULA_JOB_HISTORY_DAYS", 30, { min: 1, max: 3_650 }),
   jobHistoryRetain: integer(env, "NEBULA_JOB_HISTORY_RETAIN", 1_000, { min: 0, max: 100_000 }),
+  startupScanDelayMs: integer(env, "NEBULA_STARTUP_SCAN_DELAY_MS", 120_000, { min: 0, max: 600_000 }),
   port: integer(env, "PORT", 5173, { min: 1, max: 65_535 }),
   production: String(env.NODE_ENV ?? "").trim() === "production"
 });
-

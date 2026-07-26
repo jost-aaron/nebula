@@ -34,7 +34,7 @@ export const expectNoHorizontalOverflow = async (page: Page) => {
 export const closeActiveApp = async (page: Page) => {
   const surface = page.locator("#app-surface");
   await expect(surface).toHaveAttribute("role", "dialog");
-  const close = surface.getByRole("button", { name: /^(Close app|Close panel|Close (Cinema|Studio|Files|Settings)|Dashboard|Back to Home)$/ }).first();
+  const close = surface.getByRole("button", { name: /^(Close app|Close panel|Close (Cinema|Studio|Files|Settings|Party)|Dashboard|Back to Home)$/ }).first();
   await expect(close).toBeVisible();
   await close.click();
   await expect(surface).toBeHidden();
