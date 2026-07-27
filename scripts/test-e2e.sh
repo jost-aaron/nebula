@@ -22,9 +22,11 @@ compose() {
 
 cleanup() {
   compose down --volumes --remove-orphans >/dev/null 2>&1 || true
-  rm -rf "$run_root"
+  rm -rf "$run_root" || true
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 mkdir -p "$E2E_CONTENT_DIR/Movies" "$E2E_CONTENT_DIR/Music" "$E2E_DATA_DIR" "$root_dir/playwright-report" "$root_dir/test-results"
 printf 'WEBVTT\n\n00:00.000 --> 00:01.000\nNebula subtitle fixture\n' > "$E2E_CONTENT_DIR/Movies/E2E Movie.en.default.vtt"
