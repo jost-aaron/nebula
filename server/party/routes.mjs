@@ -39,7 +39,8 @@ export const createPartyRoutes = ({ attachments = null, events = null, service }
         json(response, 503, { code: "party_events_unavailable", error: "Party events are unavailable." });
         return true;
       }
-      events.subscribe(request, response, accountId(request));
+      accountId(request);
+      events.subscribe(request, response, request.nebulaAuth);
       return true;
     }
 

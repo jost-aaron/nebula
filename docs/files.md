@@ -18,7 +18,9 @@ container at:
 ```
 
 The file API is restricted to this folder. Requests that try to escape the
-content root are rejected.
+content root are rejected. Every Files operation also rejects symbolic links
+in the requested path, so a link inside `content/` cannot expose or mutate a
+host path outside it.
 
 ## Run-Time Architecture
 
@@ -68,7 +70,9 @@ Server URL and optional bearer token settings.
 
 ## API Endpoints
 
-- `GET /api/files?path=<path>` - list a folder.
+- `GET /api/files?path=<path>&limit=<1-500>&cursor=<offset>` - list a
+  deterministic, bounded folder page. Responses include `nextCursor` when more
+  entries remain.
 - `GET /api/files/read?path=<path>` - preview/read a file.
 - `GET /api/files/download?path=<path>` - download a file.
 - `POST /api/files/folder` - create a folder.
@@ -127,8 +131,22 @@ returns `409`, leaves that file untouched, and removes assembly temporaries.
 Successful completion removes the session and reservation. Canceling the upload
 removes the session, reservation, and partial chunks.
 
+`.uploads` is an internal namespace and cannot be addressed through any Files
+read or mutation endpoint. Incomplete sessions expire after 24 hours by
+default and are cleaned, including their destination reservations, during
+subsequent upload admission.
+
 The server streams upload requests with Node streams. If a browser cancels or
-disconnects mid-chunk, the temporary chunk file is removed.
+disconnects mid-chunk, the temporary chunk file is removed. Raw and resumable
+uploads enforce a configured maximum size and preserve a minimum amount of
+free filesystem space. Defaults are 100 GiB per upload and 256 MiB free;
+operators can set `NEBULA_FILES_MAX_UPLOAD_BYTES`,
+`NEBULA_FILES_MINIMUM_FREE_BYTES`, and `NEBULA_FILES_UPLOAD_TTL_MS`.
+
+Directory metadata reads use bounded concurrency. File previews are limited to
+1 MiB and include `nosniff` plus a restrictive sandbox policy. Active document
+formats such as HTML, JavaScript, CSS, XML, and SVG are returned as inert plain
+text; downloads always use attachment disposition.
 
 ## iOS And CORS
 

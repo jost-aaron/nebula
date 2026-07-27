@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { createApiHandler } from "../server/api.mjs";
+import { createFilesRoutes } from "../server/files.mjs";
 import { createStorage } from "../server/storage.mjs";
 
 const startApi = async (options = {}) => {
@@ -108,6 +109,146 @@ test("competing completions never clobber a destination and clean temporary file
   assert.deepEqual(results.map((response) => response.status).sort(), [201, 409]);
   assert.ok(["one", "two"].includes(await readFile(path.join(api.root, "race.bin"), "utf8")));
   assert.equal((await readdir(api.root)).some((name) => name.includes(".uploading-")), false);
+});
+
+test("Files rejects symlink traversal on reads, writes, renames, and deletes", async (t) => {
+  const api = await startApi();
+  const outside = await mkdtemp(path.join(os.tmpdir(), "nebula-outside-"));
+  t.after(async () => {
+    await api.close();
+    await rm(outside, { force: true, recursive: true });
+  });
+  await writeFile(path.join(outside, "secret.txt"), "outside");
+  await symlink(outside, path.join(api.root, "escape"), "dir");
+
+  const listing = await fetch(`${api.baseUrl}/api/files`).then((response) => response.json());
+  assert.equal(listing.entries.some((entry) => entry.name === "escape"), false);
+
+  for (const endpoint of [
+    "/api/files/read?path=escape%2Fsecret.txt",
+    "/api/files/download?path=escape%2Fsecret.txt"
+  ]) {
+    const response = await fetch(`${api.baseUrl}${endpoint}`);
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).code, "unsafe_content_path");
+  }
+
+  const create = await postJson(`${api.baseUrl}/api/files/text`, {
+    content: "blocked",
+    name: "created.txt",
+    path: "escape"
+  });
+  assert.equal(create.status, 400);
+  assert.equal((await create.json()).code, "unsafe_content_path");
+
+  const renameResponse = await postJson(`${api.baseUrl}/api/files/rename`, {
+    name: "renamed",
+    path: "escape"
+  });
+  assert.equal(renameResponse.status, 400);
+  assert.equal((await renameResponse.json()).code, "unsafe_content_path");
+
+  const deleteResponse = await fetch(`${api.baseUrl}/api/files?path=escape`, { method: "DELETE" });
+  assert.equal(deleteResponse.status, 400);
+  assert.equal((await deleteResponse.json()).code, "unsafe_content_path");
+  assert.equal(await readFile(path.join(outside, "secret.txt"), "utf8"), "outside");
+});
+
+test("Files previews active content inertly and paginates deterministic bounded listings", async (t) => {
+  const api = await startApi();
+  t.after(() => api.close());
+  await writeFile(path.join(api.root, "active.html"), "<script>globalThis.pwned=true</script>");
+  await mkdir(path.join(api.root, "folder"));
+  for (const name of ["a.txt", "b.txt", "c.txt"]) {
+    await writeFile(path.join(api.root, name), name);
+  }
+
+  const preview = await fetch(`${api.baseUrl}/api/files/read?path=active.html`);
+  assert.equal(preview.status, 200);
+  assert.equal(preview.headers.get("content-type"), "text/plain; charset=utf-8");
+  assert.equal(preview.headers.get("x-content-type-options"), "nosniff");
+  assert.match(preview.headers.get("content-security-policy"), /default-src 'none'/);
+
+  const first = await fetch(`${api.baseUrl}/api/files?limit=2`).then((response) => response.json());
+  assert.deepEqual(first.entries.map((entry) => entry.name), ["folder", "a.txt"]);
+  assert.equal(first.nextCursor, "2");
+  assert.equal(first.total, 5);
+  const second = await fetch(`${api.baseUrl}/api/files?limit=2&cursor=${first.nextCursor}`)
+    .then((response) => response.json());
+  assert.deepEqual(second.entries.map((entry) => entry.name), ["active.html", "b.txt"]);
+  assert.equal(second.nextCursor, "4");
+});
+
+test("Files enforces upload admission, cleans stale sessions, and returns stable errors", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "nebula-files-limits-"));
+  const storage = await createStorage({ contentRoot: root });
+  const routes = createFilesRoutes(storage, {
+    maxUploadBytes: 3,
+    minimumFreeBytes: 0,
+    uploadTtlMs: 60_000
+  });
+  const staleId = randomUUID();
+  const staleReservation = "a".repeat(64);
+  const stalePath = path.join(storage.uploadRoot, staleId);
+  await mkdir(path.join(stalePath, "chunks"), { recursive: true });
+  await mkdir(path.join(storage.uploadReservationRoot, staleReservation));
+  await writeFile(path.join(stalePath, "metadata.json"), JSON.stringify({
+    chunkSize: 1,
+    createdAt: new Date(Date.now() - 120_000).toISOString(),
+    id: staleId,
+    name: "stale.bin",
+    reservation: staleReservation,
+    size: 1,
+    target: "stale.bin",
+    updatedAt: new Date(Date.now() - 120_000).toISOString()
+  }));
+  const server = createServer(async (request, response) => {
+    try {
+      if (!(await routes(request, response, new URL(request.url, "http://files.test")))) {
+        response.writeHead(404).end();
+      }
+    } catch (error) {
+      response.writeHead(error.status ?? 500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ code: error.code, error: error.message }));
+    }
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    await rm(root, { force: true, recursive: true });
+  });
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  const admitted = await postJson(`${base}/api/files/uploads`, {
+    chunkSize: 1,
+    name: "small.bin",
+    path: "",
+    size: 1
+  });
+  assert.equal(admitted.status, 201);
+  assert.equal(await readFile(path.join(stalePath, "metadata.json")).catch(() => null), null);
+  assert.equal((await readdir(storage.uploadReservationRoot)).includes(staleReservation), false);
+
+  const stream = await fetch(`${base}/api/files/upload?path=&name=large.bin`, {
+    body: "four",
+    method: "PUT"
+  });
+  assert.equal(stream.status, 413);
+  assert.equal((await stream.json()).code, "upload_too_large");
+  assert.equal(await readFile(path.join(root, "large.bin")).catch(() => null), null);
+
+  const session = await postJson(`${base}/api/files/uploads`, {
+    chunkSize: 4,
+    name: "large.bin",
+    path: "",
+    size: 4
+  });
+  assert.equal(session.status, 413);
+  assert.equal((await session.json()).code, "upload_too_large");
+
+  const traversal = await fetch(`${base}/api/files/read?path=..%2Foutside`);
+  assert.equal(traversal.status, 400);
+  assert.equal((await traversal.json()).code, "invalid_content_path");
 });
 
 test("Cinema and Studio implement single byte ranges consistently", async (t) => {

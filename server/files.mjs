@@ -1,19 +1,164 @@
 import { createReadStream, createWriteStream } from "node:fs";
-import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readdir, readFile, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
+import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { json, readBody } from "./http.mjs";
-import { isMediaFile, mimeType, safeFileName } from "./storage.mjs";
+import { mimeType, safeFileName } from "./storage.mjs";
 
-export const createFilesRoutes = (storage) => {
+const MEBIBYTE = 1024 * 1024;
+const GIBIBYTE = 1024 * MEBIBYTE;
+const DEFAULT_MAX_UPLOAD_BYTES = 100 * GIBIBYTE;
+const DEFAULT_MINIMUM_FREE_BYTES = 256 * MEBIBYTE;
+const DEFAULT_UPLOAD_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_LIST_LIMIT = 500;
+const DEFAULT_LIST_LIMIT = 200;
+const STAT_CONCURRENCY = 8;
+const ACTIVE_PREVIEW_EXTENSIONS = new Set([".css", ".htm", ".html", ".js", ".mjs", ".svg", ".xml"]);
+
+const fileError = (message, { code, status }) => Object.assign(new Error(message), {
+  code,
+  expose: true,
+  status
+});
+
+const boundedInteger = (value, fallback, maximum) => {
+  if (value === null || value === undefined || value === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw fileError("Pagination value is invalid.", { code: "invalid_pagination", status: 400 });
+  }
+  return Math.min(parsed, maximum);
+};
+
+const mapLimit = async (values, limit, mapper) => {
+  const results = new Array(values.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, values.length) }, async () => {
+    while (next < values.length) {
+      const index = next++;
+      results[index] = await mapper(values[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+};
+
+const byteLimitTransform = (limit, message = "Upload exceeds the configured size limit.") => {
+  let received = 0;
+  return new Transform({
+    transform(chunk, encoding, callback) {
+      received += chunk.length;
+      if (received > limit) {
+        callback(fileError(message, { code: "upload_too_large", status: 413 }));
+        return;
+      }
+      callback(null, chunk);
+    }
+  });
+};
+
+export const createFilesRoutes = (storage, {
+  maxUploadBytes = Number(process.env.NEBULA_FILES_MAX_UPLOAD_BYTES ?? DEFAULT_MAX_UPLOAD_BYTES),
+  minimumFreeBytes = Number(process.env.NEBULA_FILES_MINIMUM_FREE_BYTES ?? DEFAULT_MINIMUM_FREE_BYTES),
+  uploadTtlMs = Number(process.env.NEBULA_FILES_UPLOAD_TTL_MS ?? DEFAULT_UPLOAD_TTL_MS)
+} = {}) => {
+  if (!Number.isSafeInteger(maxUploadBytes) || maxUploadBytes <= 0) maxUploadBytes = DEFAULT_MAX_UPLOAD_BYTES;
+  if (!Number.isSafeInteger(minimumFreeBytes) || minimumFreeBytes < 0) minimumFreeBytes = DEFAULT_MINIMUM_FREE_BYTES;
+  if (!Number.isSafeInteger(uploadTtlMs) || uploadTtlMs < 60_000) uploadTtlMs = DEFAULT_UPLOAD_TTL_MS;
+
   const reservationPathFor = (targetPath) =>
     path.join(storage.uploadReservationRoot, createHash("sha256").update(targetPath).digest("hex"));
 
+  const assertSafeName = (name, kind = "file") => {
+    if (!safeFileName(name) || name === "." || name === "..") {
+      throw fileError(`A valid ${kind} name is required.`, { code: "invalid_file_name", status: 400 });
+    }
+    return name;
+  };
+
+  const assertPublicPath = (value = "") => {
+    const relative = storage.relativePath(value);
+    if (relative === ".uploads" || relative.startsWith(`.uploads${path.sep}`)) {
+      throw fileError("Internal upload storage is not available through Files.", {
+        code: "content_not_found",
+        status: 404
+      });
+    }
+    return relative;
+  };
+
+  const safeExistingPath = async (value) => {
+    try {
+      return await storage.resolveExistingContentPath(assertPublicPath(value));
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        throw fileError("File or folder not found.", { code: "content_not_found", status: 404 });
+      }
+      throw error;
+    }
+  };
+
+  const safeDestinationPath = (value) => storage.resolveContentDestination(assertPublicPath(value));
+
+  const assertUploadAdmission = async (size) => {
+    if (!Number.isSafeInteger(size) || size < 0) {
+      throw fileError("Upload size is invalid.", { code: "invalid_upload_size", status: 400 });
+    }
+    if (size > maxUploadBytes) {
+      throw fileError(`Upload exceeds the ${maxUploadBytes} byte limit.`, {
+        code: "upload_too_large",
+        status: 413
+      });
+    }
+    const filesystem = await statfs(storage.contentRoot);
+    const available = Number(filesystem.bavail) * Number(filesystem.bsize);
+    if (!Number.isFinite(available) || available - size < minimumFreeBytes) {
+      throw fileError("There is not enough free storage for this upload.", {
+        code: "insufficient_storage",
+        status: 507
+      });
+    }
+  };
+
+  let cleanupPromise = null;
+  let lastCleanupAt = 0;
+  const cleanupStaleUploads = async ({ force = false } = {}) => {
+    const now = Date.now();
+    if (!force && now - lastCleanupAt < Math.min(uploadTtlMs / 4, 60 * 60 * 1000)) return;
+    if (cleanupPromise) return cleanupPromise;
+    cleanupPromise = (async () => {
+      const names = await readdir(storage.uploadRoot, { withFileTypes: true }).catch(() => []);
+      await mapLimit(
+        names.filter((entry) => entry.isDirectory() && entry.name !== ".reservations" && /^[a-f0-9-]{36}$/i.test(entry.name)),
+        4,
+        async (entry) => {
+          const sessionPath = path.join(storage.uploadRoot, entry.name);
+          const metadataPath = path.join(sessionPath, "metadata.json");
+          const metadata = await readFile(metadataPath, "utf8").then(JSON.parse).catch(() => null);
+          const updatedAt = Date.parse(metadata?.updatedAt ?? metadata?.createdAt ?? "");
+          const sessionStats = await lstat(sessionPath).catch(() => null);
+          const observedAt = Number.isFinite(updatedAt) ? updatedAt : sessionStats?.mtimeMs;
+          if (!Number.isFinite(observedAt) || now - observedAt <= uploadTtlMs) return;
+          await rm(sessionPath, { force: true, recursive: true });
+          if (typeof metadata?.reservation === "string" && /^[a-f0-9]{64}$/i.test(metadata.reservation)) {
+            await rm(path.join(storage.uploadReservationRoot, metadata.reservation), {
+              force: true,
+              recursive: true
+            }).catch(() => {});
+          }
+        }
+      );
+      lastCleanupAt = now;
+    })().finally(() => { cleanupPromise = null; });
+    return cleanupPromise;
+  };
+
   const uploadSessionPath = (id) => {
     if (!/^[a-f0-9-]{36}$/i.test(id)) {
-      throw Object.assign(new Error("Upload session not found."), { status: 404 });
+      throw fileError("Upload session not found.", { code: "upload_not_found", status: 404 });
     }
 
     return path.join(storage.uploadRoot, id);
@@ -21,7 +166,17 @@ export const createFilesRoutes = (storage) => {
 
   const readUploadSession = async (id) => {
     const sessionPath = uploadSessionPath(id);
-    const metadata = JSON.parse(await readFile(path.join(sessionPath, "metadata.json"), "utf8"));
+    const metadata = await readFile(path.join(sessionPath, "metadata.json"), "utf8")
+      .then(JSON.parse)
+      .catch((error) => {
+        if (error.code === "ENOENT" || error instanceof SyntaxError) {
+          throw fileError("Upload session not found.", { code: "upload_not_found", status: 404 });
+        }
+        throw error;
+      });
+    if (metadata?.id !== id || !safeFileName(metadata?.name) || !Number.isSafeInteger(metadata?.size)) {
+      throw fileError("Upload session metadata is invalid.", { code: "invalid_upload_session", status: 409 });
+    }
     return { metadata, sessionPath };
   };
 
@@ -51,7 +206,7 @@ export const createFilesRoutes = (storage) => {
 
   const listDirectory = async (request, response, url) => {
     const requestedPath = url.searchParams.get("path") ?? "";
-    const absolutePath = storage.resolveContentPath(requestedPath);
+    const absolutePath = await safeExistingPath(requestedPath);
     const stats = await stat(absolutePath).catch(() => null);
 
     if (!stats || !stats.isDirectory()) {
@@ -59,38 +214,44 @@ export const createFilesRoutes = (storage) => {
       return;
     }
 
-    const entries = await Promise.all(
-      (await readdir(absolutePath)).filter((name) => name !== ".uploads").map(async (name) => {
-        const entryPath = path.join(absolutePath, name);
-        const entryStats = await stat(entryPath);
-
-        return {
-          modifiedAt: entryStats.mtime.toISOString(),
-          name,
-          path: storage.toContentPath(entryPath),
-          size: entryStats.size,
-          type: entryType(entryStats)
-        };
-      })
-    );
-
-    entries.sort((a, b) => {
-      if (a.type !== b.type) {
-        return a.type === "folder" ? -1 : 1;
-      }
-
-      return a.name.localeCompare(b.name);
+    const limit = Math.max(1, boundedInteger(url.searchParams.get("limit"), DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT));
+    const cursor = boundedInteger(url.searchParams.get("cursor"), 0, Number.MAX_SAFE_INTEGER);
+    const directoryEntries = (await readdir(absolutePath, { withFileTypes: true }))
+      .filter((entry) =>
+        entry.name !== ".uploads"
+        && !entry.isSymbolicLink()
+        && (entry.isDirectory() || entry.isFile())
+      )
+      .sort((a, b) => {
+        if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+    const page = directoryEntries.slice(cursor, cursor + limit);
+    const entries = await mapLimit(page, STAT_CONCURRENCY, async (entry) => {
+      const entryPath = path.join(absolutePath, entry.name);
+      await storage.assertNoSymlinkSegments(entryPath);
+      const entryStats = await lstat(entryPath);
+      return {
+        modifiedAt: entryStats.mtime.toISOString(),
+        name: entry.name,
+        path: storage.toContentPath(entryPath),
+        size: entryStats.size,
+        type: entryType(entryStats)
+      };
     });
+    const nextOffset = cursor + page.length;
 
     json(response, 200, {
       entries,
-      path: storage.toContentPath(absolutePath)
+      ...(nextOffset < directoryEntries.length ? { nextCursor: String(nextOffset) } : {}),
+      path: storage.toContentPath(absolutePath),
+      total: directoryEntries.length
     });
   };
 
   const readContentFile = async (request, response, url) => {
     const requestedPath = url.searchParams.get("path") ?? "";
-    const absolutePath = storage.resolveContentPath(requestedPath);
+    const absolutePath = await safeExistingPath(requestedPath);
     const stats = await stat(absolutePath).catch(() => null);
 
     if (!stats || !stats.isFile()) {
@@ -103,15 +264,19 @@ export const createFilesRoutes = (storage) => {
       return;
     }
 
+    const active = ACTIVE_PREVIEW_EXTENSIONS.has(path.extname(absolutePath).toLowerCase());
     response.writeHead(200, {
-      "content-type": mimeType(absolutePath)
+      "content-disposition": `inline; filename="${path.basename(absolutePath).replaceAll('"', "")}"`,
+      "content-security-policy": "default-src 'none'; sandbox",
+      "content-type": active ? "text/plain; charset=utf-8" : mimeType(absolutePath),
+      "x-content-type-options": "nosniff"
     });
     response.end(await readFile(absolutePath));
   };
 
   const downloadContentFile = async (request, response, url) => {
     const requestedPath = url.searchParams.get("path") ?? "";
-    const absolutePath = storage.resolveContentPath(requestedPath);
+    const absolutePath = await safeExistingPath(requestedPath);
     const stats = await stat(absolutePath).catch(() => null);
 
     if (!stats || !stats.isFile()) {
@@ -122,29 +287,35 @@ export const createFilesRoutes = (storage) => {
     response.writeHead(200, {
       "content-disposition": `attachment; filename="${path.basename(absolutePath).replaceAll('"', "")}"`,
       "content-length": stats.size,
-      "content-type": mimeType(absolutePath)
+      "content-type": mimeType(absolutePath),
+      "x-content-type-options": "nosniff"
     });
     createReadStream(absolutePath).pipe(response);
   };
 
   const createFolder = async (request, response) => {
     const body = await readBody(request);
-    const absolutePath = storage.resolveContentPath(path.join(body.path ?? "", body.name ?? ""));
+    const name = assertSafeName(body.name ?? "", "folder");
+    const absolutePath = await safeDestinationPath(path.join(body.path ?? "", name));
     await mkdir(absolutePath, { recursive: false });
     json(response, 201, { ok: true, path: storage.toContentPath(absolutePath) });
   };
 
   const createTextFile = async (request, response) => {
     const body = await readBody(request);
-    const absolutePath = storage.resolveContentPath(path.join(body.path ?? "", body.name ?? ""));
+    const name = assertSafeName(body.name ?? "");
+    const absolutePath = await safeDestinationPath(path.join(body.path ?? "", name));
     await writeFile(absolutePath, body.content ?? "", { flag: "wx" });
     json(response, 201, { ok: true, path: storage.toContentPath(absolutePath) });
   };
 
   const uploadFile = async (request, response) => {
     const body = await readBody(request);
-    const absolutePath = storage.resolveContentPath(path.join(body.path ?? "", body.name ?? ""));
-    await writeFile(absolutePath, Buffer.from(body.contentBase64 ?? "", "base64"), { flag: "wx" });
+    const name = assertSafeName(body.name ?? "");
+    const content = Buffer.from(body.contentBase64 ?? "", "base64");
+    await assertUploadAdmission(content.length);
+    const absolutePath = await safeDestinationPath(path.join(body.path ?? "", name));
+    await writeFile(absolutePath, content, { flag: "wx" });
     json(response, 201, { ok: true, path: storage.toContentPath(absolutePath) });
   };
 
@@ -152,36 +323,34 @@ export const createFilesRoutes = (storage) => {
     const requestedPath = url.searchParams.get("path") ?? "";
     const name = url.searchParams.get("name") ?? "";
 
-    if (!safeFileName(name)) {
-      json(response, 400, { error: "A file name is required." });
-      return;
-    }
+    assertSafeName(name);
 
-    const absolutePath = storage.resolveContentPath(path.join(requestedPath, name));
-    const existing = await stat(absolutePath).catch(() => null);
+    const absolutePath = await safeDestinationPath(path.join(requestedPath, name));
+    const existing = await lstat(absolutePath).catch(() => null);
 
     if (existing) {
       json(response, 409, { error: "A file with that name already exists." });
       return;
     }
 
+    const declaredLength = Number(request.headers["content-length"] ?? -1);
+    if (Number.isFinite(declaredLength) && declaredLength >= 0) {
+      await assertUploadAdmission(declaredLength);
+    } else {
+      await assertUploadAdmission(0);
+    }
     const stream = createWriteStream(absolutePath, { flags: "wx" });
 
     try {
-      await new Promise((resolve, reject) => {
-        request.on("aborted", () => reject(Object.assign(new Error("Upload cancelled."), { aborted: true })));
-        request.on("error", reject);
-        stream.on("error", reject);
-        stream.on("finish", resolve);
-        request.pipe(stream);
-      });
+      await pipeline(request, byteLimitTransform(maxUploadBytes), stream);
+      await storage.assertNoSymlinkSegments(absolutePath);
 
       json(response, 201, { ok: true, path: storage.toContentPath(absolutePath) });
     } catch (error) {
       stream.destroy();
       await rm(absolutePath, { force: true }).catch(() => {});
 
-      if (error.aborted) {
+      if (request.aborted) {
         return;
       }
 
@@ -190,24 +359,23 @@ export const createFilesRoutes = (storage) => {
   };
 
   const createUploadSession = async (request, response) => {
+    await cleanupStaleUploads();
     const body = await readBody(request);
     const name = body.name ?? "";
     const requestedPath = body.path ?? "";
     const size = Number(body.size ?? 0);
     const chunkSize = Number(body.chunkSize ?? 0);
 
-    if (!safeFileName(name)) {
-      json(response, 400, { error: "A file name is required." });
-      return;
-    }
+    assertSafeName(name);
 
     if (!Number.isSafeInteger(size) || size < 0 || !Number.isSafeInteger(chunkSize) || chunkSize <= 0) {
       json(response, 400, { error: "Upload size and chunk size are required." });
       return;
     }
+    await assertUploadAdmission(size);
 
-    const targetPath = storage.resolveContentPath(path.join(requestedPath, name));
-    const existing = await stat(targetPath).catch(() => null);
+    const targetPath = await safeDestinationPath(path.join(requestedPath, name));
+    const existing = await lstat(targetPath).catch(() => null);
 
     if (existing) {
       json(response, 409, { error: "A file with that name already exists." });
@@ -277,19 +445,31 @@ export const createFilesRoutes = (storage) => {
     const chunksPath = path.join(sessionPath, "chunks");
     const partPath = path.join(chunksPath, `part-${String(index).padStart(8, "0")}`);
     const tempPath = `${partPath}.tmp-${randomUUID()}`;
+    const expectedSize =
+      index === Math.ceil(metadata.size / metadata.chunkSize) - 1
+        ? metadata.size - metadata.chunkSize * index
+        : metadata.chunkSize;
 
     try {
-      await pipeline(request, createWriteStream(tempPath, { flags: "wx" }));
+      await pipeline(
+        request,
+        byteLimitTransform(expectedSize, "Chunk exceeds the expected size."),
+        createWriteStream(tempPath, { flags: "wx" })
+      );
     } catch (error) {
       await rm(tempPath, { force: true }).catch(() => {});
       throw error;
     }
 
     const partStats = await stat(tempPath);
-    const expectedSize =
-      index === Math.ceil(metadata.size / metadata.chunkSize) - 1
-        ? metadata.size - metadata.chunkSize * index
-        : metadata.chunkSize;
+
+    if (expectedSize > maxUploadBytes) {
+      await rm(tempPath, { force: true });
+      throw fileError("Upload chunk exceeds the configured size limit.", {
+        code: "upload_too_large",
+        status: 413
+      });
+    }
 
     if (partStats.size !== expectedSize) {
       await rm(tempPath, { force: true });
@@ -325,7 +505,8 @@ export const createFilesRoutes = (storage) => {
   const completeUploadSession = async (request, response, id) => {
     const { metadata, sessionPath } = await readUploadSession(id);
     const chunksPath = path.join(sessionPath, "chunks");
-    const targetPath = storage.resolveContentPath(metadata.target);
+    await assertUploadAdmission(metadata.size);
+    const targetPath = await safeDestinationPath(metadata.target);
     const partCount = Math.ceil(metadata.size / metadata.chunkSize);
     const tempTarget = `${targetPath}.uploading-${id}-${randomUUID()}`;
     let output;
@@ -359,6 +540,7 @@ export const createFilesRoutes = (storage) => {
         throw Object.assign(new Error("Completed file size does not match upload metadata."), { status: 409 });
       }
 
+      await storage.assertNoSymlinkSegments(path.dirname(targetPath));
       try {
         await copyFile(tempTarget, targetPath, constants.COPYFILE_EXCL);
       } catch (error) {
@@ -390,25 +572,29 @@ export const createFilesRoutes = (storage) => {
 
   const renameEntry = async (request, response) => {
     const body = await readBody(request);
-    const from = storage.resolveContentPath(body.path ?? "");
-    const to = storage.resolveContentPath(path.join(path.dirname(body.path ?? ""), body.name ?? ""));
+    const name = assertSafeName(body.name ?? "");
+    const from = await safeExistingPath(body.path ?? "");
+    if (from === storage.contentRoot) {
+      throw fileError("Cannot rename content root.", { code: "content_root_protected", status: 400 });
+    }
+    const to = await safeDestinationPath(path.join(path.dirname(body.path ?? ""), name));
     await rename(from, to);
+    await storage.assertNoSymlinkSegments(to);
     json(response, 200, { ok: true, path: storage.toContentPath(to) });
   };
 
   const deleteEntry = async (request, response, url) => {
-    const absolutePath = storage.resolveContentPath(url.searchParams.get("path") ?? "");
+    const absolutePath = await safeExistingPath(url.searchParams.get("path") ?? "");
 
     if (absolutePath === storage.contentRoot) {
-      json(response, 400, { error: "Cannot delete content root." });
-      return;
+      throw fileError("Cannot delete content root.", { code: "content_root_protected", status: 400 });
     }
 
     await rm(absolutePath, { force: false, recursive: true });
     json(response, 200, { ok: true });
   };
 
-  return async (request, response, url) => {
+  const handle = async (request, response, url) => {
     if (request.method === "GET" && url.pathname === "/api/files") {
       await listDirectory(request, response, url);
       return true;
@@ -486,5 +672,28 @@ export const createFilesRoutes = (storage) => {
     }
 
     return false;
+  };
+
+  return async (request, response, url) => {
+    try {
+      return await handle(request, response, url);
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        throw fileError("File or folder not found.", { code: "content_not_found", status: 404 });
+      }
+      if (error?.code === "EEXIST") {
+        throw fileError("A file or folder with that name already exists.", {
+          code: "content_exists",
+          status: 409
+        });
+      }
+      if (["EACCES", "EPERM", "ENOTDIR", "EISDIR"].includes(error?.code)) {
+        throw fileError("The requested file operation is not permitted.", {
+          code: "content_operation_denied",
+          status: 400
+        });
+      }
+      throw error;
+    }
   };
 };

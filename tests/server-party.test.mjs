@@ -256,6 +256,60 @@ test("Party SSE emits only opaque hints to current members and tears down connec
   events.close();
 });
 
+test("Party SSE binds account sessions and closes revoked or disabled identities", () => {
+  const activeSessions = new Set(["user-a:session-a", "user-b:session-b"]);
+  const events = createPartyEvents({
+    isConversationMember: () => true,
+    isIdentityActive: ({ sessionId, userId }) => activeSessions.has(`${userId}:${sessionId}`),
+    revalidateMs: 1
+  });
+  const makeStream = () => {
+    const request = new EventEmitter();
+    const response = new EventEmitter();
+    response.chunks = [];
+    response.ended = false;
+    response.writeHead = () => {};
+    response.write = (chunk) => { response.chunks.push(chunk); return true; };
+    response.end = () => {
+      if (response.ended) return;
+      response.ended = true;
+      response.emit("close");
+    };
+    return { request, response };
+  };
+  const identity = (userId, sessionId) => ({
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    kind: "account",
+    sessionId,
+    user: { disabled: false, id: userId }
+  });
+  const first = makeStream();
+  const second = makeStream();
+  events.subscribe(first.request, first.response, identity("user-a", "session-a"));
+  events.subscribe(second.request, second.response, identity("user-b", "session-b"));
+  assert.equal(events.subscriberCount(), 2);
+
+  activeSessions.delete("user-a:session-a");
+  events.publish("conversation-a");
+  assert.equal(first.response.ended, true);
+  assert.equal(events.subscriberCount(), 1);
+  assert.match(second.response.chunks.join(""), /conversation-a/);
+
+  events.closeUser("user-b");
+  assert.equal(second.response.ended, true);
+  assert.equal(events.subscriberCount(), 0);
+
+  const expired = makeStream();
+  assert.throws(
+    () => events.subscribe(expired.request, expired.response, {
+      ...identity("user-a", "session-a"),
+      expiresAt: new Date(Date.now() - 1).toISOString()
+    }),
+    (error) => error.code === "party_event_session_inactive"
+  );
+  events.close();
+});
+
 test("Party HTTP routes expose the bounded contract and fail closed across accounts", async (t) => {
   const fixture = createFixture();
   const routes = createPartyRoutes({ service: fixture.service });
