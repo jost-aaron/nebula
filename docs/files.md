@@ -124,22 +124,33 @@ content/.uploads/
 ```
 
 That folder is hidden from the Files listing. Each upload session stores
-metadata plus completed chunks. One active session reserves each destination,
-and chunk indexes must fall within the calculated part count. Completion uses
-no-clobber behavior: if another process creates the target first, the API
-returns `409`, leaves that file untouched, and removes assembly temporaries.
-Successful completion removes the session and reservation. Canceling the upload
-removes the session, reservation, and partial chunks.
+metadata plus completed chunks. All upload modes create an atomic destination
+reservation before writing. The reservation also records the admitted byte
+count, so concurrent raw and resumable admissions share one capacity budget
+instead of independently consuming the same reported free space. Resumable
+reservations remain for the assembly copy because chunk files still occupy
+space during completion. Chunk indexes must fall within the calculated part
+count. Completion uses a same-filesystem, no-clobber hard link: if another
+process creates the target first, the API returns `409`, leaves that file
+untouched, and removes assembly temporaries. Successful completion removes the
+session and reservation. Canceling the upload removes the session, reservation,
+and partial chunks. Failed and disconnected raw uploads release their
+reservation in a `finally` path.
 
 `.uploads` is an internal namespace and cannot be addressed through any Files
 read or mutation endpoint. Incomplete sessions expire after 24 hours by
 default and are cleaned, including their destination reservations, during
-subsequent upload admission.
+subsequent upload admission. Capacity reservations are persisted under
+`.uploads/.reservations`, making them visible to later admissions and allowing
+expired transient reservations left by a process crash to be reclaimed.
 
 The server streams upload requests with Node streams. If a browser cancels or
 disconnects mid-chunk, the temporary chunk file is removed. Raw and resumable
 uploads enforce a configured maximum size and preserve a minimum amount of
-free filesystem space. Defaults are 100 GiB per upload and 256 MiB free;
+free filesystem space. Admission subtracts outstanding reservations before
+checking the free-space floor. A streamed request without `Content-Length`
+conservatively reserves the configured per-upload maximum. Defaults are 100 GiB
+per upload and 256 MiB free;
 operators can set `NEBULA_FILES_MAX_UPLOAD_BYTES`,
 `NEBULA_FILES_MINIMUM_FREE_BYTES`, and `NEBULA_FILES_UPLOAD_TTL_MS`.
 
@@ -147,6 +158,15 @@ Directory metadata reads use bounded concurrency. File previews are limited to
 1 MiB and include `nosniff` plus a restrictive sandbox policy. Active document
 formats such as HTML, JavaScript, CSS, XML, and SVG are returned as inert plain
 text; downloads always use attachment disposition.
+
+Files combines canonical-path and per-segment symbolic-link rejection with
+`O_NOFOLLOW` where the host supports it. Reads and writes use file handles and
+compare the opened file identity with the path after opening; upload completion
+revalidates both the parent and linked target. These checks substantially narrow
+path-swap races. Portable Node does not expose an `openat(2)`-style
+directory-relative API on every supported host, so Nebula does not claim to
+defend against a hostile administrator concurrently rewriting the mounted
+content tree. The content mount remains an operator trust boundary.
 
 ## iOS And CORS
 

@@ -251,6 +251,64 @@ test("Files enforces upload admission, cleans stale sessions, and returns stable
   assert.equal((await traversal.json()).code, "invalid_content_path");
 });
 
+test("Files reserves shared capacity across upload modes and releases it on cancellation", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "nebula-files-reservations-"));
+  const storage = await createStorage({ contentRoot: root });
+  const routes = createFilesRoutes(storage, {
+    filesystemStats: async () => ({ bavail: 10, bsize: 1 }),
+    maxUploadBytes: 10,
+    minimumFreeBytes: 0
+  });
+  const server = createServer(async (request, response) => {
+    try {
+      if (!(await routes(request, response, new URL(request.url, "http://files.test")))) {
+        response.writeHead(404).end();
+      }
+    } catch (error) {
+      response.writeHead(error.status ?? 500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ code: error.code, error: error.message }));
+    }
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    await rm(root, { force: true, recursive: true });
+  });
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  const attempts = await Promise.all(["one.bin", "two.bin"].map((name) =>
+    postJson(`${base}/api/files/uploads`, { chunkSize: 3, name, path: "", size: 6 })
+  ));
+  assert.deepEqual(attempts.map((response) => response.status).sort(), [201, 507]);
+  const admitted = attempts.find((response) => response.status === 201);
+  const rejected = attempts.find((response) => response.status === 507);
+  assert.equal((await rejected.json()).code, "insufficient_storage");
+  const session = await admitted.json();
+
+  const rawBlocked = await fetch(`${base}/api/files/upload?path=&name=raw.bin`, {
+    body: "12345",
+    method: "PUT"
+  });
+  assert.equal(rawBlocked.status, 507);
+  assert.equal(await readFile(path.join(root, "raw.bin")).catch(() => null), null);
+
+  const canceled = await fetch(`${base}/api/files/uploads/${session.id}`, { method: "DELETE" });
+  assert.equal(canceled.status, 200);
+  const rawAdmitted = await fetch(`${base}/api/files/upload?path=&name=raw.bin`, {
+    body: "12345",
+    method: "PUT"
+  });
+  assert.equal(rawAdmitted.status, 201);
+  assert.equal(await readFile(path.join(root, "raw.bin"), "utf8"), "12345");
+  const noClobber = await fetch(`${base}/api/files/upload?path=&name=raw.bin`, {
+    body: "other",
+    method: "PUT"
+  });
+  assert.equal(noClobber.status, 409);
+  assert.equal(await readFile(path.join(root, "raw.bin"), "utf8"), "12345");
+  assert.deepEqual(await readdir(storage.uploadReservationRoot), []);
+});
+
 test("Cinema and Studio implement single byte ranges consistently", async (t) => {
   const api = await startApi();
   t.after(() => api.close());

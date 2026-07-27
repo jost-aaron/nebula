@@ -1,5 +1,5 @@
 import { createReadStream, createWriteStream } from "node:fs";
-import { copyFile, lstat, mkdir, readdir, readFile, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, open, readdir, readFile, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
@@ -61,6 +61,7 @@ const byteLimitTransform = (limit, message = "Upload exceeds the configured size
 };
 
 export const createFilesRoutes = (storage, {
+  filesystemStats = () => statfs(storage.contentRoot),
   maxUploadBytes = Number(process.env.NEBULA_FILES_MAX_UPLOAD_BYTES ?? DEFAULT_MAX_UPLOAD_BYTES),
   minimumFreeBytes = Number(process.env.NEBULA_FILES_MINIMUM_FREE_BYTES ?? DEFAULT_MINIMUM_FREE_BYTES),
   uploadTtlMs = Number(process.env.NEBULA_FILES_UPLOAD_TTL_MS ?? DEFAULT_UPLOAD_TTL_MS)
@@ -71,6 +72,12 @@ export const createFilesRoutes = (storage, {
 
   const reservationPathFor = (targetPath) =>
     path.join(storage.uploadReservationRoot, createHash("sha256").update(targetPath).digest("hex"));
+  let reservationMutation = Promise.resolve();
+  const serializeReservationMutation = (operation) => {
+    const result = reservationMutation.then(operation, operation);
+    reservationMutation = result.catch(() => {});
+    return result;
+  };
 
   const assertSafeName = (name, kind = "file") => {
     if (!safeFileName(name) || name === "." || name === "..") {
@@ -103,6 +110,20 @@ export const createFilesRoutes = (storage, {
 
   const safeDestinationPath = (value) => storage.resolveContentDestination(assertPublicPath(value));
 
+  const readCapacityReservations = async () => {
+    const entries = await readdir(storage.uploadReservationRoot, { withFileTypes: true }).catch(() => []);
+    const reservations = await mapLimit(
+      entries.filter((entry) => entry.isDirectory()),
+      8,
+      async (entry) => readFile(path.join(storage.uploadReservationRoot, entry.name, "reservation.json"), "utf8")
+        .then(JSON.parse)
+        .catch(() => null)
+    );
+    return reservations.filter((reservation) =>
+      Number.isSafeInteger(reservation?.bytes) && reservation.bytes >= 0
+    );
+  };
+
   const assertUploadAdmission = async (size) => {
     if (!Number.isSafeInteger(size) || size < 0) {
       throw fileError("Upload size is invalid.", { code: "invalid_upload_size", status: 400 });
@@ -113,13 +134,89 @@ export const createFilesRoutes = (storage, {
         status: 413
       });
     }
-    const filesystem = await statfs(storage.contentRoot);
+    const filesystem = await filesystemStats();
     const available = Number(filesystem.bavail) * Number(filesystem.bsize);
-    if (!Number.isFinite(available) || available - size < minimumFreeBytes) {
+    const reserved = (await readCapacityReservations())
+      .reduce((total, reservation) => total + reservation.bytes, 0);
+    if (!Number.isFinite(available) || available - reserved - size < minimumFreeBytes) {
       throw fileError("There is not enough free storage for this upload.", {
         code: "insufficient_storage",
         status: 507
       });
+    }
+  };
+
+  const reserveUpload = async ({ bytes, id, kind, targetPath }) =>
+    serializeReservationMutation(async () => {
+      await assertUploadAdmission(bytes);
+      const reservationPath = reservationPathFor(targetPath);
+      try {
+        await mkdir(reservationPath);
+      } catch (error) {
+        if (error.code === "EEXIST") {
+          throw fileError("An upload for that destination is already in progress.", {
+            code: "upload_in_progress",
+            status: 409
+          });
+        }
+        throw error;
+      }
+      const reservation = {
+        bytes,
+        createdAt: new Date().toISOString(),
+        id,
+        kind,
+        target: storage.toContentPath(targetPath)
+      };
+      try {
+        await writeFile(
+          path.join(reservationPath, "reservation.json"),
+          JSON.stringify(reservation),
+          { flag: "wx" }
+        );
+        await writeFile(path.join(reservationPath, "session-id"), id, { flag: "wx" });
+      } catch (error) {
+        await rm(reservationPath, { force: true, recursive: true }).catch(() => {});
+        throw error;
+      }
+      return { name: path.basename(reservationPath), path: reservationPath };
+    });
+
+  const releaseUpload = (reservationPath) =>
+    serializeReservationMutation(() => rm(reservationPath, { force: true, recursive: true }));
+
+  const openRevalidatedFile = async (absolutePath, flags, mode) => {
+    await storage.assertNoSymlinkSegments(
+      flags & constants.O_CREAT ? path.dirname(absolutePath) : absolutePath
+    );
+    const handle = await open(absolutePath, flags | (constants.O_NOFOLLOW ?? 0), mode);
+    try {
+      await storage.assertNoSymlinkSegments(absolutePath);
+      const [handleStats, pathStats] = await Promise.all([handle.stat(), lstat(absolutePath)]);
+      if (handleStats.dev !== pathStats.dev || handleStats.ino !== pathStats.ino) {
+        throw fileError("The content path changed during the operation.", {
+          code: "unsafe_content_path",
+          status: 409
+        });
+      }
+      return { handle, stats: handleStats };
+    } catch (error) {
+      await handle.close().catch(() => {});
+      throw error;
+    }
+  };
+
+  const writeAll = async (handle, chunk, position = null) => {
+    let offset = 0;
+    while (offset < chunk.length) {
+      const result = await handle.write(
+        chunk,
+        offset,
+        chunk.length - offset,
+        position === null ? null : position + offset
+      );
+      if (result.bytesWritten <= 0) throw new Error("File write made no progress.");
+      offset += result.bytesWritten;
     }
   };
 
@@ -149,6 +246,24 @@ export const createFilesRoutes = (storage, {
               recursive: true
             }).catch(() => {});
           }
+        }
+      );
+      const reservations = await readdir(storage.uploadReservationRoot, { withFileTypes: true }).catch(() => []);
+      await mapLimit(
+        reservations.filter((entry) => entry.isDirectory()),
+        4,
+        async (entry) => {
+          const reservationPath = path.join(storage.uploadReservationRoot, entry.name);
+          const reservation = await readFile(path.join(reservationPath, "reservation.json"), "utf8")
+            .then(JSON.parse)
+            .catch(() => null);
+          const createdAt = Date.parse(reservation?.createdAt ?? "");
+          if (!Number.isFinite(createdAt) || now - createdAt <= uploadTtlMs) return;
+          if (reservation?.kind === "resumable") {
+            const sessionExists = await lstat(uploadSessionPath(reservation.id)).catch(() => null);
+            if (sessionExists) return;
+          }
+          await rm(reservationPath, { force: true, recursive: true });
         }
       );
       lastCleanupAt = now;
@@ -252,14 +367,20 @@ export const createFilesRoutes = (storage, {
   const readContentFile = async (request, response, url) => {
     const requestedPath = url.searchParams.get("path") ?? "";
     const absolutePath = await safeExistingPath(requestedPath);
-    const stats = await stat(absolutePath).catch(() => null);
+    const opened = await openRevalidatedFile(absolutePath, constants.O_RDONLY).catch((error) => {
+      if (["ENOENT", "EISDIR"].includes(error.code)) return null;
+      throw error;
+    });
+    const stats = opened?.stats;
 
     if (!stats || !stats.isFile()) {
+      await opened?.handle.close().catch(() => {});
       json(response, 404, { error: "File not found." });
       return;
     }
 
     if (stats.size > 1024 * 1024) {
+      await opened.handle.close();
       json(response, 413, { error: "Preview supports files up to 1 MB." });
       return;
     }
@@ -271,15 +392,24 @@ export const createFilesRoutes = (storage, {
       "content-type": active ? "text/plain; charset=utf-8" : mimeType(absolutePath),
       "x-content-type-options": "nosniff"
     });
-    response.end(await readFile(absolutePath));
+    try {
+      response.end(await opened.handle.readFile());
+    } finally {
+      await opened.handle.close();
+    }
   };
 
   const downloadContentFile = async (request, response, url) => {
     const requestedPath = url.searchParams.get("path") ?? "";
     const absolutePath = await safeExistingPath(requestedPath);
-    const stats = await stat(absolutePath).catch(() => null);
+    const opened = await openRevalidatedFile(absolutePath, constants.O_RDONLY).catch((error) => {
+      if (["ENOENT", "EISDIR"].includes(error.code)) return null;
+      throw error;
+    });
+    const stats = opened?.stats;
 
     if (!stats || !stats.isFile()) {
+      await opened?.handle.close().catch(() => {});
       json(response, 404, { error: "File not found." });
       return;
     }
@@ -290,7 +420,11 @@ export const createFilesRoutes = (storage, {
       "content-type": mimeType(absolutePath),
       "x-content-type-options": "nosniff"
     });
-    createReadStream(absolutePath).pipe(response);
+    try {
+      await pipeline(opened.handle.createReadStream({ autoClose: false }), response);
+    } finally {
+      await opened.handle.close().catch(() => {});
+    }
   };
 
   const createFolder = async (request, response) => {
@@ -313,10 +447,37 @@ export const createFilesRoutes = (storage, {
     const body = await readBody(request);
     const name = assertSafeName(body.name ?? "");
     const content = Buffer.from(body.contentBase64 ?? "", "base64");
-    await assertUploadAdmission(content.length);
     const absolutePath = await safeDestinationPath(path.join(body.path ?? "", name));
-    await writeFile(absolutePath, content, { flag: "wx" });
-    json(response, 201, { ok: true, path: storage.toContentPath(absolutePath) });
+    const id = randomUUID();
+    const reservation = await reserveUpload({
+      bytes: content.length,
+      id,
+      kind: "raw",
+      targetPath: absolutePath
+    });
+    let handle;
+    let created = false;
+    let reservationReleased = false;
+    try {
+      ({ handle } = await openRevalidatedFile(
+        absolutePath,
+        constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
+        0o600
+      ));
+      created = true;
+      await handle.writeFile(content);
+      await handle.close();
+      handle = null;
+      await releaseUpload(reservation.path);
+      reservationReleased = true;
+      json(response, 201, { ok: true, path: storage.toContentPath(absolutePath) });
+    } catch (error) {
+      if (created) await rm(absolutePath, { force: true }).catch(() => {});
+      throw error;
+    } finally {
+      await handle?.close().catch(() => {});
+      if (!reservationReleased) await releaseUpload(reservation.path).catch(() => {});
+    }
   };
 
   const uploadFileStream = async (request, response, url) => {
@@ -326,35 +487,58 @@ export const createFilesRoutes = (storage, {
     assertSafeName(name);
 
     const absolutePath = await safeDestinationPath(path.join(requestedPath, name));
-    const existing = await lstat(absolutePath).catch(() => null);
-
-    if (existing) {
-      json(response, 409, { error: "A file with that name already exists." });
-      return;
-    }
-
     const declaredLength = Number(request.headers["content-length"] ?? -1);
-    if (Number.isFinite(declaredLength) && declaredLength >= 0) {
-      await assertUploadAdmission(declaredLength);
-    } else {
-      await assertUploadAdmission(0);
-    }
-    const stream = createWriteStream(absolutePath, { flags: "wx" });
+    const reservationBytes = Number.isSafeInteger(declaredLength) && declaredLength >= 0
+      ? declaredLength
+      : maxUploadBytes;
+    const reservation = await reserveUpload({
+      bytes: reservationBytes,
+      id: randomUUID(),
+      kind: "raw",
+      targetPath: absolutePath
+    });
+    let opened;
+    let created = false;
+    let reservationReleased = false;
 
     try {
-      await pipeline(request, byteLimitTransform(maxUploadBytes), stream);
+      opened = await openRevalidatedFile(
+        absolutePath,
+        constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
+        0o600
+      );
+      created = true;
+      const uploadLimit = Math.min(maxUploadBytes, reservationBytes);
+      let received = 0;
+      for await (const chunk of request) {
+        received += chunk.length;
+        if (received > uploadLimit) {
+          throw fileError("Upload exceeds the configured size limit.", {
+            code: "upload_too_large",
+            status: 413
+          });
+        }
+        await writeAll(opened.handle, chunk);
+      }
       await storage.assertNoSymlinkSegments(absolutePath);
+      await opened.handle.close();
+      opened = null;
+      await releaseUpload(reservation.path);
+      reservationReleased = true;
 
       json(response, 201, { ok: true, path: storage.toContentPath(absolutePath) });
     } catch (error) {
-      stream.destroy();
-      await rm(absolutePath, { force: true }).catch(() => {});
+      await opened?.handle.close().catch(() => {});
+      if (created) await rm(absolutePath, { force: true }).catch(() => {});
 
       if (request.aborted) {
         return;
       }
 
       throw error;
+    } finally {
+      await opened?.handle.close().catch(() => {});
+      if (!reservationReleased) await releaseUpload(reservation.path).catch(() => {});
     }
   };
 
@@ -372,8 +556,6 @@ export const createFilesRoutes = (storage, {
       json(response, 400, { error: "Upload size and chunk size are required." });
       return;
     }
-    await assertUploadAdmission(size);
-
     const targetPath = await safeDestinationPath(path.join(requestedPath, name));
     const existing = await lstat(targetPath).catch(() => null);
 
@@ -384,15 +566,24 @@ export const createFilesRoutes = (storage, {
 
     const id = randomUUID();
     const sessionPath = uploadSessionPath(id);
-    const reservationPath = reservationPathFor(targetPath);
     const now = new Date().toISOString();
+    let reservation;
+    try {
+      reservation = await reserveUpload({ bytes: size, id, kind: "resumable", targetPath });
+    } catch (error) {
+      if (error.code === "upload_in_progress") {
+        json(response, 409, { error: error.message, code: error.code });
+        return;
+      }
+      throw error;
+    }
     const metadata = {
       chunkSize,
       createdAt: now,
       id,
       name,
       path: storage.relativePath(requestedPath),
-      reservation: path.basename(reservationPath),
+      reservation: reservation.name,
       size,
       target: storage.toContentPath(targetPath),
       type: body.type ?? "",
@@ -400,22 +591,11 @@ export const createFilesRoutes = (storage, {
     };
 
     try {
-      await mkdir(reservationPath);
-    } catch (error) {
-      if (error.code === "EEXIST") {
-        json(response, 409, { error: "An upload for that destination is already in progress." });
-        return;
-      }
-      throw error;
-    }
-
-    try {
-      await writeFile(path.join(reservationPath, "session-id"), id, { flag: "wx" });
       await mkdir(path.join(sessionPath, "chunks"), { recursive: true });
       await writeFile(path.join(sessionPath, "metadata.json"), JSON.stringify(metadata, null, 2));
     } catch (error) {
       await rm(sessionPath, { force: true, recursive: true }).catch(() => {});
-      await rm(reservationPath, { force: true, recursive: true }).catch(() => {});
+      await releaseUpload(reservation.path).catch(() => {});
       throw error;
     }
     json(response, 201, { ...metadata, uploadedParts: [] });
@@ -483,41 +663,23 @@ export const createFilesRoutes = (storage, {
     json(response, 200, { ok: true, part: { index, size: partStats.size } });
   };
 
-  const appendFileToStream = async (filePath, output) => {
-    await new Promise((resolve, reject) => {
-      const input = createReadStream(filePath);
-      const fail = (error) => {
-        input.off("error", fail);
-        output.off("error", fail);
-        reject(error);
-      };
-      input.on("error", fail);
-      output.on("error", fail);
-      input.on("end", () => {
-        input.off("error", fail);
-        output.off("error", fail);
-        resolve();
-      });
-      input.pipe(output, { end: false });
-    });
-  };
-
   const completeUploadSession = async (request, response, id) => {
     const { metadata, sessionPath } = await readUploadSession(id);
     const chunksPath = path.join(sessionPath, "chunks");
-    await assertUploadAdmission(metadata.size);
+    await assertUploadAdmission(0);
     const targetPath = await safeDestinationPath(metadata.target);
     const partCount = Math.ceil(metadata.size / metadata.chunkSize);
     const tempTarget = `${targetPath}.uploading-${id}-${randomUUID()}`;
-    let output;
+    let outputHandle;
+    let outputPosition = 0;
+    let targetLinked = false;
 
     try {
-      output = createWriteStream(tempTarget, { flags: "wx" });
-      await new Promise((resolve, reject) => {
-        output.on("error", reject);
-        output.on("open", resolve);
-      });
-
+      ({ handle: outputHandle } = await openRevalidatedFile(
+        tempTarget,
+        constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
+        0o600
+      ));
       for (let index = 0; index < partCount; index += 1) {
         const partPath = path.join(chunksPath, `part-${String(index).padStart(8, "0")}`);
         const partStats = await stat(partPath).catch(() => null);
@@ -526,36 +688,64 @@ export const createFilesRoutes = (storage, {
           throw Object.assign(new Error(`Missing chunk ${index + 1} of ${partCount}.`), { status: 409 });
         }
 
-        await appendFileToStream(partPath, output);
+        for await (const chunk of createReadStream(partPath)) {
+          await writeAll(outputHandle, chunk, outputPosition);
+          outputPosition += chunk.length;
+        }
       }
 
-      await new Promise((resolve, reject) => {
-        output.on("error", reject);
-        output.end(resolve);
-      });
-
-      const finalStats = await stat(tempTarget);
+      const finalStats = await outputHandle.stat();
 
       if (finalStats.size !== metadata.size) {
         throw Object.assign(new Error("Completed file size does not match upload metadata."), { status: 409 });
       }
 
+      await outputHandle.close();
+      outputHandle = null;
       await storage.assertNoSymlinkSegments(path.dirname(targetPath));
       try {
-        await copyFile(tempTarget, targetPath, constants.COPYFILE_EXCL);
+        await link(tempTarget, targetPath);
+        targetLinked = true;
       } catch (error) {
         if (error.code === "EEXIST") {
           throw Object.assign(new Error("A file with that name now exists."), { status: 409 });
         }
         throw error;
       }
+      await storage.assertNoSymlinkSegments(targetPath);
+      const [tempStats, targetStats] = await Promise.all([lstat(tempTarget), lstat(targetPath)]);
+      if (
+        targetStats.isSymbolicLink()
+        || tempStats.dev !== targetStats.dev
+        || tempStats.ino !== targetStats.ino
+      ) {
+        throw fileError("The content path changed during upload completion.", {
+          code: "unsafe_content_path",
+          status: 409
+        });
+      }
 
       await rm(tempTarget, { force: true });
       await rm(sessionPath, { force: true, recursive: true });
-      await rm(path.join(storage.uploadReservationRoot, metadata.reservation), { force: true, recursive: true });
+      await releaseUpload(path.join(storage.uploadReservationRoot, metadata.reservation));
       json(response, 201, { ok: true, path: storage.toContentPath(targetPath) });
     } catch (error) {
-      output?.destroy();
+      await outputHandle?.close().catch(() => {});
+      if (targetLinked) {
+        const [tempStats, targetStats] = await Promise.all([
+          lstat(tempTarget).catch(() => null),
+          lstat(targetPath).catch(() => null)
+        ]);
+        if (
+          tempStats
+          && targetStats
+          && !targetStats.isSymbolicLink()
+          && tempStats.dev === targetStats.dev
+          && tempStats.ino === targetStats.ino
+        ) {
+          await rm(targetPath, { force: true }).catch(() => {});
+        }
+      }
       await rm(tempTarget, { force: true }).catch(() => {});
       throw error;
     }
@@ -565,7 +755,7 @@ export const createFilesRoutes = (storage, {
     const { metadata, sessionPath } = await readUploadSession(id);
     await rm(sessionPath, { force: true, recursive: true });
     if (metadata.reservation) {
-      await rm(path.join(storage.uploadReservationRoot, metadata.reservation), { force: true, recursive: true });
+      await releaseUpload(path.join(storage.uploadReservationRoot, metadata.reservation));
     }
     json(response, 200, { ok: true });
   };
