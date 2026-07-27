@@ -107,14 +107,19 @@ export const createJobsWorker = ({
     }, cancellationPollIntervalMs);
     cancellationTimer.unref?.();
     repository.recoverInterrupted();
-    loops = Array.from({ length: concurrency }, async () => {
+    loops = Array.from({ length: concurrency }, (_, workerIndex) => (async () => {
+      // With at least two workers, keep one admission lane available for
+      // latency-sensitive, user-requested rendition work. Maintenance cannot
+      // consume every worker, while ten-minute aging in the repository still
+      // prevents starvation within each lane.
+      const lane = concurrency > 1 && workerIndex === concurrency - 1 ? "interactive" : "any";
       while (!stopping) {
         heartbeat();
-        const job = repository.claimNext();
+        const job = repository.claimNext({ lane });
         if (job) await runJob(job);
         else await sleep(pollIntervalMs);
       }
-    });
+    })());
   };
 
   const stop = async ({ abortAfterMs = 20_000, drainTimeoutMs = 30_000 } = {}) => {

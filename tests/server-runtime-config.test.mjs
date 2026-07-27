@@ -5,7 +5,7 @@ import { readRuntimeConfig } from "../server/runtimeConfig.mjs";
 test("runtime config applies conservative defaults and parses bounded overrides", () => {
   const defaults = readRuntimeConfig({});
   assert.equal(defaults.port, 5173);
-  assert.equal(defaults.jobConcurrency, 1);
+  assert.equal(defaults.jobConcurrency, 2);
   assert.equal(defaults.jobHistoryDays, 30);
   assert.equal(defaults.startupScanDelayMs, 120_000);
   assert.equal(defaults.production, false);

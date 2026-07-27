@@ -40,9 +40,20 @@ const historyFromRow = (row, kind) => ({
   progress: row.duration_seconds ? row.position_seconds / row.duration_seconds : 0
 });
 
-export const createPlaybackRepository = ({ db, migrate = false } = {}) => {
+export const createPlaybackRepository = ({
+  db,
+  maxEvents = 250_000,
+  migrate = false,
+  now = () => Date.now(),
+  retentionCheckInterval = 250,
+  retentionDays = 30
+} = {}) => {
   if (!db || typeof db.prepare !== "function") throw new TypeError("A SQLite database is required.");
+  if (!Number.isInteger(maxEvents) || maxEvents < 1_000) throw new TypeError("maxEvents must be at least 1000.");
+  if (!Number.isInteger(retentionCheckInterval) || retentionCheckInterval < 1) throw new TypeError("retentionCheckInterval must be positive.");
+  if (!Number.isFinite(retentionDays) || retentionDays < 1) throw new TypeError("retentionDays must be at least one day.");
   if (migrate) migratePlaybackSchema(db);
+  let eventsSinceRetention = 0;
 
   const getStateFor = (kind, userId, itemId) => {
     const table = TABLES[kind];
@@ -73,6 +84,32 @@ export const createPlaybackRepository = ({ db, migrate = false } = {}) => {
   const listFederatedContinueWatching = (userId, limit = 20) => listFor("federated", userId, limit, false);
   const listHistory = (userId, limit = 50) => listFor("local", userId, limit, true);
   const listFederatedHistory = (userId, limit = 50) => listFor("federated", userId, limit, true);
+
+  const prune = ({ before = now() - retentionDays * 24 * 60 * 60 * 1000, eventLimit = maxEvents } = {}) => {
+    if (!Number.isInteger(eventLimit) || eventLimit < 1_000) throw new TypeError("eventLimit must be at least 1000.");
+    const cutoff = new Date(before).toISOString();
+    const removed = {};
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const [kind, table] of Object.entries(TABLES)) {
+        removed[`${kind}EventsByAge`] = db.prepare(`DELETE FROM ${table.events}
+          WHERE recorded_at < ?`).run(cutoff).changes;
+        removed[`${kind}Sessions`] = db.prepare(`DELETE FROM ${table.sessions}
+          WHERE last_reported_at < ?`).run(cutoff).changes;
+        removed[`${kind}EventsByLimit`] = db.prepare(`DELETE FROM ${table.events}
+          WHERE rowid IN (
+            SELECT rowid FROM ${table.events}
+            ORDER BY recorded_at DESC, rowid DESC LIMIT -1 OFFSET ?
+          )`).run(eventLimit).changes;
+      }
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+    eventsSinceRetention = 0;
+    return removed;
+  };
 
   const recordEventFor = (kind, event) => {
     const table = TABLES[kind];
@@ -142,6 +179,12 @@ export const createPlaybackRepository = ({ db, migrate = false } = {}) => {
           event.durationSeconds, event.recordedAt, applied ? 1 : 0);
       const result = { duplicate: false, session: getSessionFor(kind, event.sessionId), state: getStateFor(kind, event.userId, itemId) };
       db.exec("COMMIT");
+      eventsSinceRetention += 1;
+      // Retention is maintenance, never a reason to fail an already committed
+      // playback update. A later event or explicit maintenance pass retries it.
+      if (eventsSinceRetention >= retentionCheckInterval) {
+        try { prune(); } catch { eventsSinceRetention = retentionCheckInterval; }
+      }
       return result;
     } catch (error) {
       db.exec("ROLLBACK");
@@ -171,6 +214,6 @@ export const createPlaybackRepository = ({ db, migrate = false } = {}) => {
 
   return {
     getFederatedState, getSession, getState, listContinueWatching, listFederatedContinueWatching,
-    listFederatedHistory, listHistory, recordEvent, recordFederatedEvent, setFederatedWatched, setWatched
+    listFederatedHistory, listHistory, prune, recordEvent, recordFederatedEvent, setFederatedWatched, setWatched
   };
 };

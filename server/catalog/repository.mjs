@@ -62,7 +62,16 @@ const sourceTitle = (contentPath) => {
   return fileName.replace(/\.[a-z0-9]{2,5}$/i, "").replace(/[._-]+/g, " ").trim() || fileName;
 };
 
-export const createCatalogRepository = (database, { now = defaultClock, uuid = randomUUID, missingCleanupScans = 2, missingCleanupMs = 7 * 24 * 60 * 60 * 1000 } = {}) => {
+export const createCatalogRepository = (database, {
+  now = defaultClock,
+  uuid = randomUUID,
+  missingCleanupScans = 2,
+  missingCleanupMs = 7 * 24 * 60 * 60 * 1000,
+  scanBatchSize = 250
+} = {}) => {
+  if (!Number.isInteger(scanBatchSize) || scanBatchSize < 10 || scanBatchSize > 5_000) {
+    throw new TypeError("scanBatchSize must be an integer between 10 and 5000.");
+  }
   const hasProbeResults = Boolean(database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'media_probe_results'").get());
   const probeJoin = hasProbeResults
     ? "LEFT JOIN media_probe_results p ON p.source_id = s.id AND p.source_content_revision = s.content_revision"
@@ -293,7 +302,13 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
     return database.prepare("SELECT * FROM media_library_roots WHERE root_key = ?").get(rootKey);
   };
 
-  const reconcileScan = ({ rootId, scanType = "full", files }) => transaction(database, () => {
+  const reconcileScan = ({ rootId, scanType = "full", files }) => {
+    const paths = new Set();
+    for (const file of files) {
+      if (paths.has(file.path)) throw new Error(`Scan contains duplicate path: ${file.path}`);
+      paths.add(file.path);
+    }
+    return transaction(database, () => {
     const root = database.prepare("SELECT * FROM media_library_roots WHERE id = ?").get(rootId);
     if (!root) throw new Error(`Unknown catalog root: ${rootId}`);
     const timestamp = now();
@@ -313,8 +328,8 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
     const updateItemClassification = database.prepare("UPDATE media_items SET item_type = ?, media_kind = ?, updated_at = ? WHERE id = ? AND (item_type != ? OR media_kind != ?)");
     const updateSourceKind = database.prepare("UPDATE media_sources SET media_kind = ?, updated_at = ? WHERE id = ? AND media_kind != ?");
 
+    let processedSinceCommit = 0;
     for (const file of files) {
-      if (seen.has(file.path)) throw new Error(`Scan contains duplicate path: ${file.path}`);
       seen.add(file.path);
       let source = activeByPath.get(rootId, file.path);
       const keyed = file.fileKey ? activeByKey.get(rootId, file.fileKey) : null;
@@ -358,10 +373,20 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
         updateItemClassification.run(file.itemType, file.mediaKind, timestamp, source.item_id, file.itemType, file.mediaKind);
         updateSourceKind.run(file.mediaKind, timestamp, source.id, file.mediaKind);
       }
+      processedSinceCommit += 1;
+      if (processedSinceCommit >= scanBatchSize) {
+        // Keep the scan run in "scanning" state while releasing SQLite's
+        // writer lock between bounded batches. Any committed partial work is
+        // idempotently reconciled by a retry; missing detection happens only
+        // after every discovered file is published.
+        database.exec("COMMIT; BEGIN IMMEDIATE");
+        processedSinceCommit = 0;
+      }
     }
 
     if (scanType === "full") {
       const candidates = database.prepare("SELECT * FROM media_sources WHERE root_id = ? AND availability != 'superseded'").all(rootId);
+      processedSinceCommit = 0;
       for (const source of candidates) {
         if (seen.has(source.content_path)) continue;
         const missingCount = source.missing_scan_count + 1;
@@ -372,6 +397,11 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
           cleanup_eligible_at = ?, updated_at = ? WHERE id = ?`)
           .run(missingSince, missingCount, cleanupAt, timestamp, source.id);
         counts.missing += 1;
+        processedSinceCommit += 1;
+        if (processedSinceCommit >= scanBatchSize) {
+          database.exec("COMMIT; BEGIN IMMEDIATE");
+          processedSinceCommit = 0;
+        }
       }
     }
 
@@ -381,7 +411,8 @@ export const createCatalogRepository = (database, { now = defaultClock, uuid = r
     database.prepare("UPDATE media_library_roots SET scan_status = 'ready', last_scan_completed_at = ?, updated_at = ? WHERE id = ?")
       .run(timestamp, timestamp, rootId);
     return { id: scanId, rootId, scanType, discovered: files.length, ...counts };
-  });
+    });
+  };
 
   const recordScanFailure = ({ error, rootId, scanType = "full" }) => transaction(database, () => {
     const root = database.prepare("SELECT id FROM media_library_roots WHERE id = ?").get(rootId);

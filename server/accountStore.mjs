@@ -181,12 +181,41 @@ export const migrateAccountSchema = (db) => {
   `);
 };
 
-export const createAccountStore = async ({ database, databasePath, now = () => Date.now() }) => {
+export const createAccountStore = async ({
+  credentialRetentionMs = 7 * 24 * 60 * 60 * 1000,
+  database,
+  databasePath,
+  now = () => Date.now(),
+  sessionTouchIntervalMs = 60 * 1000
+}) => {
+  if (!Number.isFinite(credentialRetentionMs) || credentialRetentionMs < 60_000) {
+    throw new TypeError("credentialRetentionMs must be at least one minute.");
+  }
+  if (!Number.isFinite(sessionTouchIntervalMs) || sessionTouchIntervalMs < 1_000) {
+    throw new TypeError("sessionTouchIntervalMs must be at least one second.");
+  }
   const ownsDatabase = !database;
   if (ownsDatabase) await mkdir(path.dirname(databasePath), { recursive: true });
   const db = database ?? new DatabaseSync(databasePath);
   migrateAccountSchema(db);
   const dummyCredential = await hashPassword("nebula-dummy-password-only");
+  let authenticationsSincePrune = 0;
+
+  const pruneCredentials = ({ before = now() - credentialRetentionMs } = {}) => {
+    const current = iso(now());
+    const cutoff = iso(before);
+    const sessions = db.prepare(`DELETE FROM sessions
+      WHERE (expires_at <= ? OR revoked_at IS NOT NULL)
+        AND COALESCE(revoked_at, expires_at) < ?`).run(current, cutoff).changes;
+    const tickets = db.prepare(
+      "DELETE FROM media_tickets WHERE expires_at <= ? OR revoked_at IS NOT NULL"
+    ).run(current).changes;
+    const attempts = db.prepare(`DELETE FROM login_attempts
+      WHERE window_started_at < ? AND (blocked_until IS NULL OR blocked_until < ?)`)
+      .run(cutoff, current).changes;
+    authenticationsSincePrune = 0;
+    return { attempts, sessions, tickets };
+  };
 
   const createSessionRecord = (userId, clientLabel) => {
     const token = randomBytes(32).toString("base64url");
@@ -269,12 +298,19 @@ export const createAccountStore = async ({ database, databasePath, now = () => D
   const authenticateSession = (token) => {
     if (!token) return null;
     const row = db.prepare(`SELECT
-        s.id AS session_id, s.csrf_token, s.expires_at, s.revoked_at,
+        s.id AS session_id, s.csrf_token, s.expires_at, s.last_seen_at, s.revoked_at,
         u.*
       FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ?`).get(hashToken(token));
     if (!row || row.disabled || row.revoked_at || Date.parse(row.expires_at) <= now()) return null;
-    db.prepare("UPDATE sessions SET last_seen_at = ? WHERE id = ?").run(iso(now()), row.session_id);
+    const current = now();
+    if (current - Date.parse(row.last_seen_at) >= sessionTouchIntervalMs) {
+      db.prepare("UPDATE sessions SET last_seen_at = ? WHERE id = ?").run(iso(current), row.session_id);
+    }
+    authenticationsSincePrune += 1;
+    if (authenticationsSincePrune >= 1_000) {
+      try { pruneCredentials(); } catch { authenticationsSincePrune = 1_000; }
+    }
     return {
       csrfToken: row.csrf_token,
       expiresAt: row.expires_at,
@@ -357,6 +393,11 @@ export const createAccountStore = async ({ database, databasePath, now = () => D
   const listSessions = (userId, currentSessionId) => db.prepare(`SELECT * FROM sessions
     WHERE user_id = ? AND revoked_at IS NULL AND expires_at > ? ORDER BY last_seen_at DESC`)
     .all(userId, iso(now())).map((row) => publicSession(row, currentSessionId));
+
+  const isSessionActive = (userId, sessionId) => Boolean(db.prepare(`SELECT 1
+    FROM sessions s JOIN users u ON u.id = s.user_id
+    WHERE s.id = ? AND s.user_id = ? AND s.revoked_at IS NULL
+      AND s.expires_at > ? AND u.disabled = 0`).get(sessionId, userId, iso(now())));
 
   const revokeSession = (userId, sessionId) => {
     const result = db.prepare("UPDATE sessions SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL")
@@ -460,12 +501,14 @@ export const createAccountStore = async ({ database, databasePath, now = () => D
     getWatchlist,
     issueMediaTicket,
     issueMediaTickets,
+    isSessionActive,
     isOwnerInitialized: () => db.prepare("SELECT state_value FROM server_state WHERE state_key = 'owner_initialized'").get()?.state_value === "true",
     listSessions,
     listUsers: () => db.prepare("SELECT * FROM users ORDER BY role DESC, display_name COLLATE NOCASE").all().map(publicUser),
     login,
     migrateLegacyWatchlist,
     needsLegacyWatchlistMigration,
+    pruneCredentials,
     revokeSession,
     setWatchlisted,
     setServerSetting,

@@ -138,6 +138,65 @@ export const createPartyRepository = ({ database } = {}) => {
     return result;
   };
 
+  const presentConversationPage = (rows, userId) => {
+    if (rows.length === 0) return [];
+    const ids = rows.map(({ id }) => id);
+    const placeholders = ids.map(() => "?").join(",");
+    const memberRows = database.prepare(`SELECT
+        pcm.conversation_id, pcm.user_id, pcm.role AS member_role, pcm.last_read_sequence,
+        u.username, u.display_name
+      FROM party_conversation_members pcm
+      JOIN users u ON u.id = pcm.user_id
+      WHERE pcm.conversation_id IN (${placeholders})
+      ORDER BY pcm.conversation_id,
+        CASE pcm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
+        u.display_name COLLATE NOCASE, u.id`).all(...ids);
+    const membersByConversation = new Map();
+    const ownMemberByConversation = new Map();
+    for (const memberRow of memberRows) {
+      const members = membersByConversation.get(memberRow.conversation_id) ?? [];
+      members.push(memberFromRow(memberRow));
+      membersByConversation.set(memberRow.conversation_id, members);
+      if (memberRow.user_id === userId) ownMemberByConversation.set(memberRow.conversation_id, memberRow);
+    }
+    const unreadByConversation = new Map(database.prepare(`SELECT m.conversation_id, COUNT(*) AS count
+      FROM party_messages m
+      JOIN party_conversation_members mine
+        ON mine.conversation_id = m.conversation_id AND mine.user_id = ?
+      WHERE m.conversation_id IN (${placeholders})
+        AND m.sequence > mine.last_read_sequence AND m.sender_user_id != ?
+      GROUP BY m.conversation_id`).all(userId, ...ids, userId)
+      .map((item) => [item.conversation_id, Number(item.count)]));
+    const lastRows = database.prepare(`SELECT m.* FROM party_messages m
+      JOIN (
+        SELECT conversation_id, MAX(sequence) AS sequence
+        FROM party_messages WHERE conversation_id IN (${placeholders})
+        GROUP BY conversation_id
+      ) latest ON latest.conversation_id = m.conversation_id AND latest.sequence = m.sequence`)
+      .all(...ids);
+    const attachments = attachmentsForMessages(lastRows.map(({ id }) => id));
+    const lastByConversation = new Map(lastRows.map((messageRow) => {
+      const message = messageFromRow(messageRow, attachments.get(messageRow.id) ?? []);
+      if ([...message.text].length > 240) message.text = [...message.text].slice(0, 240).join("");
+      return [messageRow.conversation_id, message];
+    }));
+    return rows.map((row) => {
+      const members = membersByConversation.get(row.id) ?? [];
+      const other = row.kind === "direct" ? members.find((member) => member.id !== userId) : null;
+      return {
+        avatarAttachmentId: row.avatar_attachment_id,
+        createdAt: row.created_at,
+        id: row.id,
+        kind: row.kind,
+        lastMessage: lastByConversation.get(row.id) ?? null,
+        memberCount: members.length,
+        title: row.kind === "direct" ? (other?.displayName ?? "Unavailable account") : row.title,
+        unreadCount: ownMemberByConversation.has(row.id) ? (unreadByConversation.get(row.id) ?? 0) : 0,
+        updatedAt: row.updated_at
+      };
+    });
+  };
+
   const getConversation = (conversationId, userId, options) => {
     const row = rawConversation(conversationId);
     return row && isMember(conversationId, userId)
@@ -176,7 +235,7 @@ export const createPartyRepository = ({ database } = {}) => {
     const hasMore = rows.length > limit;
     const page = rows.slice(0, limit);
     return {
-      conversations: page.map((row) => presentConversation(row, userId)),
+      conversations: presentConversationPage(page, userId),
       nextCursor: hasMore ? encodeCursor(page.at(-1).updated_at, page.at(-1).id) : null
     };
   };
@@ -247,6 +306,7 @@ export const createPartyRepository = ({ database } = {}) => {
 
   const insertMessage = ({
     attachment = null, clientId = null, conversationId, maxConversationBytes = null,
+    maxGlobalBytes = null, maxUserBytes = null,
     messageId, senderId, text, timestamp
   }) =>
     transaction(database, () => {
@@ -267,6 +327,25 @@ export const createPartyRepository = ({ database } = {}) => {
         if (currentBytes + attachment.sizeBytes > maxConversationBytes) {
           throw Object.assign(new Error("This conversation has reached its attachment quota."), {
             code: "attachment_quota_exceeded", expose: true, status: 413
+          });
+        }
+      }
+      if (attachment && maxUserBytes !== null) {
+        const currentBytes = database.prepare(`SELECT COALESCE(SUM(size_bytes), 0) AS bytes
+          FROM party_attachments WHERE uploader_user_id = ?`).get(senderId).bytes;
+        if (currentBytes + attachment.sizeBytes > maxUserBytes) {
+          throw Object.assign(new Error("This account has reached its Party attachment quota."), {
+            code: "attachment_user_quota_exceeded", expose: true, status: 413
+          });
+        }
+      }
+      if (attachment && maxGlobalBytes !== null) {
+        const currentBytes = database.prepare(
+          "SELECT COALESCE(SUM(size_bytes), 0) AS bytes FROM party_attachments"
+        ).get().bytes;
+        if (currentBytes + attachment.sizeBytes > maxGlobalBytes) {
+          throw Object.assign(new Error("Party attachment storage has reached its server quota."), {
+            code: "attachment_global_quota_exceeded", expose: true, status: 507
           });
         }
       }
@@ -361,11 +440,25 @@ export const createPartyRepository = ({ database } = {}) => {
     database.prepare(`SELECT COALESCE(SUM(size_bytes), 0) AS bytes
       FROM party_attachments WHERE conversation_id = ?`).get(conversationId).bytes;
 
+  const getAttachmentUsage = ({ conversationId = null, userId = null } = {}) => {
+    const row = database.prepare(`SELECT
+      COALESCE(SUM(size_bytes), 0) AS global_bytes,
+      COALESCE(SUM(CASE WHEN conversation_id = ? THEN size_bytes ELSE 0 END), 0) AS conversation_bytes,
+      COALESCE(SUM(CASE WHEN uploader_user_id = ? THEN size_bytes ELSE 0 END), 0) AS user_bytes
+      FROM party_attachments`).get(conversationId, userId);
+    return {
+      conversationBytes: Number(row.conversation_bytes),
+      globalBytes: Number(row.global_bytes),
+      userBytes: Number(row.user_bytes)
+    };
+  };
+
   return {
     addMember,
     createDirect,
     createGroup,
     getAttachment,
+    getAttachmentUsage,
     getAuthorizedAttachment,
     getConversation,
     getConversationAttachmentBytes,

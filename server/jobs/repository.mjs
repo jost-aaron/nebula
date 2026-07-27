@@ -13,6 +13,7 @@ const JOB_PRIORITY_SQL = `CASE type
   WHEN 'scan' THEN 5
   WHEN 'cleanup' THEN 6
   ELSE 7 END`;
+const INTERACTIVE_JOB_SQL = "type IN ('rendition')";
 
 const fromRow = (row) => row ? ({
   attempt: row.attempt,
@@ -115,15 +116,18 @@ export const createJobsRepository = ({ db, migrate = false, now = () => Date.now
     }
   };
 
-  const claimNext = () => {
+  const claimNext = ({ lane = "any" } = {}) => {
+    if (!["any", "interactive", "maintenance"].includes(lane)) throw new TypeError("Unknown job lane.");
     const claimedAt = timestamp();
     db.exec("BEGIN IMMEDIATE");
     try {
       const row = db.prepare(`SELECT id FROM background_jobs
         WHERE state = 'queued' AND available_at <= ?
+          AND (? = 'any' OR (? = 'interactive' AND ${INTERACTIVE_JOB_SQL})
+            OR (? = 'maintenance' AND NOT ${INTERACTIVE_JOB_SQL}))
         ORDER BY CASE WHEN julianday(available_at) <= julianday(?) - (10.0 / 1440.0) THEN -1
           ELSE ${JOB_PRIORITY_SQL} END,
-          available_at, created_at, rowid LIMIT 1`).get(claimedAt, claimedAt);
+          available_at, created_at, rowid LIMIT 1`).get(claimedAt, lane, lane, lane, claimedAt);
       if (!row) {
         db.exec("COMMIT");
         return null;

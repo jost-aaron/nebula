@@ -111,6 +111,8 @@ export const createPartyService = ({
   events = null,
   listUsers,
   maxConversationAttachmentBytes = 250 * 1024 * 1024,
+  maxGlobalAttachmentBytes = 10 * 1024 * 1024 * 1024,
+  maxUserAttachmentBytes = 2 * 1024 * 1024 * 1024,
   now = () => new Date().toISOString(),
   repository,
   uuid = randomUUID
@@ -351,6 +353,8 @@ export const createPartyService = ({
           ? conversationQuotaBytes
           : maxConversationAttachmentBytes
       ),
+      maxGlobalBytes: maxGlobalAttachmentBytes,
+      maxUserBytes: maxUserAttachmentBytes,
       messageId: uuid(),
       senderId: actor.id,
       text: null,
