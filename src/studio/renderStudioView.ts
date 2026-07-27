@@ -1,4 +1,9 @@
-import { createElement, icons } from "lucide";
+import {
+  Activity, ArrowLeft, AudioWaveform, Circle, Clock3, Disc3, FolderOpen, History,
+  LayoutDashboard, ListPlus, ListStart, LoaderCircle, Music2, Play, RefreshCw,
+  RotateCcw, Search, Server, ServerOff, SkipBack, SkipForward, Volume2, X,
+  createElement, type IconNode
+} from "lucide";
 import { apiUrl, getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken } from "../api/http";
 import {
   applyMusicBrainzMatch,
@@ -22,6 +27,7 @@ import { createBrowserUuid } from "../shared/browserUuid";
 import type { FederatedAvailabilitySummary } from "../shared/federatedTypes";
 import { pollDeliveryUntilReady } from "../shared/deliveryPolling.js";
 import { listJobs } from "../api/jobsApi";
+import { createDialogFocusManager } from "../shared/dialogFocus";
 
 interface StudioServerInfo {
   address: string;
@@ -125,8 +131,14 @@ const studioPlaybackCapabilities = (player: HTMLAudioElement, deviceId: string) 
   videoCodecs: []
 });
 
-const renderStudioIcon = (iconName: keyof typeof icons, className = "studio-ui-icon") => {
-  const node = createElement(icons[iconName] ?? icons.Circle);
+const studioIcons: Record<string, IconNode> = {
+  Activity, ArrowLeft, AudioWaveform, Circle, Clock3, Disc3, FolderOpen, History,
+  LayoutDashboard, ListPlus, ListStart, LoaderCircle, Music2, Play, RefreshCw,
+  RotateCcw, Search, Server, ServerOff, SkipBack, SkipForward, Volume2, X
+};
+
+const renderStudioIcon = (iconName: string, className = "studio-ui-icon") => {
+  const node = createElement(studioIcons[iconName] ?? Circle);
   node.setAttribute("class", className);
   node.setAttribute("aria-hidden", "true");
   node.setAttribute("focusable", "false");
@@ -638,7 +650,7 @@ export const renderStudioView = () => {
           <span class="visually-hidden">Search your music</span>
           <input type="search" data-studio-search placeholder="Search your music" />
         </label>
-        <span class="studio-nav-status"><i class="studio-status-dot ${server.online ? "online" : "offline"}"></i>${server.online ? "Server Online" : "Server Offline"}</span>
+        <span class="studio-nav-status"><i class="studio-status-dot ${server.online ? "online" : "offline"}"></i>${escapeHtml(server.mode)}</span>
         <button class="studio-dashboard-command" type="button" data-studio-action="home">${renderStudioIcon("LayoutDashboard")} Dashboard</button>
         <button class="studio-icon-command" type="button" data-studio-action="home" aria-label="Close Studio" title="Close">${renderStudioIcon("X")}</button>
       </header>
@@ -713,6 +725,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   let libraryController: AbortController | null = null;
   let libraryGeneration = 0;
   let jobsTimer = 0;
+  const dialogFocus = createDialogFocusManager(dialogHost);
 
   const refreshJobActivity = async () => {
     if (!jobActivity) return;
@@ -749,7 +762,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     const now = new Date();
 
     footer.innerHTML = `
-      <span><i class="studio-status-dot ${server.online ? "online" : "offline"}"></i>${server.online ? "Server Online" : "Server Offline"}</span>
+      <span><i class="studio-status-dot ${server.online ? "online" : "offline"}"></i>${escapeHtml(server.mode)}</span>
       <span>${escapeHtml(server.name)} / ${escapeHtml(server.address)}</span>
       <span>${pluralizeTracks(entries.length)}</span>
       <time>${now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time>
@@ -1418,11 +1431,12 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   };
 
   const closeResumePrompt = () => {
+    const wasOpen = !dialogHost.hidden;
     pendingResume = null;
     dialogHost.hidden = true;
     dialogHost.innerHTML = "";
     content.scrollTop = 0;
-    queueMicrotask(() => content.querySelector<HTMLButtonElement>("[data-studio-play-toggle]")?.focus({ preventScroll: true }));
+    if (wasOpen) dialogFocus.deactivate(content.querySelector<HTMLButtonElement>("[data-studio-play-toggle]"));
   };
 
   const renderMusicMatch = () => {
@@ -1437,6 +1451,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
   };
 
   const closeMusicMatch = () => {
+    const wasOpen = !dialogHost.hidden;
     musicMatchCandidates = [];
     musicMatchBusy = false;
     musicMatchError = "";
@@ -1444,9 +1459,10 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     musicMatchSearched = false;
     dialogHost.hidden = true;
     dialogHost.innerHTML = "";
+    if (wasOpen) dialogFocus.deactivate(content.querySelector<HTMLButtonElement>("[data-studio-action='open-music-match']"));
   };
 
-  const openMusicMatch = async () => {
+  const openMusicMatch = async (trigger?: HTMLElement | null) => {
     if (!selected) return;
     musicMatchBusy = true;
     musicMatchError = "";
@@ -1454,6 +1470,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     musicMatchSearch = { album: selected.album, artist: selected.artist, query: selected.title };
     musicMatchSearched = false;
     renderMusicMatch();
+    dialogFocus.activate(trigger, "[data-studio-action='close-music-match']");
     try {
       musicMatchCandidates = (await listMusicBrainzCandidates(selected.path)).candidates;
     } catch (error) {
@@ -1519,7 +1536,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     playPlayerAt(positionSeconds);
   };
 
-  const requestSelectedPlayback = (entry: MusicEntry) => {
+  const requestSelectedPlayback = (entry: MusicEntry, trigger?: HTMLElement | null) => {
     selected = entry;
     render();
     content.scrollTop = 0;
@@ -1529,7 +1546,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       pendingResume = { entry, state: resumable };
       dialogHost.hidden = false;
       dialogHost.innerHTML = renderResumeDialog(entry, resumable);
-      queueMicrotask(() => dialogHost.querySelector<HTMLButtonElement>("[data-studio-action='resume-play']")?.focus());
+      dialogFocus.activate(trigger, "[data-studio-action='resume-play']");
       return;
     }
 
@@ -1728,7 +1745,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     }
 
     if (actionButton?.dataset.studioAction === "play-now" && selected) {
-      requestSelectedPlayback(selected);
+      requestSelectedPlayback(selected, actionButton);
       return;
     }
 
@@ -1757,7 +1774,7 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
 
     if (actionButton?.dataset.studioAction === "close-resume") { closeResumePrompt(); return; }
     if (actionButton?.dataset.studioAction === "close-music-match") { closeMusicMatch(); return; }
-    if (actionButton?.dataset.studioAction === "open-music-match") { void openMusicMatch(); return; }
+    if (actionButton?.dataset.studioAction === "open-music-match") { void openMusicMatch(actionButton); return; }
     if (actionButton?.dataset.studioAction === "apply-music-match") { void applyMusicMatch(actionButton); return; }
     if (actionButton?.dataset.studioAction === "refresh-music-metadata" && selected) {
       actionButton.disabled = true;
@@ -1853,6 +1870,18 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     }
   }, { signal: viewController.signal });
 
+  app.addEventListener("keydown", (event) => {
+    if (dialogHost.hidden) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (pendingResume) closeResumePrompt();
+      else closeMusicMatch();
+      return;
+    }
+    dialogFocus.handleKeydown(event);
+  }, { signal: viewController.signal });
+
   app.addEventListener("submit", (event) => {
     const form = (event.target as HTMLElement).closest<HTMLFormElement>("[data-studio-match-form]");
     if (!form) return;
@@ -1867,7 +1896,11 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
     playlists = personal.lists; collections = shared.lists; render();
   }).catch(() => {});
   void refreshJobActivity();
-  jobsTimer = window.setInterval(() => void refreshJobActivity(), 5_000);
+  jobsTimer = window.setInterval(() => {
+    if (!app.classList.contains("background-media-app") && document.visibilityState === "visible") {
+      void refreshJobActivity();
+    }
+  }, 5_000);
   void loadLibrary();
   return dispose;
 };

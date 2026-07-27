@@ -1,4 +1,9 @@
-import { createElement, icons } from "lucide";
+import {
+  ArrowLeft, BadgeCheck, Captions, ChevronRight, Circle, Database, Gauge, History,
+  Languages, LayoutDashboard, ListOrdered, ListPlus, ListVideo, Maximize,
+  MoreHorizontal, Pencil, Play, RefreshCw, RotateCcw, RotateCw, Rows3, ScanSearch,
+  Search, Server, ServerOff, SignalHigh, Volume2, X, createElement, type IconNode
+} from "lucide";
 import { apiUrl, getApiConnectionMode, getEffectiveApiBaseUrl, getApiToken } from "../api/http";
 import {
   getCinemaCatalogItem,
@@ -342,8 +347,15 @@ const posterStyle = (entry: CinemaEntry) =>
 const backdropStyle = (entry: CinemaEntry) =>
   entry.backdropUrl || entry.posterUrl ? ` style="background-image: url('${escapeHtml(entry.backdropUrl || entry.posterUrl)}')"` : "";
 
-const renderCinemaIcon = (iconName: keyof typeof icons, className = "cinema-ui-icon") => {
-  const node = createElement(icons[iconName] ?? icons.Circle);
+const cinemaIcons: Record<string, IconNode> = {
+  ArrowLeft, BadgeCheck, Captions, ChevronRight, Circle, Database, Gauge, History,
+  Languages, LayoutDashboard, ListOrdered, ListPlus, ListVideo, Maximize,
+  MoreHorizontal, Pencil, Play, RefreshCw, RotateCcw, RotateCw, Rows3, ScanSearch,
+  Search, Server, ServerOff, SignalHigh, Volume2, X
+};
+
+const renderCinemaIcon = (iconName: string, className = "cinema-ui-icon") => {
+  const node = createElement(cinemaIcons[iconName] ?? Circle);
   node.setAttribute("class", className);
   node.setAttribute("aria-hidden", "true");
   node.setAttribute("focusable", "false");
@@ -425,7 +437,7 @@ const renderServerCard = (server: CinemaServerInfo, compact = false) => `
     <span class="cinema-server-icon">${renderCinemaIcon("Server")}</span>
     <span class="cinema-status-dot ${server.online ? "online" : "offline"}"></span>
     <span>
-      <small>${server.online ? "Server Online" : "Server Offline"}</small>
+      <small>${escapeHtml(server.mode)}</small>
       <strong>${escapeHtml(server.name)}</strong>
     </span>
     <span>
@@ -761,7 +773,7 @@ const renderVideoPlayerView = (entry: CinemaEntry, subtitles: SubtitleTracksResp
         <button class="cinema-play-orb" type="button" data-cinema-action="play" aria-label="Play">${renderCinemaIcon("Play")}</button>
       </div>
       <div class="cinema-player-statusbar">
-        <span><i class="cinema-status-dot ${currentServerInfo().online ? "online" : "offline"}"></i>${currentServerInfo().online ? "Server Online" : "Server Offline"}</span>
+        <span><i class="cinema-status-dot ${currentServerInfo().online ? "online" : "offline"}"></i>${escapeHtml(currentServerInfo().mode)}</span>
         <span data-cinema-player-status>Connecting to ${escapeHtml(currentServerInfo().name)}…</span>
       </div>
       <section class="cinema-transport" aria-label="Video playback controls" data-cinema-controls>
@@ -1489,7 +1501,7 @@ export const bindCinemaView = (container: ParentNode, onHome?: () => void, optio
     const now = new Date();
 
     footer.innerHTML = `
-      <span><i class="cinema-status-dot ${server.online ? "online" : "offline"}"></i>${server.online ? "Server Online" : "Server Offline"}</span>
+      <span><i class="cinema-status-dot ${server.online ? "online" : "offline"}"></i>${escapeHtml(server.mode)}</span>
       <span>${escapeHtml(server.name)} / ${escapeHtml(server.address)}</span>
       <time>${now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time>
     `;

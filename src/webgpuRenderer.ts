@@ -64,8 +64,106 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
 `;
 
 export async function startRenderer(canvas: HTMLCanvasElement): Promise<RendererState> {
-  startFallbackRenderer(canvas);
-  return { adapterName: "Matched iOS background", mode: "fallback" };
+  if (!navigator.gpu) {
+    startFallbackRenderer(canvas);
+    return { adapterName: "Canvas 2D", mode: "fallback" };
+  }
+
+  try {
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) throw new Error("No WebGPU adapter is available.");
+    const device = await adapter.requestDevice();
+    const context = canvas.getContext("webgpu");
+    if (!context) throw new Error("WebGPU canvas context is unavailable.");
+    const format = navigator.gpu.getPreferredCanvasFormat();
+    const pipeline = device.createRenderPipeline({
+      layout: "auto",
+      vertex: { module: device.createShaderModule({ code: shader }), entryPoint: "vertexMain" },
+      fragment: {
+        module: device.createShaderModule({ code: shader }),
+        entryPoint: "fragmentMain",
+        targets: [{ format }]
+      },
+      primitive: { topology: "triangle-list" }
+    });
+    const uniforms = device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.UNIFORM
+    });
+    const bindGroup = device.createBindGroup({
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: uniforms } }]
+    });
+    let configuredWidth = 0;
+    let configuredHeight = 0;
+    let animationFrame = 0;
+    let stopped = false;
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+    const resize = () => {
+      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+      const width = Math.max(1, Math.floor(canvas.clientWidth * ratio));
+      const height = Math.max(1, Math.floor(canvas.clientHeight * ratio));
+      if (width === configuredWidth && height === configuredHeight) return;
+      configuredWidth = width;
+      configuredHeight = height;
+      canvas.width = width;
+      canvas.height = height;
+      context.configure({ device, format, alphaMode: "opaque" });
+    };
+
+    const draw = (time = 0) => {
+      animationFrame = 0;
+      if (stopped || document.hidden) return;
+      resize();
+      device.queue.writeBuffer(
+        uniforms,
+        0,
+        new Float32Array([configuredWidth, configuredHeight, time * 0.001, 0])
+      );
+      const encoder = device.createCommandEncoder();
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: context.getCurrentTexture().createView(),
+          clearValue: { r: 0.015, g: 0.018, b: 0.025, a: 1 },
+          loadOp: "clear",
+          storeOp: "store"
+        }]
+      });
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bindGroup);
+      pass.draw(3);
+      pass.end();
+      device.queue.submit([encoder.finish()]);
+      if (!motion.matches) animationFrame = window.requestAnimationFrame(draw);
+    };
+
+    const schedule = () => {
+      if (!stopped && !document.hidden && !animationFrame) {
+        animationFrame = window.requestAnimationFrame(draw);
+      }
+    };
+    const resizeObserver = new ResizeObserver(schedule);
+    resizeObserver.observe(canvas);
+    document.addEventListener("visibilitychange", schedule);
+    motion.addEventListener("change", schedule);
+    device.lost.then(() => {
+      if (stopped) return;
+      stopped = true;
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
+      resizeObserver.disconnect();
+      document.removeEventListener("visibilitychange", schedule);
+      motion.removeEventListener("change", schedule);
+      startFallbackRenderer(canvas);
+    }).catch(() => undefined);
+    schedule();
+
+    const adapterName = adapter.info?.description || adapter.info?.device || "WebGPU adapter";
+    return { adapterName, mode: "webgpu" };
+  } catch {
+    startFallbackRenderer(canvas);
+    return { adapterName: "Canvas 2D", mode: "fallback" };
+  }
 }
 
 function startFallbackRenderer(canvas: HTMLCanvasElement): void {
@@ -75,20 +173,38 @@ function startFallbackRenderer(canvas: HTMLCanvasElement): void {
     return;
   }
 
-  const draw = (time: number) => {
-    const ratio = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.floor(canvas.clientWidth * ratio);
-    canvas.height = Math.floor(canvas.clientHeight * ratio);
-    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  let animationFrame = 0;
+  let configuredWidth = 0;
+  let configuredHeight = 0;
+  let gradient: CanvasGradient | null = null;
+  const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
-    const width = canvas.clientWidth;
-    const height = canvas.clientHeight;
-    const gradient = context.createRadialGradient(width * 0.54, height * 0.42, 40, width * 0.54, height * 0.42, width * 0.72);
+  const resize = () => {
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    const width = Math.max(1, Math.floor(canvas.clientWidth * ratio));
+    const height = Math.max(1, Math.floor(canvas.clientHeight * ratio));
+    if (width === configuredWidth && height === configuredHeight) return;
+    configuredWidth = width;
+    configuredHeight = height;
+    canvas.width = width;
+    canvas.height = height;
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    const cssWidth = canvas.clientWidth;
+    const cssHeight = canvas.clientHeight;
+    gradient = context.createRadialGradient(cssWidth * 0.54, cssHeight * 0.42, 40, cssWidth * 0.54, cssHeight * 0.42, cssWidth * 0.72);
     gradient.addColorStop(0, "rgba(0, 212, 255, 0.42)");
     gradient.addColorStop(0.45, "rgba(255, 207, 63, 0.14)");
     gradient.addColorStop(1, "rgba(5, 7, 12, 1)");
+  };
 
-    context.fillStyle = gradient;
+  const draw = (time = 0) => {
+    animationFrame = 0;
+    if (document.hidden) return;
+    resize();
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+
+    context.fillStyle = gradient ?? "rgb(5, 7, 12)";
     context.fillRect(0, 0, width, height);
     context.strokeStyle = "rgba(255, 255, 255, 0.16)";
     context.lineWidth = 2;
@@ -104,8 +220,15 @@ function startFallbackRenderer(canvas: HTMLCanvasElement): void {
     }
 
     context.stroke();
-    requestAnimationFrame(draw);
+    if (!motion.matches) animationFrame = window.requestAnimationFrame(draw);
   };
 
-  requestAnimationFrame(draw);
+  const schedule = () => {
+    if (!document.hidden && !animationFrame) animationFrame = window.requestAnimationFrame(draw);
+  };
+  const resizeObserver = new ResizeObserver(schedule);
+  resizeObserver.observe(canvas);
+  document.addEventListener("visibilitychange", schedule);
+  motion.addEventListener("change", schedule);
+  schedule();
 }

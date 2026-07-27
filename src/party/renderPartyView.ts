@@ -26,6 +26,7 @@ import type {
   PartyMessage,
   PartyUser
 } from "../shared/partyTypes";
+import { createDialogFocusManager } from "../shared/dialogFocus";
 
 const escapeHtml = (value: string) =>
   value
@@ -141,7 +142,7 @@ export const renderPartyView = () => `
           <input type="search" autocomplete="off" placeholder="Search conversations" data-party-conversation-search />
           <kbd aria-hidden="true">Ctrl K</kbd>
         </label>
-        <div class="party-conversation-list" data-party-conversations aria-live="polite"></div>
+        <div class="party-conversation-list" data-party-conversations></div>
       </aside>
 
       <section class="party-thread" data-party-thread aria-label="Conversation">
@@ -154,7 +155,7 @@ export const renderPartyView = () => `
         <div class="party-thread-shell" data-party-thread-shell hidden>
           <header class="party-thread-header" data-party-thread-header></header>
           <div class="party-message-region" data-party-message-region>
-            <div class="party-messages" data-party-messages aria-live="polite" aria-busy="false"></div>
+            <div class="party-messages" data-party-messages role="log" aria-live="off" aria-busy="false"></div>
           </div>
           <div class="party-upload-tray" data-party-upload-tray hidden></div>
           <form class="party-composer" data-party-composer>
@@ -527,6 +528,12 @@ export const bindPartyView = (container: ParentNode, options: PartyViewOptions) 
   let eventController: AbortController | null = null;
   const objectUrls = new Map<string, string>();
   const previewLoads = new Map<string, AbortController>();
+  const previewQueue: HTMLElement[] = [];
+  const queuedPreviewIds = new Set<string>();
+  let activePreviewLoads = 0;
+  const maxPreviewLoads = 3;
+  let previewObserver: IntersectionObserver | null = null;
+  const dialogFocus = createDialogFocusManager(dialogHost);
 
   const announce = (message: string) => {
     liveRegion.textContent = "";
@@ -542,29 +549,92 @@ export const bindPartyView = (container: ParentNode, options: PartyViewOptions) 
     sendButton.disabled = sending || next === "offline";
   };
 
-  const hydrateAttachmentPreviews = () => {
-    app.querySelectorAll<HTMLElement>("[data-party-attachment-preview]").forEach((node) => {
+  const patchAttachmentPreviews = (id: string, url: string) => {
+    app.querySelectorAll<HTMLElement>(`[data-party-attachment-preview="${CSS.escape(id)}"]`).forEach((node) => {
+      const kind = node.dataset.partyPreviewKind;
+      if (kind === "avatar") {
+        const image = document.createElement("img");
+        image.src = url;
+        image.alt = "";
+        node.parentElement?.replaceChildren(image);
+        return;
+      }
+      const host = node.closest<HTMLElement>(".party-attachment-preview");
+      if (!host) return;
+      const label = node.closest(".party-attachment")?.querySelector("strong")?.textContent ?? "Attachment";
+      let media: HTMLImageElement | HTMLVideoElement | HTMLAudioElement;
+      if (kind === "video") {
+        media = document.createElement("video");
+        media.controls = true;
+        media.preload = "metadata";
+      } else if (kind === "audio") {
+        media = document.createElement("audio");
+        media.controls = true;
+        media.preload = "metadata";
+      } else {
+        media = document.createElement("img");
+        media.alt = label;
+        media.loading = "lazy";
+      }
+      media.src = url;
+      host.replaceChildren(media);
+    });
+  };
+
+  const pumpPreviewQueue = () => {
+    while (!disposed && activePreviewLoads < maxPreviewLoads && previewQueue.length > 0) {
+      const node = previewQueue.shift()!;
       const id = node.dataset.partyAttachmentPreview;
-      if (!id || objectUrls.has(id) || previewLoads.has(id)) return;
+      if (!id || objectUrls.has(id) || previewLoads.has(id)) {
+        if (id) queuedPreviewIds.delete(id);
+        continue;
+      }
       const controller = new AbortController();
       previewLoads.set(id, controller);
+      activePreviewLoads += 1;
       void fetchPartyAttachment(id, controller.signal)
         .then((response) => response.blob())
         .then((blob) => {
           if (disposed || controller.signal.aborted) return;
-          objectUrls.set(id, URL.createObjectURL(blob));
-          if (selectedConversation) {
-            threadHeader.innerHTML = renderThreadHeader(selectedConversation, options.currentUserId, objectUrls);
-            messagesNode.innerHTML = renderMessages(messages, selectedConversation, options.currentUserId, messageCursor !== null, objectUrls);
-          }
-          renderConversationList();
-          hydrateAttachmentPreviews();
+          const url = URL.createObjectURL(blob);
+          objectUrls.set(id, url);
+          patchAttachmentPreviews(id, url);
         })
         .catch((error) => {
-          if (!isAbortError(error)) node.textContent = "Preview unavailable";
+          if (!isAbortError(error) && node.isConnected) node.textContent = "Preview unavailable";
         })
-        .finally(() => previewLoads.delete(id));
-    });
+        .finally(() => {
+          previewLoads.delete(id);
+          queuedPreviewIds.delete(id);
+          activePreviewLoads -= 1;
+          pumpPreviewQueue();
+        });
+    }
+  };
+
+  const enqueueAttachmentPreview = (node: HTMLElement) => {
+    const id = node.dataset.partyAttachmentPreview;
+    if (!id || objectUrls.has(id) || previewLoads.has(id) || queuedPreviewIds.has(id)) return;
+    queuedPreviewIds.add(id);
+    previewQueue.push(node);
+    pumpPreviewQueue();
+  };
+
+  const hydrateAttachmentPreviews = () => {
+    previewObserver?.disconnect();
+    const nodes = [...app.querySelectorAll<HTMLElement>("[data-party-attachment-preview]")];
+    if (!("IntersectionObserver" in window)) {
+      nodes.forEach(enqueueAttachmentPreview);
+      return;
+    }
+    previewObserver ??= new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        previewObserver?.unobserve(entry.target);
+        enqueueAttachmentPreview(entry.target as HTMLElement);
+      });
+    }, { root: app, rootMargin: "240px" });
+    nodes.forEach((node) => previewObserver?.observe(node));
   };
 
   const renderConversationList = () => {
@@ -687,7 +757,7 @@ export const bindPartyView = (container: ParentNode, options: PartyViewOptions) 
     discoveryController = null;
     selectedUserIds.clear();
     memberQuery = "";
-    app.querySelector<HTMLButtonElement>("[data-party-new]")?.focus();
+    dialogFocus.deactivate(app.querySelector<HTMLButtonElement>("[data-party-new]"));
   };
 
   const loadDiscovery = async (query = discoveryQuery, forMembers = false) => {
@@ -717,7 +787,7 @@ export const bindPartyView = (container: ParentNode, options: PartyViewOptions) 
     }
   };
 
-  const openNewDialog = () => {
+  const openNewDialog = (trigger?: HTMLElement | null) => {
     dialog = "new";
     newMode = "direct";
     discoveryQuery = "";
@@ -726,10 +796,10 @@ export const bindPartyView = (container: ParentNode, options: PartyViewOptions) 
     selectedUserIds.clear();
     renderNewDialog();
     void loadDiscovery();
-    queueMicrotask(() => dialogHost.querySelector<HTMLInputElement>("[data-party-user-search]")?.focus());
+    dialogFocus.activate(trigger, "[data-party-user-search]");
   };
 
-  const openMembersDialog = () => {
+  const openMembersDialog = (trigger?: HTMLElement | null) => {
     if (!selectedConversation || selectedConversation.kind !== "group") return;
     dialog = "members";
     memberQuery = "";
@@ -737,7 +807,7 @@ export const bindPartyView = (container: ParentNode, options: PartyViewOptions) 
     dialogHost.hidden = false;
     dialogHost.innerHTML = renderMembersDialog(selectedConversation, options.currentUserId, discoveryUsers, memberQuery);
     void loadDiscovery("", true);
-    queueMicrotask(() => dialogHost.querySelector<HTMLButtonElement>("[data-party-dialog-close]")?.focus());
+    dialogFocus.activate(trigger, "[data-party-dialog-close]");
   };
 
   const mergeMessages = (incoming: PartyMessage[]) => {
@@ -1022,14 +1092,14 @@ export const bindPartyView = (container: ParentNode, options: PartyViewOptions) 
   app.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
     if (target.closest("[data-party-close]")) { options.onClose?.(); return; }
-    if (target.closest("[data-party-new]")) { openNewDialog(); return; }
+    if (target.closest("[data-party-new]")) { openNewDialog(target.closest<HTMLElement>("[data-party-new]")); return; }
     if (target.closest("[data-party-dialog-close]")) { closeDialog(); return; }
     if (target.closest("[data-party-mobile-back]")) {
       app.classList.remove("is-mobile-thread");
       app.querySelector<HTMLButtonElement>(`[data-party-conversation="${CSS.escape(selectedConversation?.id ?? "")}"]`)?.focus();
       return;
     }
-    if (target.closest("[data-party-members]")) { openMembersDialog(); return; }
+    if (target.closest("[data-party-members]")) { openMembersDialog(target.closest<HTMLElement>("[data-party-members]")); return; }
     if (target.closest("[data-party-retry-list]")) { void loadConversations(); return; }
     if (target.closest("[data-party-retry-thread]") && selectedConversation) { void loadMessages(selectedConversation); return; }
     if (target.closest("[data-party-more-conversations]")) { void loadConversations(true); return; }
@@ -1257,6 +1327,7 @@ export const bindPartyView = (container: ParentNode, options: PartyViewOptions) 
       closeDialog();
       return;
     }
+    if (dialog && dialogFocus.handleKeydown(event)) return;
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
       searchInput.focus();
@@ -1275,6 +1346,10 @@ export const bindPartyView = (container: ParentNode, options: PartyViewOptions) 
   const onOffline = () => {
     window.clearTimeout(reconnectTimer);
     eventController?.abort();
+    previewObserver?.disconnect();
+    previewObserver = null;
+    previewQueue.length = 0;
+    queuedPreviewIds.clear();
     eventController = null;
     setConnection("offline");
     announce("Party is offline. Messages will not send until the connection returns.");

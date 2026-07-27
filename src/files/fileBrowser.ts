@@ -10,7 +10,9 @@ export interface FileEntry {
 
 interface FileListing {
   entries: FileEntry[];
+  nextCursor?: string;
   path: string;
+  total?: number;
 }
 
 interface UploadPart {
@@ -299,7 +301,13 @@ const renderStorage = (entries: FileEntry[]) => {
   `;
 };
 
-const renderEntryCards = (entries: FileEntry[], selectedPath: string | null, needsServerConfig: boolean) => {
+const renderEntryCards = (
+  entries: FileEntry[],
+  selectedPath: string | null,
+  needsServerConfig: boolean,
+  nextCursor: string | null,
+  total: number
+) => {
   if (needsServerConfig) {
     return `
       <div class="file-empty file-server-empty">
@@ -339,7 +347,12 @@ const renderEntryCards = (entries: FileEntry[], selectedPath: string | null, nee
         </button>
       `
     )
-    .join("");
+    .join("") + (nextCursor ? `
+      <button class="file-load-more" type="button" data-file-load-more>
+        <strong>Load more</strong>
+        <span>Showing ${entries.length} of ${total}</span>
+      </button>
+    ` : "");
 };
 
 const renderPreview = (entry: FileEntry | null, preview: string | null, imagePreviewUrl: string | null) => {
@@ -486,7 +499,7 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
   const uploadCancel = container.querySelector<HTMLButtonElement>("[data-file-upload-cancel]");
 
   if (!browser || !sections || !storage || !heading || !breadcrumbs || !list || !preview || !status || !uploadInput || !uploadProgress || !uploadTitle || !uploadDetail || !uploadMeter || !uploadFill || !uploadCancel) {
-    return;
+    return () => undefined;
   }
 
   const dropTarget = container instanceof HTMLElement ? container : browser;
@@ -501,6 +514,14 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
   let activePreviewObjectUrl: string | null = null;
   let needsServerConfig = false;
   let uploadCancelled = false;
+  let disposed = false;
+  let listingController: AbortController | null = null;
+  let previewController: AbortController | null = null;
+  let listingGeneration = 0;
+  let previewGeneration = 0;
+  let nextCursor: string | null = null;
+  let listingTotal = 0;
+  let loadingMore = false;
 
   const selectedEntry = () => entries.find((entry) => entry.path === selectedPath) ?? null;
   const selectedIndex = () => Math.max(0, entries.findIndex((entry) => entry.path === selectedPath));
@@ -519,7 +540,12 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
   };
 
   const loadPreview = async () => {
+    const generation = ++previewGeneration;
+    previewController?.abort();
+    previewController = new AbortController();
+    const signal = previewController.signal;
     const entry = selectedEntry();
+    const entryPath = entry?.path ?? null;
     let content: string | null = null;
     let imagePreviewUrl: string | null = null;
 
@@ -529,9 +555,9 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
     }
 
     if (entry?.type === "file" && TEXT_PATTERN.test(entry.name)) {
-      content = await apiFetch(fileApiPath("read", entry.path)).then((response) => response.text()).catch(() => null);
+      content = await apiFetch(fileApiPath("read", entry.path), { signal }).then((response) => response.text()).catch(() => null);
     } else if (entry?.type === "file" && IMAGE_PATTERN.test(entry.name)) {
-      imagePreviewUrl = await apiFetch(fileApiPath("read", entry.path))
+      imagePreviewUrl = await apiFetch(fileApiPath("read", entry.path), { signal })
         .then(async (response) => {
           if (!response.ok) {
             throw new Error("Preview failed.");
@@ -540,9 +566,13 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
           return URL.createObjectURL(await response.blob());
         })
         .catch(() => null);
-      activePreviewObjectUrl = imagePreviewUrl;
     }
 
+    if (disposed || signal.aborted || generation !== previewGeneration || selectedPath !== entryPath) {
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+      return;
+    }
+    activePreviewObjectUrl = imagePreviewUrl;
     preview.innerHTML = renderPreview(entry, content, imagePreviewUrl);
     updateActionState();
   };
@@ -553,24 +583,38 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
     sections.innerHTML = renderSections(activeSection, entries);
     storage.innerHTML = renderStorage(entries);
     breadcrumbs.innerHTML = renderBreadcrumbs(currentPath);
-    list.innerHTML = renderEntryCards(entries, selectedPath, needsServerConfig);
+    list.innerHTML = renderEntryCards(entries, selectedPath, needsServerConfig, nextCursor, listingTotal);
     await loadPreview();
   };
 
-  const load = async (path = currentPath) => {
+  const load = async (path = currentPath, append = false) => {
+    if (append && (!nextCursor || loadingMore)) return;
+    const generation = ++listingGeneration;
+    listingController?.abort();
+    listingController = new AbortController();
+    loadingMore = append;
     try {
-      const listing = await api<FileListing>(`/api/files?path=${encodeURIComponent(path)}`);
+      const cursor = append ? `&cursor=${encodeURIComponent(nextCursor ?? "")}` : "";
+      const listing = await api<FileListing>(`/api/files?path=${encodeURIComponent(path)}&limit=120${cursor}`, {
+        signal: listingController.signal
+      });
+      if (disposed || listingController.signal.aborted || generation !== listingGeneration) return;
       needsServerConfig = false;
       currentPath = listing.path;
-      entries = listing.entries;
-      selectedPath = entries[0]?.path ?? null;
-      setStatus(`Viewing /${currentPath}`);
+      entries = append ? [...entries, ...listing.entries] : listing.entries;
+      nextCursor = listing.nextCursor ?? null;
+      listingTotal = listing.total ?? entries.length;
+      if (!append) selectedPath = entries[0]?.path ?? null;
+      setStatus(`Viewing /${currentPath} · ${entries.length} of ${listingTotal} items`);
       await render();
     } catch (error) {
+      if (disposed || listingController.signal.aborted || generation !== listingGeneration) return;
       if (getApiConnectionMode() === "Needs server URL") {
         needsServerConfig = true;
         currentPath = "";
         entries = [];
+        nextCursor = null;
+        listingTotal = 0;
         selectedPath = null;
         setStatus("Add a server URL in Settings -> Client.");
         await render();
@@ -578,6 +622,8 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
       }
 
       throw error;
+    } finally {
+      if (generation === listingGeneration) loadingMore = false;
     }
   };
 
@@ -954,6 +1000,12 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
   });
 
   list.addEventListener("click", (event) => {
+    const more = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-file-load-more]");
+    if (more) {
+      more.disabled = true;
+      void load(currentPath, true);
+      return;
+    }
     const action = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-file-action='settings']");
 
     if (action) {
@@ -1141,5 +1193,24 @@ export function bindFileBrowser(container: ParentNode, options: FileBrowserOptio
     await load();
   });
 
-  void load().then(() => browser.focus({ preventScroll: true }));
+  void load().then(() => {
+    if (!disposed) browser.focus({ preventScroll: true });
+  });
+  return () => {
+    if (disposed) return;
+    disposed = true;
+    listingGeneration += 1;
+    previewGeneration += 1;
+    listingController?.abort();
+    previewController?.abort();
+    activeUpload?.abort();
+    if (activeUploadSessionId) {
+      void apiFetch(uploadSessionUrl(activeUploadSessionId), {
+        keepalive: true,
+        method: "DELETE"
+      }).catch(() => undefined);
+    }
+    if (activePreviewObjectUrl) URL.revokeObjectURL(activePreviewObjectUrl);
+    activePreviewObjectUrl = null;
+  };
 }

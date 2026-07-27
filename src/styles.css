@@ -3571,6 +3571,32 @@ h1 {
   text-overflow: ellipsis;
 }
 
+.file-load-more {
+  align-items: center;
+  align-self: stretch;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px dashed rgba(255, 255, 255, 0.22);
+  border-radius: 18px;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 190px;
+  padding: 20px;
+}
+
+.file-load-more:hover,
+.file-load-more:focus-visible {
+  background: rgba(120, 202, 255, 0.12);
+  border-color: rgba(120, 202, 255, 0.65);
+}
+
+.file-load-more span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-top: 6px;
+}
+
 .file-name {
   display: -webkit-box;
   color: #f7f9fc;

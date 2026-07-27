@@ -87,7 +87,7 @@ const performanceMonitor = createPerformanceMonitor();
 
 root.innerHTML = `
   <main class="shell" aria-label="Nebula dashboard">
-    <section class="home" aria-live="polite">
+    <section class="home">
       <header class="topbar">
         <div>
           <p class="eyebrow">Nebula OS</p>
@@ -128,7 +128,7 @@ root.innerHTML = `
       <section id="detail-panel" class="detail-panel" hidden></section>
     </section>
   </main>
-  <section id="app-surface" class="app-surface" role="dialog" aria-modal="true" aria-live="polite" tabindex="-1" hidden></section>
+  <section id="app-surface" class="app-surface" role="dialog" aria-modal="true" tabindex="-1" hidden></section>
   <section id="background-media-host" class="background-media-host" aria-label="Global media players">
     <button id="background-video-return" class="background-video-return" type="button" hidden>Return to Cinema</button>
     <button id="background-video-close" class="background-video-close" type="button" aria-label="Close video player" title="Close player" hidden>×</button>
@@ -218,6 +218,15 @@ const backgroundActiveMediaApp = () => {
   if (activeId !== "cinema" && activeId !== "studio") return false;
   const cached = mediaSurfaceCache.get(activeId);
   if (!cached) return false;
+  const hasRetainedPlayer = activeId === "studio"
+    ? Boolean(cached.element.querySelector("[data-studio-mini-player]:not([hidden])"))
+    : Boolean(cached.element.querySelector("[data-cinema-player]"));
+  if (!hasRetainedPlayer) {
+    cached.dispose();
+    cached.element.remove();
+    mediaSurfaceCache.delete(activeId);
+    return false;
+  }
   cached.element.classList.remove("foreground-media-app");
   cached.element.classList.add("background-media-app");
   disposeActiveApp = null;
@@ -755,7 +764,7 @@ const launchApp = async (app: DashboardApp, options: { settingsSection?: string 
   }
 
   if (isFilesApp) {
-    bindFileBrowser(appSurface, {
+    disposeActiveApp = bindFileBrowser(appSurface, {
       onOpenSettings: () => {
         const settingsApp = availableApps.find((candidate) => candidate.id === "settings");
 
@@ -1049,6 +1058,14 @@ const dispatchShellCommand = (command: ShellCommand) => {
   if (command.type === "back") {
     if (closeAccountMenu?.()) return;
     if (shellState.activeAppId) {
+      if (command.source === "gamepad") {
+        const target = document.activeElement instanceof HTMLElement && appSurface.contains(document.activeElement)
+          ? document.activeElement
+          : appSurface;
+        const escape = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" });
+        target.dispatchEvent(escape);
+        if (escape.defaultPrevented) return;
+      }
       closeActiveApp();
       return;
     }
@@ -1056,7 +1073,33 @@ const dispatchShellCommand = (command: ShellCommand) => {
     return;
   }
 
-  if (shellState.activeAppId || shellState.detailAppId) return;
+  if (shellState.activeAppId) {
+    if (command.source !== "gamepad") return;
+    const focusable = [...appSurface.querySelectorAll<HTMLElement>(
+      "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"
+    )].filter((element) =>
+      !element.hidden
+      && !element.closest("[hidden], [inert], [aria-hidden='true']")
+      && window.getComputedStyle(element).visibility !== "hidden"
+    );
+    if (command.type === "open") {
+      const active = document.activeElement instanceof HTMLElement && appSurface.contains(document.activeElement)
+        ? document.activeElement
+        : focusable[0];
+      active?.click();
+      return;
+    }
+    if (command.type === "move" && focusable.length > 0) {
+      const activeIndex = document.activeElement instanceof HTMLElement
+        ? focusable.indexOf(document.activeElement)
+        : -1;
+      const nextIndex = Math.max(0, Math.min(focusable.length - 1, activeIndex + command.delta));
+      focusable[nextIndex]?.focus({ preventScroll: true });
+      focusable[nextIndex]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+    return;
+  }
+  if (shellState.detailAppId) return;
 
   if (command.type === "move") {
     const nextState = transitionShellState(shellState, { type: "move", delta: command.delta }, appIds);

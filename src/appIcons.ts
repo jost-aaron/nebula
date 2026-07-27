@@ -1,8 +1,28 @@
-import { createElement, icons } from "lucide";
+import {
+  AudioLines,
+  FolderOpen,
+  Gamepad2,
+  MessageCircleMore,
+  Radar,
+  SlidersHorizontal,
+  Square,
+  createElement,
+  type IconNode
+} from "lucide";
 import type { DashboardApp } from "./apps";
 
+const appIcons: Record<string, IconNode> = {
+  AudioLines,
+  FolderOpen,
+  Gamepad2,
+  MessageCircleMore,
+  Radar,
+  SlidersHorizontal,
+  Square
+};
+
 const iconMarkup = (iconName: string, className: string) => {
-  const iconNode = icons[iconName as keyof typeof icons] ?? icons.Square;
+  const iconNode = appIcons[iconName] ?? Square;
   const node = createElement(iconNode);
   node.setAttribute("class", className);
   node.setAttribute("aria-hidden", "true");
