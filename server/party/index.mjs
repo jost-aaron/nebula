@@ -7,5 +7,12 @@ export {
 export { createPartyEvents } from "./events.mjs";
 export { createPartyRepository } from "./repository.mjs";
 export { createPartyRoutes } from "./routes.mjs";
-export { PARTY_SCHEMA_SQL, PARTY_SCHEMA_VERSION, partyMigration } from "./schema.mjs";
+export {
+  PARTY_LIFECYCLE_SCHEMA_SQL,
+  PARTY_LIFECYCLE_SCHEMA_VERSION,
+  PARTY_SCHEMA_SQL,
+  PARTY_SCHEMA_VERSION,
+  partyLifecycleMigration,
+  partyMigration
+} from "./schema.mjs";
 export { createPartyService } from "./service.mjs";

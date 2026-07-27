@@ -304,6 +304,65 @@ export const createPartyRepository = ({ database } = {}) => {
       .run(timestamp, conversationId);
   };
 
+  const queueAttachmentCleanup = (storageKeys, timestamp) => {
+    const insert = database.prepare(`INSERT INTO party_attachment_cleanup
+      (storage_key, queued_at) VALUES (?, ?) ON CONFLICT(storage_key) DO NOTHING`);
+    for (const storageKey of storageKeys) insert.run(storageKey, timestamp);
+  };
+
+  const deleteConversation = ({ conversationId, timestamp }) => transaction(database, () => {
+    const storageKeys = database.prepare(
+      "SELECT storage_key FROM party_attachments WHERE conversation_id = ? ORDER BY id"
+    ).all(conversationId).map(({ storage_key: storageKey }) => storageKey);
+    queueAttachmentCleanup(storageKeys, timestamp);
+    const deleted = database.prepare("DELETE FROM party_conversations WHERE id = ?")
+      .run(conversationId).changes;
+    return { deleted: deleted === 1, storageKeys };
+  });
+
+  const pruneMessages = ({ before, limit, timestamp }) => transaction(database, () => {
+    const rows = database.prepare(`SELECT m.id, m.conversation_id,
+        a.id AS attachment_id, a.storage_key
+      FROM party_messages m
+      LEFT JOIN party_attachments a ON a.message_id = m.id
+      WHERE m.created_at < ?
+      ORDER BY m.created_at, m.id
+      LIMIT ?`).all(before, limit);
+    const messageIds = [...new Set(rows.map(({ id }) => id))];
+    if (messageIds.length === 0) return { deleted: 0, hasMore: false, storageKeys: [] };
+    const placeholders = messageIds.map(() => "?").join(",");
+    const storageKeys = rows.map(({ storage_key: storageKey }) => storageKey).filter(Boolean);
+    queueAttachmentCleanup(storageKeys, timestamp);
+    const attachmentIds = rows.map(({ attachment_id: attachmentId }) => attachmentId).filter(Boolean);
+    if (attachmentIds.length > 0) {
+      const attachmentPlaceholders = attachmentIds.map(() => "?").join(",");
+      database.prepare(`UPDATE party_conversations SET avatar_attachment_id = NULL
+        WHERE avatar_attachment_id IN (${attachmentPlaceholders})`).run(...attachmentIds);
+    }
+    database.prepare(`DELETE FROM party_messages WHERE id IN (${placeholders})`).run(...messageIds);
+    const conversationIds = [...new Set(rows.map(({ conversation_id: id }) => id))];
+    const update = database.prepare(`UPDATE party_conversations SET updated_at = COALESCE(
+      (SELECT MAX(created_at) FROM party_messages WHERE conversation_id = ?), created_at
+    ) WHERE id = ?`);
+    for (const conversationId of conversationIds) update.run(conversationId, conversationId);
+    return {
+      deleted: messageIds.length,
+      hasMore: messageIds.length === limit,
+      storageKeys
+    };
+  });
+
+  const listAttachmentCleanup = ({ limit }) => database.prepare(`SELECT storage_key
+    FROM party_attachment_cleanup ORDER BY queued_at, storage_key LIMIT ?`)
+    .all(limit).map(({ storage_key: storageKey }) => storageKey);
+
+  const completeAttachmentCleanup = (storageKey) =>
+    database.prepare("DELETE FROM party_attachment_cleanup WHERE storage_key = ?").run(storageKey).changes === 1;
+
+  const failAttachmentCleanup = (storageKey) =>
+    database.prepare(`UPDATE party_attachment_cleanup SET attempts = attempts + 1
+      WHERE storage_key = ?`).run(storageKey);
+
   const insertMessage = ({
     attachment = null, clientId = null, conversationId, maxConversationBytes = null,
     maxGlobalBytes = null, maxUserBytes = null,
@@ -457,17 +516,22 @@ export const createPartyRepository = ({ database } = {}) => {
     addMember,
     createDirect,
     createGroup,
+    completeAttachmentCleanup,
+    deleteConversation,
     getAttachment,
     getAttachmentUsage,
     getAuthorizedAttachment,
     getConversation,
     getConversationAttachmentBytes,
+    failAttachmentCleanup,
     insertMessage,
     isMember,
     listConversations,
+    listAttachmentCleanup,
     listMembers,
     listMessages,
     markRead,
+    pruneMessages,
     rawConversation,
     rawMember,
     removeMember,

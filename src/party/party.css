@@ -131,6 +131,10 @@
   cursor: pointer;
 }
 
+.party-thread-command.is-danger {
+  color: #ff9a9a;
+}
+
 .party-icon-button {
   width: 44px;
   padding: 0;
@@ -832,7 +836,18 @@
   .party-app.is-mobile-thread .party-thread { visibility: visible; transform: none; pointer-events: auto; }
   .party-mobile-back { display: grid; }
   .party-thread-header { min-height: 64px; padding: 9px 10px; }
-  .party-thread-command { padding: 0 9px; }
+  .party-thread-header { gap: 7px; }
+  .party-thread-command {
+    width: 38px;
+    min-height: 40px;
+    padding: 0;
+    overflow: hidden;
+    font-size: 0;
+  }
+  .party-thread-command::after { font-size: 0.82rem; }
+  .party-thread-command[data-party-export]::after { content: "↓"; font-size: 1.15rem; }
+  .party-thread-command[data-party-members]::after { content: "•••"; }
+  .party-thread-command[data-party-delete]::after { content: "×"; font-size: 1.25rem; }
   .party-messages { padding: 16px 11px 12px; }
   .party-message { width: 88%; }
   .party-message-meta time { display: none; }

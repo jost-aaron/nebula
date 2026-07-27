@@ -4,7 +4,8 @@ export const AUDIT_EVENT_TYPES = [
   "account.owner_setup", "account.login", "account.logout", "account.profile_updated",
   "account.password_changed", "account.member_created", "account.member_status_changed",
   "account.session_revoked", "account.server_setting_changed", "auth.access_denied",
-  "catalog.scan_requested", "job.enqueued", "job.cancel_requested", "backup.created", "backup.inspected"
+  "catalog.scan_requested", "job.enqueued", "job.cancel_requested", "backup.created", "backup.inspected",
+  "backup.cancel_requested", "backup.retention_changed", "party.conversation_deleted", "party.retention_applied"
 ] as const;
 export const AUDIT_OUTCOMES = ["success", "failure", "denied"] as const;
 export const AUDIT_ACTOR_KINDS = ["account", "service", "system", "anonymous"] as const;
@@ -17,7 +18,7 @@ export interface AuditEvent {
   actor: { kind: AuditActorKind; principalId: string | null; role: string | null };
   eventType: AuditEventType;
   id: string;
-  metadata: Record<string, boolean | string>;
+  metadata: Record<string, boolean | number | string>;
   occurredAt: string;
   outcome: AuditOutcome;
   target: { id: string | null; type: string } | null;

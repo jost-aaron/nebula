@@ -3,7 +3,9 @@ import {
   addPartyConversationMember,
   createPartyDirectConversation,
   createPartyGroupConversation,
+  deletePartyConversation,
   downloadPartyAttachment,
+  downloadPartyConversationExport,
   fetchPartyAttachment,
   getPartyConversation,
   listPartyConversations,
@@ -277,8 +279,12 @@ const renderThreadHeader = (
         ? `${conversation.memberCount} members · local group`
         : "Private on this Nebula server"}</small>
     </div>
+    <button type="button" class="party-thread-command" data-party-export aria-label="Export conversation" title="Export conversation">Export</button>
     ${conversation.kind === "group"
       ? `<button type="button" class="party-thread-command" data-party-members aria-label="Manage group" title="Manage group">Group</button>`
+      : ""}
+    ${conversation.kind === "direct" || conversation.members?.some((member) => member.id === currentUserId && member.role === "owner")
+      ? `<button type="button" class="party-thread-command is-danger" data-party-delete aria-label="Delete conversation" title="Permanently delete conversation">Delete</button>`
       : ""}
   `;
 };
@@ -1100,6 +1106,34 @@ export const bindPartyView = (container: ParentNode, options: PartyViewOptions) 
       return;
     }
     if (target.closest("[data-party-members]")) { openMembersDialog(target.closest<HTMLElement>("[data-party-members]")); return; }
+    if (target.closest("[data-party-export]") && selectedConversation) {
+      const button = target.closest<HTMLButtonElement>("[data-party-export]")!;
+      button.disabled = true;
+      void downloadPartyConversationExport(selectedConversation.id)
+        .then(() => announce("Conversation export downloaded."))
+        .catch((error) => announce(error instanceof Error ? error.message : "Export failed."))
+        .finally(() => { button.disabled = false; });
+      return;
+    }
+    if (target.closest("[data-party-delete]") && selectedConversation) {
+      const conversation = selectedConversation;
+      if (!window.confirm(`Permanently delete "${conversationTitle(conversation, options.currentUserId)}" for every member? This cannot be undone.`)) return;
+      const button = target.closest<HTMLButtonElement>("[data-party-delete]")!;
+      button.disabled = true;
+      void deletePartyConversation(conversation.id).then(() => {
+        conversations = conversations.filter((item) => item.id !== conversation.id);
+        selectedConversation = null;
+        messages = [];
+        app.classList.remove("is-mobile-thread");
+        renderConversationList();
+        renderThread();
+        announce("Conversation permanently deleted.");
+      }).catch((error) => {
+        button.disabled = false;
+        announce(error instanceof Error ? error.message : "Conversation could not be deleted.");
+      });
+      return;
+    }
     if (target.closest("[data-party-retry-list]")) { void loadConversations(); return; }
     if (target.closest("[data-party-retry-thread]") && selectedConversation) { void loadMessages(selectedConversation); return; }
     if (target.closest("[data-party-more-conversations]")) { void loadConversations(true); return; }

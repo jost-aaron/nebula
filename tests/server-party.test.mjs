@@ -10,6 +10,7 @@ import {
   createPartyRepository,
   createPartyRoutes,
   createPartyService,
+  partyLifecycleMigration,
   partyMigration
 } from "../server/party/index.mjs";
 
@@ -34,7 +35,7 @@ const createFixture = () => {
     "INSERT INTO users (id, username, display_name, disabled) VALUES (?, ?, ?, ?)"
   );
   for (const user of users) insert.run(user.id, user.username, user.displayName, user.disabled ? 1 : 0);
-  applyDomainMigrations(database, [partyMigration]);
+  applyDomainMigrations(database, [partyMigration, partyLifecycleMigration]);
   const repository = createPartyRepository({ database });
   let tick = 0;
   const published = [];
@@ -362,7 +363,99 @@ test("Party HTTP routes expose the bounded contract and fail closed across accou
   );
   assert.equal(denied.status, 404);
   assert.equal((await denied.json()).code, "conversation_not_found");
+  const exported = await call(
+    `/api/party/conversations/${created.conversation.id}/export?limit=1`, 1
+  );
+  assert.equal(exported.status, 200);
+  assert.match(exported.headers.get("content-disposition"), /^attachment;/);
+  assert.equal((await exported.json()).messages.length, 1);
+  const exportDenied = await call(
+    `/api/party/conversations/${created.conversation.id}/export`, 2
+  );
+  assert.equal(exportDenied.status, 404);
+  const deleted = await call(
+    `/api/party/conversations/${created.conversation.id}`, 1, "DELETE",
+    { confirmId: created.conversation.id }
+  );
+  assert.equal(deleted.status, 200);
+  assert.deepEqual(await deleted.json(), { deleted: true });
   const serviceDenied = await call("/api/party/conversations", null);
   assert.equal(serviceDenied.status, 403);
   assert.equal((await serviceDenied.json()).code, "party_account_required");
+});
+
+test("Party exports are member-only and paginate without exposing storage keys", () => {
+  const fixture = createFixture();
+  const direct = fixture.service.createDirect(
+    { userId: fixture.users[1].id }, fixture.context(0)
+  ).conversation;
+  for (let index = 0; index < 3; index += 1) {
+    fixture.service.sendMessage(direct.id, {
+      clientId: `export-${index}`,
+      text: `export message ${index}`
+    }, fixture.context(index % 2));
+  }
+  const latest = fixture.service.exportConversation(
+    direct.id, { limit: 2 }, fixture.context(0)
+  );
+  assert.equal(latest.format, "nebula-party-export");
+  assert.deepEqual(latest.messages.map(({ sequence }) => sequence), [2, 3]);
+  assert.equal(latest.nextCursor, 2);
+  assert.equal(JSON.stringify(latest).includes("storageKey"), false);
+  assert.throws(
+    () => fixture.service.exportConversation(direct.id, {}, fixture.context(2)),
+    (error) => error.status === 404
+  );
+  fixture.database.close();
+});
+
+test("Party deletion is explicit, permissioned, audited, and queues attachment cleanup", async () => {
+  const fixture = createFixture();
+  const group = fixture.service.createGroup({
+    memberIds: [fixture.users[1].id],
+    title: "Disposable"
+  }, fixture.context(0));
+  assert.rejects(
+    fixture.service.deleteConversation(group.id, { confirmId: group.id }, fixture.context(1)),
+    (error) => error.status === 403
+  );
+  await assert.rejects(
+    fixture.service.deleteConversation(group.id, { confirmId: "wrong" }, fixture.context(0)),
+    (error) => error.code === "party_deletion_confirmation_required"
+  );
+  assert.deepEqual(
+    await fixture.service.deleteConversation(group.id, { confirmId: group.id }, fixture.context(0)),
+    { deleted: true }
+  );
+  assert.equal(fixture.repository.rawConversation(group.id), null);
+  assert.equal(fixture.audit.at(-1).eventType, "party.conversation_deleted");
+  assert.equal(JSON.stringify(fixture.audit.at(-1)).includes("Disposable"), false);
+  fixture.database.close();
+});
+
+test("Party retention is opt-in at the runtime boundary and prunes bounded message batches", async () => {
+  const fixture = createFixture();
+  const direct = fixture.service.createDirect(
+    { userId: fixture.users[1].id }, fixture.context(0)
+  ).conversation;
+  for (let index = 0; index < 3; index += 1) {
+    fixture.service.sendMessage(direct.id, {
+      clientId: `retention-${index}`,
+      text: `old ${index}`
+    }, fixture.context(0));
+  }
+  const first = await fixture.service.runRetention({
+    before: "2026-01-02T00:00:00.000Z",
+    limit: 2
+  });
+  assert.equal(first.deleted, 2);
+  assert.equal(first.hasMore, true);
+  const second = await fixture.service.runRetention({
+    before: "2026-01-02T00:00:00.000Z",
+    limit: 2
+  });
+  assert.equal(second.deleted, 1);
+  assert.equal(fixture.service.listMessages(direct.id, {}, fixture.context(0)).messages.length, 0);
+  assert.equal(fixture.audit.filter(({ eventType }) => eventType === "party.retention_applied").length, 2);
+  fixture.database.close();
 });

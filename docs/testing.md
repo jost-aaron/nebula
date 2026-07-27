@@ -776,7 +776,8 @@ The Docker-only CI gate runs the complete Node suite, TypeScript, production
 build, and Node's coverage collector with explicit floors. Focused regression
 contracts cover Files symlink/active-content/pagination/upload admission,
 Party quota and live-session revocation, bounded account and playback
-retention, catalog transaction batching, interactive job scheduling, backup
+retention, Party export/deletion/durable attachment cleanup, catalog transaction
+batching, interactive job scheduling, backup
 single-flight/pagination, API JSON 404s, liveness-vs-readiness Compose
 semantics, renderer lifecycle, visibility-gated Party previews, and Files
 request cancellation.

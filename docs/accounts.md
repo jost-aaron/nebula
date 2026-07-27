@@ -272,7 +272,7 @@ provide encrypted database-at-rest support.
 - One role per account; media permissions are library-level, with no folder- or
   item-level ACLs.
 - No encrypted database-at-rest support.
-- Party has no end-to-end encryption, federation, message deletion/retention
+- Party has no end-to-end encryption, federation, per-message deletion/legal hold
   policy, or external push notifications.
 - Direct HTTP development cannot set a Secure cookie; production should use
   HTTPS and set `NEBULA_EXTERNAL_HTTPS=true` when TLS terminates before Nebula.

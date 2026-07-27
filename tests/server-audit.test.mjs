@@ -104,6 +104,18 @@ test("audit migration, redaction, retention, filtering, and cursor pagination st
   assert.deepEqual(defensiveRead.events[0].metadata, { transport: "cookie" });
   assert.equal(defensiveRead.events[0].target.id, null);
   assert.doesNotMatch(JSON.stringify(defensiveRead), /private\.mp4|secret|raw/);
+  audit.record({
+    actor: { kind: "system", principalId: "party-retention" },
+    eventType: "party.retention_applied",
+    metadata: { attachmentCleanupPending: false, attachmentCount: 2, deletedMessages: 4, message: "private" },
+    outcome: "success",
+    target: { id: "expired-messages", type: "party_retention" }
+  });
+  assert.deepEqual(audit.list({ eventType: "party.retention_applied", limit: 1 }).events[0].metadata, {
+    attachmentCleanupPending: false,
+    attachmentCount: 2,
+    deletedMessages: 4
+  });
   assert.throws(() => audit.list({ cursor: "broken" }), /Invalid audit cursor/);
 });
 

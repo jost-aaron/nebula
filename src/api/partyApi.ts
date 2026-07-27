@@ -13,6 +13,7 @@ import type {
   PartyConversationList,
   PartyConversationResponse,
   PartyEvent,
+  PartyExportPage,
   PartyMemberRole,
   PartyMessagePage,
   PartyMessageResponse,
@@ -128,6 +129,44 @@ export const markPartyConversationRead = (conversationId: string, sequence: numb
     body: JSON.stringify({ sequence }),
     method: "POST"
   });
+
+export const deletePartyConversation = (conversationId: string) =>
+  apiJson<{ deleted: true }>(conversationPath(conversationId), {
+    body: JSON.stringify({ confirmId: conversationId }),
+    method: "DELETE"
+  });
+
+export const downloadPartyConversationExport = async (conversationId: string) => {
+  let cursor: number | undefined;
+  let first: PartyExportPage | null = null;
+  const pages: PartyExportPage["messages"][] = [];
+  do {
+    const page = await apiJson<PartyExportPage>(withQuery(conversationPath(conversationId, "/export"), {
+      beforeSequence: cursor,
+      limit: 500
+    }), { method: "GET" });
+    first ??= page;
+    pages.push(page.messages);
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor !== undefined);
+  if (!first) throw new ApiError("Conversation export is unavailable.", 500);
+  const payload = {
+    conversation: first.conversation,
+    exportedAt: new Date().toISOString(),
+    format: first.format,
+    formatVersion: first.formatVersion,
+    messages: pages.reverse().flat(),
+    privacy: first.privacy
+  };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json"
+  }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `nebula-party-${conversationId}.json`;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+};
 
 const parseXhrError = (request: XMLHttpRequest) => {
   try {

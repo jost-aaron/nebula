@@ -117,10 +117,12 @@ tamper or omission rejection, no-clobber behavior, background progress and
 cancellation cleanup, durable operation lookup, and retention protection for
 pinned/latest-good/invalid bundles.
 
-Party history is retained indefinitely in version one, and its attachments are
-included in bundles even though shared `content/` media is not. Treat backups as
-private message archives. A staged recovery acceptance pass must open Party as
-two restored members and download a referenced attachment before promotion.
+Party history is retained indefinitely by default; an explicitly configured
+Party retention policy affects the live database, not already-created backup
+bundles. Party attachments are included even though shared `content/` media is
+not. Treat backups as private message archives. A staged recovery acceptance
+pass must open Party as two restored members and download a referenced
+attachment before promotion.
 
 Run only through Docker Compose:
 

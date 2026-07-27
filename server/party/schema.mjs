@@ -83,3 +83,25 @@ export const partyMigration = Object.freeze({
     database.exec(PARTY_SCHEMA_SQL);
   }
 });
+
+export const PARTY_LIFECYCLE_SCHEMA_VERSION = 2;
+export const PARTY_LIFECYCLE_SCHEMA_SQL = `
+  CREATE TABLE IF NOT EXISTS party_attachment_cleanup (
+    storage_key TEXT PRIMARY KEY CHECK (length(storage_key) BETWEEN 1 AND 160),
+    queued_at TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0)
+  ) STRICT;
+
+  CREATE INDEX IF NOT EXISTS party_attachment_cleanup_queue
+    ON party_attachment_cleanup(queued_at, storage_key);
+`;
+
+export const partyLifecycleMigration = Object.freeze({
+  domain: "party",
+  version: PARTY_LIFECYCLE_SCHEMA_VERSION,
+  id: "party-v2-lifecycle",
+  sql: PARTY_LIFECYCLE_SCHEMA_SQL,
+  apply(database) {
+    database.exec(PARTY_LIFECYCLE_SCHEMA_SQL);
+  }
+});

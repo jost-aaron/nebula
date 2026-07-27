@@ -95,4 +95,5 @@ test("Party shared contracts keep stable IDs, roles, cursors, and attachment met
   assert.match(types, /interface PartyAttachment/);
   assert.match(types, /mimeType: string/);
   assert.match(types, /uploaderId: string/);
+  assert.match(types, /interface PartyExportPage/);
 });

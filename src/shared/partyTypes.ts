@@ -53,6 +53,14 @@ export interface PartyMessagePage {
   nextCursor: number | null;
 }
 
+export interface PartyExportPage extends PartyMessagePage {
+  conversation: PartyConversation;
+  exportedAt: string;
+  format: "nebula-party-export";
+  formatVersion: 1;
+  privacy: string;
+}
+
 export interface PartyUsersResponse {
   users: PartyUser[];
 }

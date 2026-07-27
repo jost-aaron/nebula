@@ -44,6 +44,9 @@ candidates.
 - Party attachment admission is enforced transactionally at conversation,
   uploader, and server scope. Event streams retain the complete account/session
   identity and revalidate it, so revocation terminates live delivery.
+- Party exports are member-only and cursor bounded. Shared conversation
+  deletion and opt-in message retention queue attachment cleanup in the same
+  SQLite transaction, with periodic bounded filesystem retries.
 - Request authentication coalesces anonymous denial audits and throttles
   session activity writes. Expired sessions, tickets, login attempts, playback
   events, and terminal jobs are pruned in bounded batches.
@@ -53,9 +56,9 @@ candidates.
 - Shutdown stops new job claims before draining HTTP, event streams, and media
   work. Docker probes process liveness through `/healthz`; `/readyz` remains the
   dependency and traffic-admission signal.
-- Online backups are single-flight and their listing is cursor bounded. Backup
-  retention remains an explicit operator policy until a pinned/retained model
-  exists.
+- Online backups are single-flight and their listing is cursor bounded.
+  Background operations expose progress/cancellation; validated pinned bundles
+  are excluded from configurable automatic retention.
 
 ## Layers
 

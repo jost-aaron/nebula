@@ -66,6 +66,7 @@ import {
   createPartyEvents,
   createPartyRepository,
   createPartyService,
+  partyLifecycleMigration,
   partyMigration
 } from "./party/index.mjs";
 
@@ -85,7 +86,7 @@ const accountStore = await createAccountStore({ database });
 const guestService = createGuestService({ accountStore });
 const tailscaleEnrollment = createTailscaleEnrollmentService();
 accountStore.setOwnerCreatedHook(() => guestService.revokeAll());
-applyDomainMigrations(database, [catalogMigration, catalogQueryIndexesMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, mediaLocationsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, partyMigration, mediaListsMigration, subtitleMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration, clusterOperationsMigration, clusterKeyRotationMigration, clusterFederationMigration]);
+applyDomainMigrations(database, [catalogMigration, catalogQueryIndexesMigration, PLAYBACK_MIGRATION, ...probeMigrations, jobsMigration, mediaLocationsMigration, libraryPermissionsMigration, playbackPolicyMigration, auditMigration, partyMigration, partyLifecycleMigration, mediaListsMigration, subtitleMigration, renditionsMigration, ...renditionPolicyMigrations, clusterMigration, clusterOperationsMigration, clusterKeyRotationMigration, clusterFederationMigration]);
 const auditService = createAuditService({
   db: database,
   maxEvents: runtimeConfig.auditMaxEvents,
@@ -112,6 +113,7 @@ const partyService = createPartyService({
   maxConversationAttachmentBytes: runtimeConfig.partyConversationAttachmentBytes,
   maxGlobalAttachmentBytes: runtimeConfig.partyGlobalAttachmentBytes,
   maxUserAttachmentBytes: runtimeConfig.partyUserAttachmentBytes,
+  removeStorageKeys: partyAttachments.removeStorageKeys,
   repository: partyRepository
 });
 const clusterEnabled = process.env.NEBULA_CLUSTER_ENABLED === "true";
@@ -461,7 +463,8 @@ const backupService = createBackupService({
   backupRoot,
   dataRoot: storage.dataRoot,
   database,
-  databasePath: storage.accountDatabasePath
+  databasePath: storage.accountDatabasePath,
+  retentionMaxBackups: runtimeConfig.backupRetentionMax
 });
 const catalogReadinessSnapshot = () => {
   const roots = database.prepare(`SELECT
@@ -539,6 +542,35 @@ const pruneJobHistory = () => jobsService.prune({
 pruneJobHistory();
 const jobHistoryInterval = setInterval(pruneJobHistory, 24 * 60 * 60 * 1_000);
 jobHistoryInterval.unref?.();
+let partyMaintenancePromise = null;
+const runPartyMaintenance = () => {
+  if (partyMaintenancePromise) return partyMaintenancePromise;
+  partyMaintenancePromise = (async () => {
+    await partyAttachments.cleanupTemporaryUploads();
+    await partyService.drainAttachmentCleanup({
+      limit: runtimeConfig.partyMaintenanceBatchSize
+    });
+    if (runtimeConfig.partyRetentionDays > 0) {
+      await partyService.runRetention({
+        before: new Date(
+          Date.now() - runtimeConfig.partyRetentionDays * 24 * 60 * 60 * 1_000
+        ).toISOString(),
+        limit: runtimeConfig.partyMaintenanceBatchSize
+      });
+    }
+  })().catch((error) => {
+    runtimeTelemetry.recordError(error, { phase: "party-maintenance" });
+  }).finally(() => {
+    partyMaintenancePromise = null;
+  });
+  return partyMaintenancePromise;
+};
+void runPartyMaintenance();
+const partyMaintenanceInterval = setInterval(
+  () => void runPartyMaintenance(),
+  runtimeConfig.partyMaintenanceIntervalMinutes * 60 * 1_000
+);
+partyMaintenanceInterval.unref?.();
 jobsWorker.start();
 jobsService.enqueue({
   availableAt: Date.now() + 15_000,
@@ -625,12 +657,14 @@ const shutdown = async () => {
   shuttingDown = true;
   clearInterval(jobHistoryInterval);
   clearInterval(libraryScanInterval);
+  clearInterval(partyMaintenanceInterval);
   renditionCleanupScheduler.stop();
   partyEvents.close();
   const jobsStop = jobsWorker.stop();
   const serverClose = new Promise((resolve) => httpServer.close(resolve));
   httpServer.closeIdleConnections?.();
   await Promise.all([jobsStop, serverClose]);
+  await partyMaintenancePromise;
   await clusterPlayback?.shutdown();
   await playbackDelivery.shutdown();
   await clusterShardDelivery?.shutdown();

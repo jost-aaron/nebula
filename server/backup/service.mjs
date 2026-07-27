@@ -272,8 +272,11 @@ export const createBackupService = ({
     }
   };
   let activeCreate = null;
+  const backgroundOperationToken = Symbol("backup-background-operation");
   const create = async (options = {}) => {
-    if (activeCreate) throw new BackupError("busy", "Another backup is already running.");
+    if (activeCreate || (activeOperation && options.backgroundOperationToken !== backgroundOperationToken)) {
+      throw new BackupError("busy", "Another backup is already running.");
+    }
     const operation = createExclusive(options);
     activeCreate = operation;
     try {
@@ -389,6 +392,7 @@ export const createBackupService = ({
         await writeOperation(operation);
         const manifest = await create({
           backupId,
+          backgroundOperationToken,
           signal: controller.signal,
           onProgress: async (progress) => {
             operation.progress = progress;

@@ -404,7 +404,7 @@ export const createPartyAttachmentService = ({
     }
   };
 
-  const initialize = async () => {
+  const cleanupTemporaryUploads = async () => {
     await mkdir(tempRoot, { mode: 0o700, recursive: true });
     await chmod(attachmentRoot, 0o700).catch(() => {});
     await chmod(tempRoot, 0o700).catch(() => {});
@@ -423,7 +423,32 @@ export const createPartyAttachmentService = ({
         removed += 1;
       }
     }
+    return { hasMore: entries.length > inspected, inspected, removed };
+  };
+
+  const initialize = async () => {
+    const { inspected, removed } = await cleanupTemporaryUploads();
     return { inspected, removed };
+  };
+
+  const removeStorageKeys = async (storageKeys = []) => {
+    if (!Array.isArray(storageKeys) || storageKeys.length > 10_000) {
+      throw new TypeError("storageKeys must be a bounded array.");
+    }
+    let removed = 0;
+    let missing = 0;
+    for (const storageKey of storageKeys) {
+      const candidate = resolveStorageKey(storageKey);
+      const details = await lstat(candidate).catch(() => null);
+      if (!details) {
+        missing += 1;
+        continue;
+      }
+      if (!details.isFile() || details.isSymbolicLink()) continue;
+      await rm(candidate, { force: true });
+      removed += 1;
+    }
+    return { missing, removed };
   };
 
   const upload = async ({
@@ -622,9 +647,11 @@ export const createPartyAttachmentService = ({
 
   return {
     attachmentRoot,
+    cleanupTemporaryUploads,
     conversationQuotaBytes,
     initialize,
     maxFileBytes,
+    removeStorageKeys,
     resolveStorageKey,
     sanitizeDisplayName: sanitizePartyAttachmentName,
     serve,

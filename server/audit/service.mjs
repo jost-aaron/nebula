@@ -7,9 +7,10 @@ export const AUDIT_EVENT_TYPES = Object.freeze([
   "catalog.scan_requested", "job.enqueued", "job.cancel_requested",
   "rendition.build_requested", "rendition.retention_changed", "rendition.deleted",
   "rendition.policy_changed", "rendition.cleanup_requested", "rendition.cleanup_completed",
-  "backup.created", "backup.inspected", "media_list.playlist_created", "media_list.collection_created",
+  "backup.created", "backup.inspected", "backup.cancel_requested", "backup.retention_changed",
+  "media_list.playlist_created", "media_list.collection_created",
   "party.group_created", "party.group_updated", "party.member_added", "party.member_removed",
-  "party.member_role_changed",
+  "party.member_role_changed", "party.conversation_deleted", "party.retention_applied",
   "cluster.pairing_code_created", "cluster.node_paired", "cluster.node_revoked",
   "cluster.readiness_changed", "cluster.clock_skew_detected", "cluster.node_controls_updated",
   "cluster.key_rotation_completed", "cluster.key_rotation_interrupted"
@@ -22,7 +23,9 @@ const EVENT_TYPES = new Set(AUDIT_EVENT_TYPES);
 const OUTCOMES = new Set(AUDIT_OUTCOMES);
 const ACTOR_KINDS = new Set(AUDIT_ACTOR_KINDS);
 const METADATA_KEYS = new Set([
-  "clientType", "disabled", "jobType", "setting", "transport", "created", "requestedBy", "retention", "reason"
+  "clientType", "disabled", "jobType", "setting", "transport", "created", "requestedBy",
+  "retention", "reason", "pinned", "state", "attachmentCleanupPending",
+  "attachmentCount", "deletedMessages"
 ]);
 const METADATA_VALUES = new Set(["browser", "native", "cookie", "bearer", "tmdb", "manual", "service", "startup", "scheduled", "quota-pressure", "scan", "probe", "metadata", "artwork", "cleanup", "cache", "pinned", "rendition", "cluster-ready", "cluster-degraded", "cluster-not-ready", "clock-skew"]);
 const bounded = (value, max) => value === null || value === undefined ? null : String(value).slice(0, max);
@@ -39,6 +42,7 @@ const sanitizeMetadata = (metadata) => {
   for (const [key, value] of Object.entries(metadata)) {
     if (!METADATA_KEYS.has(key)) continue;
     if (typeof value === "boolean") safe[key] = value;
+    else if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) safe[key] = value;
     else if (typeof value === "string" && METADATA_VALUES.has(value)) safe[key] = value;
   }
   return safe;

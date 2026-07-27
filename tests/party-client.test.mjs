@@ -62,3 +62,14 @@ test("message mutations use unique idempotency keys and per-user read positions"
   assert.match(api, /body: JSON\.stringify\(\{ clientId, text \}\)/);
   assert.match(api, /body: JSON\.stringify\(\{ sequence \}\)/);
 });
+
+test("conversation lifecycle exposes bounded export and explicit shared deletion", () => {
+  assert.match(api, /conversationPath\(conversationId, "\/export"\)/);
+  assert.match(api, /limit: 500/);
+  assert.match(api, /body: JSON\.stringify\(\{ confirmId: conversationId \}\)/);
+  assert.match(api, /method: "DELETE"/);
+  assert.match(view, /data-party-export/);
+  assert.match(view, /data-party-delete/);
+  assert.match(view, /Permanently delete/);
+  assert.match(view, /for every member/);
+});

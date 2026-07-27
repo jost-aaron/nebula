@@ -164,11 +164,13 @@ over-admit storage. The server:
 - permits inline rendering only for conservative browser-native images,
   audio/video, and sandboxed PDF. Other allowed types download.
 
-Startup removes only bounded, stale generated files from
-`party-attachments/.tmp`. There is no version-one message/conversation deletion
-workflow, so referenced blobs are retained. Operators must not delete database
-rows or attachment files by hand. Unreferenced-blob reconciliation remains a
-maintenance limitation.
+Startup and periodic maintenance remove only bounded, stale generated files
+from `party-attachments/.tmp`. Permanent conversation deletion and retention
+first queue every referenced storage key in `party_attachment_cleanup` in the
+same database transaction that removes its message metadata. The filesystem
+cleanup is retried in bounded maintenance batches, so a transient unlink
+failure cannot silently lose the deletion obligation. Operators must not delete
+database rows or attachment files by hand.
 
 ## Privacy and threat boundary
 
@@ -202,10 +204,25 @@ backups. Attachment admission has layered per-conversation, per-uploader, and
 server-wide quotas; operators should set them below actual free space because
 backup copies require additional capacity.
 
-Version one retains message history, membership state, read positions, and
-linked attachments indefinitely. There is no automatic content retention,
-legal hold, export, deletion, or user self-service erasure policy. Replacing or
-restoring the data set is currently the only supported bulk lifecycle action.
+By default Party retains message history, membership state, read positions, and
+linked attachments indefinitely. Members can download a bounded, paginated JSON
+export of any conversation they can currently read; attachment entries contain
+member-authorized download paths rather than embedding binary data.
+
+A group owner can permanently delete the shared group for every member. Either
+participant can permanently delete a direct conversation for both
+participants. The UI states this shared, irreversible scope and the API requires
+the exact conversation id as an explicit confirmation value. These actions are
+audited without titles or message contents.
+
+Automatic message retention is opt-in. Set `NEBULA_PARTY_RETENTION_DAYS` to a
+positive number only after communicating the shared-history policy to users.
+`NEBULA_PARTY_MAINTENANCE_INTERVAL_MINUTES` (default 60) and
+`NEBULA_PARTY_MAINTENANCE_BATCH_SIZE` (default 250, maximum 1,000) bound each
+pass. A value of `0` retention days disables automatic expiry. Retention deletes
+messages older than the cutoff and queues their attachment blobs for durable
+cleanup; it does not delete conversation membership or account records. Nebula
+does not provide legal holds or per-message selective deletion.
 
 Use the staged restore runbook in [deployment.md](deployment.md). A recovery
 check is incomplete until an owner and member can open Party history and
@@ -221,8 +238,9 @@ docker compose run --rm dashboard node --test tests/server-party*.test.mjs
 
 The tests cover migration idempotency/constraints, direct deduplication, minimal
 discovery, group permissions/audit redaction, message idempotency and ordering,
-pagination, unread isolation, IDOR denial, SSE scoping/session-revocation
-teardown, raw upload
+pagination, unread isolation, member-only export, deletion authorization and
+confirmation, bounded retention, durable attachment cleanup, IDOR denial, SSE
+scoping/session-revocation teardown, raw upload
 validation, quota enforcement, cleanup, traversal defense, authorized
 GET/HEAD/range serving, and API contracts.
 

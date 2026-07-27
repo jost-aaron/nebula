@@ -70,9 +70,22 @@ export const createBackupRoutes = (service, audit = null) => async (request, res
   if (request.method === "DELETE" && operationMatch) {
     try {
       const operation = await service.cancelOperation({ operationId: operationMatch[1] });
+      audit?.recordBestEffort({
+        actor: actorFromContext(request.nebulaAuth),
+        eventType: "backup.cancel_requested",
+        outcome: "success",
+        target: { type: "backup", id: operation.backupId },
+        metadata: { requestedBy: "manual" }
+      });
       json(response, 202, { operation });
       return true;
     } catch (error) {
+      audit?.recordBestEffort({
+        actor: actorFromContext(request.nebulaAuth),
+        eventType: "backup.cancel_requested",
+        outcome: "failure",
+        metadata: { requestedBy: "manual" }
+      });
       rethrowRouteError(error);
     }
   }
@@ -113,9 +126,22 @@ export const createBackupRoutes = (service, audit = null) => async (request, res
     try {
       const body = await readBody(request);
       const retention = await service.setPinned({ backupId: match[1], pinned: body.pinned });
+      audit?.recordBestEffort({
+        actor: actorFromContext(request.nebulaAuth),
+        eventType: "backup.retention_changed",
+        outcome: "success",
+        target: { type: "backup", id: match[1] },
+        metadata: { pinned: retention.pinned, retention: retention.retention }
+      });
       json(response, 200, { backup: retention });
       return true;
     } catch (error) {
+      audit?.recordBestEffort({
+        actor: actorFromContext(request.nebulaAuth),
+        eventType: "backup.retention_changed",
+        outcome: "failure",
+        target: { type: "backup", id: match[1] }
+      });
       rethrowRouteError(error);
     }
   }

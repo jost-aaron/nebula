@@ -113,6 +113,7 @@ export const createPartyService = ({
   maxConversationAttachmentBytes = 250 * 1024 * 1024,
   maxGlobalAttachmentBytes = 10 * 1024 * 1024 * 1024,
   maxUserAttachmentBytes = 2 * 1024 * 1024 * 1024,
+  removeStorageKeys = async () => ({ missing: 0, removed: 0 }),
   now = () => new Date().toISOString(),
   repository,
   uuid = randomUUID
@@ -390,12 +391,111 @@ export const createPartyService = ({
     return attachment;
   };
 
+  const drainAttachmentCleanup = async ({ limit = 250 } = {}) => {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000) {
+      throw new TypeError("limit must be between 1 and 1000.");
+    }
+    const storageKeys = repository.listAttachmentCleanup({ limit });
+    let completed = 0;
+    let failed = 0;
+    for (const storageKey of storageKeys) {
+      try {
+        await removeStorageKeys([storageKey]);
+        repository.completeAttachmentCleanup(storageKey);
+        completed += 1;
+      } catch {
+        repository.failAttachmentCleanup(storageKey);
+        failed += 1;
+      }
+    }
+    return { completed, failed, hasMore: storageKeys.length === limit };
+  };
+
+  const exportConversation = (conversationId, { beforeSequence, limit }, context) => {
+    const actor = accountFrom(context);
+    const conversation = repository.getConversation(conversationId, actor.id, { includeMembers: true });
+    if (!conversation) throw notFound();
+    let before = null;
+    if (beforeSequence !== undefined && beforeSequence !== null && beforeSequence !== "") {
+      before = Number(beforeSequence);
+      if (!Number.isSafeInteger(before) || before < 1) throw bad("beforeSequence must be a positive integer.");
+    }
+    const page = repository.listMessages({
+      beforeSequence: before,
+      conversationId,
+      limit: boundedLimit(limit, 250, 500)
+    });
+    return {
+      conversation,
+      exportedAt: now(),
+      format: "nebula-party-export",
+      formatVersion: 1,
+      messages: page.messages.map((message) => ({
+        ...message,
+        attachments: message.attachments.map((attachment) => ({
+          ...attachment,
+          downloadPath: `/api/party/attachments/${attachment.id}?download=1`
+        }))
+      })),
+      nextCursor: page.nextCursor,
+      privacy: "Server-readable shared conversation history; not end-to-end encrypted."
+    };
+  };
+
+  const deleteConversation = async (conversationId, { confirmId } = {}, context) => {
+    const actor = accountFrom(context);
+    const { conversation, member } = requireConversation(conversationId, actor.id);
+    if (confirmId !== conversationId) {
+      throw bad("confirmId must exactly match the conversation id.", "party_deletion_confirmation_required");
+    }
+    if (conversation.kind === "group" && member.role !== "owner") {
+      throw fail(403, "party_permission_denied", "Only the group owner can permanently delete this conversation.");
+    }
+    const result = repository.deleteConversation({ conversationId, timestamp: now() });
+    if (!result.deleted) throw notFound();
+    const cleanup = await drainAttachmentCleanup({ limit: Math.min(1_000, Math.max(1, result.storageKeys.length)) });
+    auditEvent(context, "party.conversation_deleted", conversationId, {
+      attachmentCount: result.storageKeys.length,
+      attachmentCleanupPending: cleanup.failed > 0 || cleanup.hasMore
+    });
+    publish(conversationId);
+    return { deleted: true };
+  };
+
+  const runRetention = async ({ before, limit = 250 } = {}) => {
+    if (typeof before !== "string" || Number.isNaN(Date.parse(before))) {
+      throw new TypeError("before must be an ISO timestamp.");
+    }
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000) {
+      throw new TypeError("limit must be between 1 and 1000.");
+    }
+    const result = repository.pruneMessages({ before, limit, timestamp: now() });
+    const cleanup = await drainAttachmentCleanup({ limit });
+    if (result.deleted > 0) {
+      audit?.recordBestEffort({
+        actor: { kind: "service", principalId: "party-retention" },
+        eventType: "party.retention_applied",
+        outcome: "success",
+        target: { id: "expired-messages", type: "party_retention" },
+        metadata: {
+          attachmentCount: result.storageKeys.length,
+          attachmentCleanupPending: cleanup.failed > 0 || cleanup.hasMore,
+          deletedMessages: result.deleted
+        }
+      });
+    }
+    return { ...result, cleanup };
+  };
+
   return {
     addMember,
     createAttachmentMessage,
     createDirect,
     createGroup,
     discoverUsers,
+    drainAttachmentCleanup,
+    deleteConversation,
+    exportConversation,
     getAttachment,
     getConversation,
     isConversationMember: ({ conversationId, userId }) => repository.isMember(conversationId, userId),
@@ -403,6 +503,7 @@ export const createPartyService = ({
     listMessages,
     markRead,
     removeMember,
+    runRetention,
     sendMessage,
     updateGroup,
     updateMemberRole

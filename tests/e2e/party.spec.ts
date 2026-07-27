@@ -86,12 +86,24 @@ test("Party owner/member DM, attachment, group, and mobile flow", async ({ brows
     await expect(manageGroupDialog).toContainText(OWNER.displayName);
     await memberPage.keyboard.press("Escape");
     await expect(manageGroupDialog).toBeHidden();
+    const exportPromise = memberPage.waitForEvent("download");
+    await memberPage.getByRole("button", { name: "Export conversation" }).click();
+    const exported = await exportPromise;
+    const exportPayload = JSON.parse(await readFile(await exported.path(), "utf8"));
+    expect(exportPayload.format).toBe("nebula-party-export");
+    expect(exportPayload.conversation.title).toBe(groupTitle);
 
     await memberPage.setViewportSize({ width: 390, height: 844 });
     await expectNoHorizontalOverflow(memberPage);
     await expect(memberPage.getByRole("button", { name: "Back to conversations" })).toBeVisible();
     await memberPage.getByRole("button", { name: "Back to conversations" }).click();
     await expect(memberPage.locator("[data-party-conversations]")).toBeVisible();
+    await expectNoHorizontalOverflow(memberPage);
+
+    await memberPage.locator("[data-party-conversation]", { hasText: groupTitle }).click();
+    memberPage.once("dialog", (dialog) => dialog.accept());
+    await memberPage.getByRole("button", { name: "Delete conversation" }).click();
+    await expect(memberPage.locator("[data-party-conversation]", { hasText: groupTitle })).toHaveCount(0);
     await expectNoHorizontalOverflow(memberPage);
 
     await memberPage.keyboard.press("Escape");

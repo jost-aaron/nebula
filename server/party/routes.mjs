@@ -9,6 +9,7 @@ const messagesRoute = new RegExp(`^/api/party/conversations/${UUID_PATH}/message
 const readRoute = new RegExp(`^/api/party/conversations/${UUID_PATH}/read$`, "i");
 const uploadRoute = new RegExp(`^/api/party/conversations/${UUID_PATH}/attachments$`, "i");
 const attachmentRoute = new RegExp(`^/api/party/attachments/${UUID_PATH}$`, "i");
+const exportRoute = new RegExp(`^/api/party/conversations/${UUID_PATH}/export$`, "i");
 
 const accountId = (request) => {
   const context = request.nebulaAuth;
@@ -92,6 +93,18 @@ export const createPartyRoutes = ({ attachments = null, events = null, service }
         response,
         userId: accountId(request)
       });
+      return true;
+    }
+
+    const exportMatch = exportRoute.exec(url.pathname);
+    if (exportMatch && request.method === "GET") {
+      const exported = service.exportConversation(exportMatch[1], {
+        beforeSequence: url.searchParams.get("beforeSequence") ?? url.searchParams.get("cursor"),
+        limit: url.searchParams.get("limit")
+      }, request.nebulaAuth);
+      response.setHeader("cache-control", "private, no-store");
+      response.setHeader("content-disposition", `attachment; filename="nebula-party-${exportMatch[1]}.json"`);
+      json(response, 200, exported);
       return true;
     }
 
@@ -209,6 +222,15 @@ export const createPartyRoutes = ({ attachments = null, events = null, service }
           request.nebulaAuth
         );
         json(response, 200, { conversation });
+        return true;
+      }
+      if (request.method === "DELETE") {
+        const result = await service.deleteConversation(
+          conversationId,
+          await readBody(request, { limit: PARTY_BODY_LIMIT }),
+          request.nebulaAuth
+        );
+        json(response, 200, result);
         return true;
       }
     }
