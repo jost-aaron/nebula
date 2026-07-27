@@ -259,3 +259,103 @@ test("backup creation is single-flight and listing is cursor bounded", async (t)
   assert.notEqual(page.backups[0].backupId, next.backups[0].backupId);
   await assert.rejects(service.listPage({ cursor: "not-a-cursor" }), { code: "invalid_cursor" });
 });
+
+test("background backup operations persist progress and publish a completed backup", async (t) => {
+  const scope = await fixture(t);
+  const service = createBackupService(scope);
+  const accepted = await service.startCreate({ backupId: "background-backup" });
+  assert.equal(accepted.backupId, "background-backup");
+  assert.equal(["queued", "running"].includes(accepted.state), true);
+  assert.equal(["queued", "snapshot"].includes(accepted.progress.phase), true);
+
+  const completed = await service.waitOperation({ operationId: accepted.operationId });
+  assert.equal(completed.state, "succeeded");
+  assert.equal(completed.progress.phase, "completed");
+  assert.equal(completed.finishedAt !== null, true);
+  assert.deepEqual(
+    await service.getOperation({ operationId: accepted.operationId }),
+    completed
+  );
+  assert.equal((await service.inspect({ backupId: "background-backup" })).manifest.backupId, "background-backup");
+});
+
+test("orphaned durable backup operations become interrupted after restart", async (t) => {
+  const scope = await fixture(t);
+  const operationsRoot = path.join(scope.backupRoot, ".operations");
+  await import("node:fs/promises").then(({ mkdir }) => mkdir(operationsRoot, { recursive: true }));
+  await writeFile(path.join(operationsRoot, "orphan-operation.json"), JSON.stringify({
+    operationId: "orphan-operation",
+    backupId: "orphan-backup",
+    state: "running",
+    progress: { phase: "copying", completedFiles: 3, totalFiles: 10 },
+    createdAt: "2026-07-20T00:00:00.000Z",
+    startedAt: "2026-07-20T00:00:01.000Z"
+  }));
+
+  const service = createBackupService(scope);
+  const operation = await service.getOperation({ operationId: "orphan-operation" });
+  assert.equal(operation.state, "interrupted");
+  assert.equal(operation.error.code, "interrupted");
+  assert.equal((await service.getOperation({ operationId: "orphan-operation" })).state, "interrupted");
+});
+
+test("background backup operations support cancellation and clean partial artifacts", async (t) => {
+  const scope = await fixture(t);
+  for (let index = 0; index < 50; index += 1) {
+    const cachePath = path.join(scope.dataRoot, "metadata-cache", `${index}.jpg`);
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(path.dirname(cachePath), { recursive: true }));
+    await writeFile(cachePath, Buffer.alloc(128 * 1024, index));
+    scope.database.exec(`
+      INSERT OR IGNORE INTO media_libraries VALUES ('lib', 'Media', 'mixed', 'now', 'now');
+      INSERT INTO media_items (id, library_id, item_type, media_kind, title, sort_title, created_at, updated_at)
+      VALUES ('item-${index}', 'lib', 'movie', 'video', 'Title', 'Title', 'now', 'now');
+      INSERT INTO media_artwork (id, media_item_id, artwork_type, local_path, created_at, updated_at)
+      VALUES ('art-${index}', 'item-${index}', 'poster', 'metadata-cache/${index}.jpg', 'now', 'now');
+    `);
+  }
+  const service = createBackupService(scope);
+  const accepted = await service.startCreate({ backupId: "cancel-background" });
+  await service.cancelOperation({ operationId: accepted.operationId });
+  const cancelled = await service.waitOperation({ operationId: accepted.operationId });
+  assert.equal(cancelled.state, "cancelled");
+  assert.equal(cancelled.error.code, "cancelled");
+  assert.equal(await stat(path.join(scope.backupRoot, "cancel-background")).catch(() => null), null);
+  assert.equal((await readdir(scope.backupRoot)).some((name) => name.includes("cancel-background") && name.endsWith(".tmp")), false);
+});
+
+test("retention pruning preserves pinned, invalid, and latest good backups", async (t) => {
+  const scope = await fixture(t);
+  const timestamps = [
+    "2026-07-20T00:00:00.000Z",
+    "2026-07-21T00:00:00.000Z",
+    "2026-07-22T00:00:00.000Z",
+    "2026-07-23T00:00:00.000Z"
+  ];
+  let timeIndex = 0;
+  const service = createBackupService({
+    ...scope,
+    now: () => new Date(timestamps[Math.min(timeIndex, timestamps.length - 1)]),
+    retentionMaxBackups: 2
+  });
+  await service.create({ backupId: "keep-pinned" });
+  timeIndex += 1;
+  await service.setPinned({ backupId: "keep-pinned", pinned: true });
+  await service.create({ backupId: "remove-old" });
+  timeIndex += 1;
+  await import("node:fs/promises").then(({ mkdir }) => mkdir(path.join(scope.backupRoot, "invalid-bundle"), { recursive: true }));
+  await writeFile(path.join(scope.backupRoot, "invalid-bundle", "manifest.json"), "{");
+  await service.create({ backupId: "latest-good" });
+
+  assert.equal(await stat(path.join(scope.backupRoot, "remove-old")).catch(() => null), null);
+  assert.equal((await stat(path.join(scope.backupRoot, "keep-pinned"))).isDirectory(), true);
+  assert.equal((await stat(path.join(scope.backupRoot, "latest-good"))).isDirectory(), true);
+  assert.equal((await stat(path.join(scope.backupRoot, "invalid-bundle"))).isDirectory(), true);
+  const listed = await service.list();
+  assert.equal(listed.find(({ backupId }) => backupId === "keep-pinned").retention, "pinned");
+
+  timeIndex += 1;
+  await service.create({ backupId: "new-latest" });
+  assert.equal(await stat(path.join(scope.backupRoot, "latest-good")).catch(() => null), null);
+  assert.equal((await stat(path.join(scope.backupRoot, "new-latest"))).isDirectory(), true);
+  assert.equal((await stat(path.join(scope.backupRoot, "keep-pinned"))).isDirectory(), true);
+});

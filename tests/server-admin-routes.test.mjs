@@ -175,6 +175,11 @@ test("backup, readiness, and metrics admin routes allow owners and service admin
   }).then((response) => response.json());
 
   assert.equal((await jsonRequest(`${api.baseUrl}/api/admin/backups`, { bearer: member.sessionToken })).status, 403);
+  assert.equal((await jsonRequest(`${api.baseUrl}/api/admin/backups/operations`, {
+    bearer: member.sessionToken,
+    body: { backupId: "member-forbidden" },
+    method: "POST"
+  })).status, 403);
   assert.equal((await jsonRequest(`${api.baseUrl}/api/admin/observability/readiness`, { bearer: member.sessionToken })).status, 403);
   assert.equal((await fetch(`${api.baseUrl}/metrics`, { headers: { authorization: `Bearer ${member.sessionToken}` } })).status, 403);
 
@@ -195,6 +200,33 @@ test("backup, readiness, and metrics admin routes allow owners and service admin
   const inspectedBody = await inspected.json();
   assert.equal(inspectedBody.validation.valid, true);
   assert.match(JSON.stringify(inspectedBody.validation.tables), /background_jobs/);
+
+  const retention = await jsonRequest(`${api.baseUrl}/api/admin/backups/wave4-owner`, {
+    bearer: owner.body.sessionToken,
+    body: { pinned: true },
+    method: "PATCH"
+  });
+  assert.equal(retention.status, 200);
+  assert.equal((await retention.json()).backup.retention, "pinned");
+
+  const operationResponse = await jsonRequest(`${api.baseUrl}/api/admin/backups/operations`, {
+    bearer: owner.body.sessionToken,
+    body: { backupId: "wave4-background" },
+    method: "POST"
+  });
+  assert.equal(operationResponse.status, 202);
+  const operationId = (await operationResponse.json()).operation.operationId;
+  let operation;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const status = await jsonRequest(`${api.baseUrl}/api/admin/backups/operations/${operationId}`, {
+      bearer: owner.body.sessionToken
+    });
+    assert.equal(status.status, 200);
+    operation = (await status.json()).operation;
+    if (!["queued", "running"].includes(operation.state)) break;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(operation.state, "succeeded");
 
   assert.equal((await jsonRequest(`${api.baseUrl}/api/admin/backups`, {
     bearer: owner.body.sessionToken,

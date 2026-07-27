@@ -14,6 +14,13 @@ service exposes:
 
 - `create({ backupId?, signal? })` — uses Node SQLite's online backup API so WAL
   state is captured consistently while the server is running.
+- `startCreate({ backupId? })`, `getOperation({ operationId })`,
+  `waitOperation({ operationId })`, and `cancelOperation({ operationId })` —
+  run the same safe creation path outside the request lifetime. Operation
+  records are atomically persisted beneath `.operations/`; progress reports the
+  snapshot, collection, copy, and finalization phases. A process restart marks
+  an orphaned queued/running record `interrupted` rather than pretending that
+  the bundle completed.
 - `inspect({ backupId, signal? })` — validates the manifest, every SHA-256 and
   size, SQLite `integrity_check`, foreign keys, required account/catalog/
   playback/jobs/probe tables, and referenced metadata cache coverage.
@@ -21,6 +28,15 @@ service exposes:
   restoreMetadataCache?, signal? })` — validates first, then writes to new
   destinations with atomic no-clobber file publication. Any partial outputs are
   removed on error or cancellation.
+- `setPinned({ backupId, pinned })` and `prune({ maxBackups })` — persist
+  operator retention intent and remove only the oldest valid, unpinned bundles.
+  Invalid bundles are retained for diagnosis, and pruning always protects both
+  every pinned backup and the latest good backup.
+
+`retentionMaxBackups` is an optional non-negative service setting. Zero (the
+default) disables automatic deletion. A positive value prunes after a
+successful creation. Pinned backups can cause the total to remain above the
+configured target; this is intentional and must be surfaced in disk alerts.
 
 The restore target must not be the open production database. Normal integration
 should restore into a staging data root while the server is stopped, inspect it,
@@ -71,12 +87,35 @@ changed. The integration owner should:
 5. Add audit events without logging manifest database references, credentials,
    authorization headers, raw SQLite failures, or user records.
 
+The owner/service-admin API supports:
+
+- `POST /api/admin/backups/operations` to accept background creation and return
+  `202` with an operation id;
+- `GET /api/admin/backups/operations/:operationId` for bounded status/progress;
+- `DELETE /api/admin/backups/operations/:operationId` for best-effort
+  cancellation;
+- `PATCH /api/admin/backups/:backupId` with `{ "pinned": true|false }`.
+
+The synchronous `POST /api/admin/backups` remains available for compatibility
+with existing operator scripts. New interactive clients should use the
+operation API so reverse-proxy request deadlines cannot make a healthy
+long-running backup appear to fail. Both route families remain under the
+existing `server.admin` authorization prefix.
+
+Runtime integration should parse a bounded integer such as
+`NEBULA_BACKUP_RETENTION_MAX` and pass it as `retentionMaxBackups`. Leave it
+unset/zero until the operator explicitly chooses a policy. The backup mount
+must have enough headroom for one complete staging bundle in addition to all
+pinned bundles.
+
 ## Verification
 
 Focused coverage lives in `tests/server-backup.test.mjs` and proves online WAL
 capture, account/watchlist/catalog/playback/jobs/probe/Party retention,
 migration metadata, cache and referenced Party attachment inclusion/restore,
-tamper or omission rejection, no-clobber behavior, and cancellation cleanup.
+tamper or omission rejection, no-clobber behavior, background progress and
+cancellation cleanup, durable operation lookup, and retention protection for
+pinned/latest-good/invalid bundles.
 
 Party history is retained indefinitely in version one, and its attachments are
 included in bundles even though shared `content/` media is not. Treat backups as
