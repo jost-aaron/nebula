@@ -75,6 +75,8 @@ export function createHlsPlayback(options: CreateHlsPlaybackOptions): HlsPlaybac
   const previousSrc = media.getAttribute("src");
   let destroyed = false;
   let settled = false;
+  let manifestParsed = false;
+  let mediaAttached = false;
   let hls: HlsInstance | null = null;
   let resolveReady!: () => void;
   let rejectReady!: (error: HlsPlaybackError) => void;
@@ -141,7 +143,17 @@ export function createHlsPlayback(options: CreateHlsPlaybackOptions): HlsPlaybac
   });
 
   let mediaRecoveryAttempted = false;
-  hls.on(Events.MANIFEST_PARSED, finishReady);
+  const finishMseReady = () => {
+    if (manifestParsed && mediaAttached) finishReady();
+  };
+  hls.on(Events.MEDIA_ATTACHED, () => {
+    mediaAttached = true;
+    finishMseReady();
+  });
+  hls.on(Events.MANIFEST_PARSED, () => {
+    manifestParsed = true;
+    finishMseReady();
+  });
   hls.on(Events.ERROR, (_event, data: ErrorData) => {
     if (!data.fatal || destroyed || settled) return;
     if (data.type === ErrorTypes.MEDIA_ERROR && !mediaRecoveryAttempted) {
@@ -151,8 +163,8 @@ export function createHlsPlayback(options: CreateHlsPlaybackOptions): HlsPlaybac
     }
     finishError(classifyError(data));
   });
-  hls.loadSource(manifestUrl);
   hls.attachMedia(media);
+  hls.loadSource(manifestUrl);
 
   return { mode: "hls.js", ready, destroy };
 }

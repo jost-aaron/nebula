@@ -114,6 +114,7 @@ test("Chromium false-positive native HLS support still uses hls.js", async () =>
   assert.equal(playback.mode, "hls.js");
   assert.equal(instances.length, 1);
   instances[0].emit("hlsManifestParsed");
+  instances[0].emit("hlsMediaAttached");
   await playback.ready;
 });
 
@@ -139,7 +140,12 @@ test("MSE fallback loads, attaches, and credentials same-origin requests", async
     { method: "GET" }
   );
   assert.equal(request.credentials, "same-origin");
+  let ready = false;
+  void playback.ready.then(() => { ready = true; });
   hls.emit("hlsManifestParsed");
+  await Promise.resolve();
+  assert.equal(ready, false, "manifest parsing must not race ahead of MSE attachment");
+  hls.emit("hlsMediaAttached");
   await playback.ready;
 });
 
