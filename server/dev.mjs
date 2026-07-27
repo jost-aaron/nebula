@@ -93,17 +93,25 @@ const auditService = createAuditService({
 });
 const partyRepository = createPartyRepository({ database });
 const partyAttachments = createPartyAttachmentService({
+  conversationQuotaBytes: runtimeConfig.partyConversationAttachmentBytes,
   dataRoot: storage.dataRoot,
   getAttachment: partyRepository.getAttachment,
   getConversationAttachmentBytes: partyRepository.getConversationAttachmentBytes,
   isConversationMember: partyRepository.isMember
 });
 await partyAttachments.initialize();
-const partyEvents = createPartyEvents({ isConversationMember: partyRepository.isMember });
+const partyEvents = createPartyEvents({
+  isConversationMember: partyRepository.isMember,
+  isIdentityActive: ({ userId, sessionId }) =>
+    accountStore.isSessionActive(userId, sessionId)
+});
 const partyService = createPartyService({
   audit: auditService,
   events: partyEvents,
   listUsers: accountStore.listUsers,
+  maxConversationAttachmentBytes: runtimeConfig.partyConversationAttachmentBytes,
+  maxGlobalAttachmentBytes: runtimeConfig.partyGlobalAttachmentBytes,
+  maxUserAttachmentBytes: runtimeConfig.partyUserAttachmentBytes,
   repository: partyRepository
 });
 const clusterEnabled = process.env.NEBULA_CLUSTER_ENABLED === "true";
@@ -478,6 +486,7 @@ const observabilityService = createObservabilityService({
     { name: "catalog", run: createCatalogCheck({ snapshot: catalogReadinessSnapshot }) },
     { name: "content_disk", run: createDiskCheck({ directory: storage.contentRoot, name: "content_disk" }) },
     { name: "cache_disk", run: createDiskCheck({ directory: deliveryCacheRoot, name: "cache_disk" }) },
+    { name: "backup_disk", run: createDiskCheck({ directory: backupRoot, name: "backup_disk" }) },
     { name: "rendition_storage", run: createRenditionStorageCheck({ status: renditionPolicy.status }) },
     ...(clusterOperations ? [{ name: "cluster", run: createClusterCheck({ operations: clusterOperations }) }] : [])
   ]
@@ -587,6 +596,13 @@ const httpServer = createHttpServer((request, response) => {
       if (clusterIngress && await clusterIngress(request, response, url)) return;
       if (!(await authGuard.authorize(request, response, url))) return;
       if (await handleApi(request, response)) return;
+      response.writeHead(404, {
+        "cache-control": "no-store",
+        "content-type": "application/json; charset=utf-8",
+        "x-content-type-options": "nosniff"
+      });
+      response.end(JSON.stringify({ code: "not_found", error: "API route not found." }));
+      return;
     }
     await serveFrontend(request, response);
   })().catch((error) => {
@@ -611,8 +627,10 @@ const shutdown = async () => {
   clearInterval(libraryScanInterval);
   renditionCleanupScheduler.stop();
   partyEvents.close();
-  await new Promise((resolve) => httpServer.close(resolve));
-  await jobsWorker.stop();
+  const jobsStop = jobsWorker.stop();
+  const serverClose = new Promise((resolve) => httpServer.close(resolve));
+  httpServer.closeIdleConnections?.();
+  await Promise.all([jobsStop, serverClose]);
   await clusterPlayback?.shutdown();
   await playbackDelivery.shutdown();
   await clusterShardDelivery?.shutdown();

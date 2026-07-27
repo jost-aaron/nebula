@@ -429,7 +429,8 @@ See [mobile-clients.md](mobile-clients.md) for build and simulator checks.
   HTTP loop responds. Use it for the container health check.
 - `GET /readyz`: public opaque readiness, `200` or `503` with only
   `{"ready":true|false}`. It checks SQLite, content access, worker heartbeat,
-  catalog state, and at least 1 GiB free on content/cache filesystems.
+  catalog state, and at least 1 GiB free on content, cache, and backup
+  filesystems.
 - `GET /api/admin/observability/readiness`: owner or service-admin component
   detail. Do not expose it anonymously.
 - `GET /metrics`: owner or service-admin Prometheus text. Scrapers must use an
@@ -462,6 +463,14 @@ cache, Keychain credentials, and arbitrary host paths. Protect the bundle as a
 secret because SQLite contains password
 verifiers, hashed sessions, account metadata, audit history, and reversible
 server settings such as the TMDB credential.
+
+Only one online backup may run at a time; another creation request receives
+`409` instead of multiplying database and disk load. Backup listing is cursor
+paginated and capped at 100 entries per request. Nebula does not automatically
+delete backups because version one has no retained/pinned policy. Operators
+must monitor the separately mounted backup filesystem, move verified bundles
+according to their retention policy, and never delete the only known-good
+recovery point.
 
 Back up media separately with a filesystem-aware tool while preventing writes,
 and preserve ownership/modes. A usable disaster recovery set is the inspected
@@ -594,6 +603,13 @@ Values are strings. Blank means unset unless stated otherwise.
 | `NEBULA_TAILSCALE_AUTHKEY_FILE` | `/srv/nebula/tailscale/authkey` | **Yes** | Mode-0600 Docker secret source used for bootstrap. The key value never belongs in `.env`; empty after verified enrollment and revoke upstream. |
 | `NEBULA_AUDIT_RETENTION_DAYS` | `90` | No | Audit age; invalid values fall back to 90, then clamp to 1-3650 days. |
 | `NEBULA_AUDIT_MAX_EVENTS` | `10000` | No | Audit count; invalid values fall back to 10000, then clamp to 100-100000. |
+| `NEBULA_MEDIA_JOB_CONCURRENCY` | `2` | No | Bounded worker concurrency. Interactive work has a reserved scheduling lane ahead of bulk maintenance. |
+| `NEBULA_FILES_MAX_UPLOAD_BYTES` | `107374182400` | No | Maximum raw or resumable Files upload size. Admission remains subject to filesystem capacity. |
+| `NEBULA_FILES_MINIMUM_FREE_BYTES` | `268435456` | No | Minimum free content-filesystem bytes required when a Files upload starts. |
+| `NEBULA_FILES_UPLOAD_TTL_MS` | `86400000` | No | Age after which incomplete Files upload sessions may be cleaned during later admission. |
+| `NEBULA_PARTY_CONVERSATION_ATTACHMENT_BYTES` | `262144000` | No | Maximum committed attachment bytes in one Party conversation. |
+| `NEBULA_PARTY_USER_ATTACHMENT_BYTES` | `2147483648` | No | Maximum committed Party attachment bytes uploaded by one account. |
+| `NEBULA_PARTY_GLOBAL_ATTACHMENT_BYTES` | `10737418240` | No | Maximum committed Party attachment bytes across the server. Keep below live-volume capacity. |
 | `TMDB_API_TOKEN` | blank | **Yes** | Fallback TMDB Read Access Token. Owner-saved database setting takes precedence and is also secret. Cinema works without it. |
 | `TMDB_API_BASE_URL` | `https://api.themoviedb.org/3` | No | Code/test override for TMDB endpoint; omit in normal deployment to prevent credential redirection. |
 | `GOOGLE_VISION_API_KEY` | blank | **Yes** | Optional visual-identification credential. Avoid unless that experimental flow is intentionally used. |

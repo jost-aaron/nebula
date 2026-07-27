@@ -93,6 +93,21 @@ export const createAuthGuard = (accountStore = {
   const serviceAuthRequired = process.env.NEBULA_REQUIRE_AUTH === "true";
   const serviceToken = process.env.NEBULA_API_TOKEN ?? "";
   const allowLocalhost = process.env.NEBULA_AUTH_ALLOW_LOCALHOST !== "false";
+  const anonymousDenials = new Map();
+  const shouldAuditAnonymousDenial = (request) => {
+    const timestamp = Date.now();
+    const key = normalizedRemoteAddress(request) || "unknown";
+    const previous = anonymousDenials.get(key) ?? 0;
+    if (timestamp - previous < 60_000) return false;
+    anonymousDenials.set(key, timestamp);
+    if (anonymousDenials.size > 1_024) {
+      for (const [address, lastSeen] of anonymousDenials) {
+        if (timestamp - lastSeen >= 60_000) anonymousDenials.delete(address);
+        if (anonymousDenials.size <= 768) break;
+      }
+    }
+    return true;
+  };
 
   const serviceContext = {
     capabilities: capabilitiesForRole("owner"),
@@ -161,7 +176,9 @@ export const createAuthGuard = (accountStore = {
       if (publicAuthRoutes.has(routeKey)) return true;
 
       if (!context) {
-        audit?.recordBestEffort({ actor: { kind: "anonymous" }, eventType: "auth.access_denied", outcome: "denied" });
+        if (shouldAuditAnonymousDenial(request)) {
+          audit?.recordBestEffort({ actor: { kind: "anonymous" }, eventType: "auth.access_denied", outcome: "denied" });
+        }
         json(response, 401, {
           code: accountStore.countUsers() === 0 && !accountStore.isOwnerInitialized?.() ? "setup_required" : "unauthorized",
           error: "Authentication required."

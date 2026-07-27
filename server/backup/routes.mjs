@@ -18,7 +18,9 @@ const summarizeManifest = (manifest) => ({
 const backupErrorStatus = (error) => {
   if (!(error instanceof BackupError)) return error.status ?? 500;
   if (error.code === "already_exists") return 409;
+  if (error.code === "busy") return 409;
   if (error.code === "cancelled") return 408;
+  if (error.code === "invalid_cursor") return 400;
   if (error.code === "invalid_id") return 400;
   return 422;
 };
@@ -34,8 +36,16 @@ const rethrowRouteError = (error) => {
 export const createBackupRoutes = (service, audit = null) => async (request, response, url) => {
   if (request.method === "GET" && url.pathname === "/api/admin/backups") {
     try {
-      const backups = await service.list();
-      json(response, 200, { backups: backups.map(summarizeManifest) });
+      const page = service.listPage
+        ? await service.listPage({
+            cursor: url.searchParams.get("cursor"),
+            limit: url.searchParams.get("limit")
+          })
+        : { backups: await service.list(), nextCursor: null };
+      json(response, 200, {
+        backups: page.backups.map(summarizeManifest),
+        nextCursor: page.nextCursor
+      });
       return true;
     } catch (error) {
       rethrowRouteError(error);

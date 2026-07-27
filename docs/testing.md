@@ -769,6 +769,32 @@ Good next additions:
 - A repeatable iOS simulator UI test that taps through Cinema and Files safe
   areas.
 - WebGPU capability test that accepts both WebGPU and Canvas fallback modes.
+
+### Architecture hardening regression gate
+
+The Docker-only CI gate runs the complete Node suite, TypeScript, production
+build, and Node's coverage collector with explicit floors. Focused regression
+contracts cover Files symlink/active-content/pagination/upload admission,
+Party quota and live-session revocation, bounded account and playback
+retention, catalog transaction batching, interactive job scheduling, backup
+single-flight/pagination, API JSON 404s, liveness-vs-readiness Compose
+semantics, renderer lifecycle, visibility-gated Party previews, and Files
+request cancellation.
+
+Before release, run:
+
+```sh
+docker compose -p nebula-hardening run --rm --build dashboard npm run check
+docker compose -p nebula-hardening run --rm dashboard npm run test:ci
+docker compose -p nebula-hardening run --rm dashboard npm run test:coverage:ci
+docker compose -p nebula-hardening run --rm dashboard npm run build
+```
+
+Browser acceptance must use a separate Compose project and non-production
+port. It should exercise desktop and phone layouts, keyboard/controller
+navigation, modal focus/Escape behavior, Files pagination and preview teardown,
+Party reconnection and attachment delivery, and Studio browsing while another
+track keeps playing.
 Rendition storage-policy coverage verifies the bounded central migration,
 validation, cleanup dedupe, cache-only LRU and pinned exclusion, aggregate
 metrics, and responsive owner Settings controls. Scheduled rendition coverage verifies server-derived canonical job payloads,

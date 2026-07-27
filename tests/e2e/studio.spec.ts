@@ -53,7 +53,7 @@ test("Studio persists browser playback and offers accessible resume and restart 
   await expect(player).toBeAttached();
   await expect.poll(() => player.evaluate((audio: HTMLAudioElement) => audio.paused)).toBe(true);
   const startResponse = page.waitForResponse((response) => playbackEvent(response.request(), "start"));
-  await content.getByRole("button", { name: "Play track" }).click();
+  await content.getByRole("button", { name: "Play now" }).click();
   await expect.poll(() => playbackRequests.map((request) => request.event)).toContain("start");
   expect((await startResponse).ok()).toBe(true);
   await expect.poll(() => player.evaluate((audio: HTMLAudioElement) => audio.currentTime), { timeout: 10_000 }).toBeGreaterThan(2);

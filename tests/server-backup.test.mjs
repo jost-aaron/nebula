@@ -238,3 +238,24 @@ test("cancelled creation removes staging and reservation artifacts", async (t) =
   await assert.rejects(service.create({ backupId: "cancelled", signal: controller.signal }), { code: "cancelled" });
   assert.deepEqual(await readdir(scope.backupRoot).catch(() => []), []);
 });
+
+test("backup creation is single-flight and listing is cursor bounded", async (t) => {
+  const scope = await fixture(t);
+  const service = createBackupService(scope);
+  const first = service.create({ backupId: "single-flight-one" });
+  await assert.rejects(
+    service.create({ backupId: "single-flight-two" }),
+    { code: "busy" }
+  );
+  await first;
+  await service.create({ backupId: "single-flight-two" });
+
+  const page = await service.listPage({ limit: 1 });
+  assert.equal(page.backups.length, 1);
+  assert.ok(page.nextCursor);
+  const next = await service.listPage({ cursor: page.nextCursor, limit: 1 });
+  assert.equal(next.backups.length, 1);
+  assert.equal(next.nextCursor, null);
+  assert.notEqual(page.backups[0].backupId, next.backups[0].backupId);
+  await assert.rejects(service.listPage({ cursor: "not-a-cursor" }), { code: "invalid_cursor" });
+});

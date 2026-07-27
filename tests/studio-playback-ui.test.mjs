@@ -92,6 +92,9 @@ test("Studio browsing does not replace active playback and exposes explicit queu
   assert.match(studio, /data-studio-action="play-now"/);
   assert.match(studio, /data-studio-action="play-next"/);
   assert.match(studio, /data-studio-action="add-queue"/);
+  assert.match(studio, /const directBrowserStream = !remote && entry\.streamUrl && !getApiToken\(\)/);
+  assert.match(studio, /data-studio-resume="true"/);
+  assert.match(studio, /pathButton\.dataset\.studioResume === "true"\) requestSelectedPlayback\(entry, pathButton\)/);
   assert.match(studio, /let playbackQueue: MusicEntry\[\] = \[\]/);
   assert.match(studio, /if \(playbackQueue\.length > 0\) window\.setTimeout\(\(\) => playQueuedEntry\(\), 0\)/);
   assert.match(css, /\.studio-browsing-note[\s\S]*?background: rgba\(94, 215, 165, 0\.065\)/);

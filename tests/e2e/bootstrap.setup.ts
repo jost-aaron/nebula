@@ -20,8 +20,15 @@ test("eligible first run offers a temporary guest without personal history or ow
   await expect(page.locator(".app-tile", { hasText: /^(Files|Settings)$/ })).toHaveCount(0);
 
   await openApp(page, "Studio");
-  await expect(page.locator("[data-studio-content]")).toContainText("E2E Track");
-  await page.locator("[data-studio-path]", { hasText: "E2E Track" }).last().click();
+  const track = page.locator("[data-studio-path]", { hasText: "E2E Track" });
+  await expect.poll(async () => {
+    if (await track.count()) return true;
+    const artistGroup = page.locator("[data-studio-group]", { hasText: "Nebula Tests" }).last();
+    if (await artistGroup.count()) await artistGroup.click();
+    return false;
+  }).toBe(true);
+  await track.last().click();
+  await page.getByRole("button", { name: "Play now" }).click();
   const player = page.locator("audio[data-studio-player]");
   await expect(player).toBeAttached();
   await expect.poll(async () => {

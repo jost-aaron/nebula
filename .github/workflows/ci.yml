@@ -17,13 +17,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Build development verification image
         run: docker build --target build --tag nebula-ci-build:${{ github.sha }} .
       - name: Type-check
         run: docker run --rm nebula-ci-build:${{ github.sha }} npm run check
       - name: Test with bounded concurrency
         run: docker run --rm nebula-ci-build:${{ github.sha }} npm run test:ci
+      - name: Enforce coverage floors
+        run: docker run --rm nebula-ci-build:${{ github.sha }} npm run test:coverage:ci
       - name: Block critical runtime dependency advisories
         run: docker run --rm nebula-ci-build:${{ github.sha }} npm audit --omit=dev --audit-level=critical
       - name: Build production image
@@ -43,12 +45,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Run Playwright acceptance
         run: ./scripts/test-e2e.sh
       - name: Upload failure artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: playwright-artifacts
           path: |

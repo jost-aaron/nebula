@@ -84,7 +84,7 @@ export const createBackupService = ({ database, databasePath, dataRoot, backupRo
     return { manifest, schema };
   };
 
-  const create = async ({ backupId = uuid(), signal } = {}) => {
+  const createExclusive = async ({ backupId = uuid(), signal } = {}) => {
     throwIfAborted(signal);
     if (!safeId(backupId)) throw new BackupError("invalid_id", "Backup id is invalid.");
     await mkdir(backupRoot, { recursive: true });
@@ -157,6 +157,17 @@ export const createBackupService = ({ database, databasePath, dataRoot, backupRo
       await unlink(reservationPath).catch(() => {});
     }
   };
+  let activeCreate = null;
+  const create = async (options = {}) => {
+    if (activeCreate) throw new BackupError("busy", "Another backup is already running.");
+    const operation = createExclusive(options);
+    activeCreate = operation;
+    try {
+      return await operation;
+    } finally {
+      if (activeCreate === operation) activeCreate = null;
+    }
+  };
 
   const list = async ({ signal } = {}) => {
     throwIfAborted(signal);
@@ -181,6 +192,29 @@ export const createBackupService = ({ database, databasePath, dataRoot, backupRo
       if (rightCreated !== leftCreated) return rightCreated - leftCreated;
       return String(right.backupId).localeCompare(String(left.backupId));
     });
+  };
+  const listPage = async ({ cursor = null, limit = 50, signal } = {}) => {
+    let offset = 0;
+    if (cursor) {
+      try {
+        offset = Number.parseInt(Buffer.from(String(cursor), "base64url").toString("utf8"), 10);
+      } catch {
+        offset = Number.NaN;
+      }
+      if (!Number.isSafeInteger(offset) || offset < 0) {
+        throw new BackupError("invalid_cursor", "Backup cursor is invalid.");
+      }
+    }
+    const pageSize = Math.max(1, Math.min(100, Number(limit) || 50));
+    const backups = await list({ signal });
+    const page = backups.slice(offset, offset + pageSize);
+    const nextOffset = offset + page.length;
+    return {
+      backups: page,
+      nextCursor: nextOffset < backups.length
+        ? Buffer.from(String(nextOffset), "utf8").toString("base64url")
+        : null
+    };
   };
 
   const restore = async ({ backupId, destinationDatabasePath, destinationDataRoot = dataRoot, restoreMetadataCache = true, signal } = {}) => {
@@ -217,5 +251,5 @@ export const createBackupService = ({ database, databasePath, dataRoot, backupRo
     }
   };
 
-  return { create, inspect, list, restore };
+  return { create, inspect, list, listPage, restore };
 };

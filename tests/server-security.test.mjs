@@ -57,6 +57,22 @@ test("bearer tokens must match exactly", async () => {
   });
 });
 
+test("anonymous denial audits are coalesced per remote address", async () => {
+  await withAuthEnvironment({ NEBULA_REQUIRE_AUTH: "true", NEBULA_API_TOKEN: "secret", NEBULA_AUTH_ALLOW_LOCALHOST: "false" }, async () => {
+    const events = [];
+    const guard = createAuthGuard(undefined, {
+      audit: { recordBestEffort(event) { events.push(event); } }
+    });
+    await guard.authorize(authRequest({ address: "10.0.0.8" }), responseMock());
+    await guard.authorize(authRequest({ address: "10.0.0.8" }), responseMock());
+    await guard.authorize(authRequest({ address: "10.0.0.9" }), responseMock());
+    assert.equal(events.length, 2);
+    assert.ok(events.every(({ eventType, outcome }) =>
+      eventType === "auth.access_denied" && outcome === "denied"
+    ));
+  });
+});
+
 test("CORS allows only configured browser and Capacitor origins", () => {
   for (const origin of ["capacitor://localhost", "http://localhost:5173", "http://127.0.0.1:5173"]) {
     const response = responseMock();

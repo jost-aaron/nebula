@@ -36,6 +36,27 @@ scheduling, quota/minimum-free enforcement, safe LRU eviction, and aggregate
 storage status. It never accepts caller-selected filesystem paths or eviction
 candidates.
 
+## Runtime hardening invariants
+
+- Files paths are validated both lexically and canonically, reject every
+  symbolic-link component, and never serve active document formats from the
+  authenticated origin. Directory responses and metadata work are bounded.
+- Party attachment admission is enforced transactionally at conversation,
+  uploader, and server scope. Event streams retain the complete account/session
+  identity and revalidate it, so revocation terminates live delivery.
+- Request authentication coalesces anonymous denial audits and throttles
+  session activity writes. Expired sessions, tickets, login attempts, playback
+  events, and terminal jobs are pruned in bounded batches.
+- SQLite catalog reconciliation yields its writer transaction between bounded
+  batches. The job scheduler reserves an interactive lane so playback work is
+  not trapped behind bulk scans or maintenance.
+- Shutdown stops new job claims before draining HTTP, event streams, and media
+  work. Docker probes process liveness through `/healthz`; `/readyz` remains the
+  dependency and traffic-admission signal.
+- Online backups are single-flight and their listing is cursor bounded. Backup
+  retention remains an explicit operator policy until a pinned/retained model
+  exists.
+
 ## Layers
 
 ```mermaid

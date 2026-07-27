@@ -127,7 +127,11 @@ data: {"conversationId":"..."}
 ```
 
 No body, sender, filename, unread count, or membership data appears in an SSE
-frame. Membership is rechecked when each hint is published.
+frame. Membership is rechecked when each hint is published. Each connection is
+bound to the account session that opened it; session expiry and the injected
+account-session validator are checked on publish and heartbeat. Account
+disable/revocation integrations can also close all streams for one user or
+session immediately.
 
 ## Attachment safety and lifecycle
 
@@ -137,7 +141,13 @@ from the Files app's shared `content/` namespace. Caller filenames are display
 metadata only; storage keys are generated, path-contained, and never accepted
 from HTTP clients.
 
-Version-one limits are 25 MiB per file and 250 MiB per conversation. The server:
+Version-one defaults are 25 MiB per file, 250 MiB per conversation, 2 GiB per
+uploader account, and 10 GiB across the server. The latter three are configurable
+with `NEBULA_PARTY_CONVERSATION_ATTACHMENT_BYTES`,
+`NEBULA_PARTY_USER_ATTACHMENT_BYTES`, and
+`NEBULA_PARTY_GLOBAL_ATTACHMENT_BYTES`. Quotas are rechecked in the same
+transaction that publishes attachment metadata, so concurrent uploads cannot
+over-admit storage. The server:
 
 - requires a non-chunked, positive `Content-Length`;
 - accepts a conservative image, video, audio, PDF, text, archive, and binary
@@ -188,7 +198,9 @@ publishes both the database and attachment tree into a new staged data root.
 Consequently, unlike Cinema/Files media, Party attachment bytes **are included**
 in Nebula backup bundles. Protect, transport, retain, and destroy those bundles
 as secrets. Verify enough free capacity for live attachments plus versioned
-backups; the 250 MiB limit is per conversation, not a server-wide quota.
+backups. Attachment admission has layered per-conversation, per-uploader, and
+server-wide quotas; operators should set them below actual free space because
+backup copies require additional capacity.
 
 Version one retains message history, membership state, read positions, and
 linked attachments indefinitely. There is no automatic content retention,
@@ -209,7 +221,8 @@ docker compose run --rm dashboard node --test tests/server-party*.test.mjs
 
 The tests cover migration idempotency/constraints, direct deduplication, minimal
 discovery, group permissions/audit redaction, message idempotency and ordering,
-pagination, unread isolation, IDOR denial, SSE scoping/teardown, raw upload
+pagination, unread isolation, IDOR denial, SSE scoping/session-revocation
+teardown, raw upload
 validation, quota enforcement, cleanup, traversal defense, authorized
 GET/HEAD/range serving, and API contracts.
 

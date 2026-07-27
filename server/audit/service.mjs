@@ -87,13 +87,19 @@ export const createAuditService = ({ db, maxEvents = 10_000, now = () => Date.no
   if (!db || typeof db.prepare !== "function") throw new TypeError("A SQLite database is required.");
   const boundedMaxEvents = Math.max(100, Math.min(100_000, Number(maxEvents) || 10_000));
   const boundedRetentionDays = Math.max(1, Math.min(3650, Number(retentionDays) || 90));
+  const pruneEvery = Math.max(10, Math.min(1_000, Math.floor(boundedMaxEvents / 20)));
+  let recordsSincePrune = pruneEvery;
+  let lastPrunedAt = -Infinity;
 
   const prune = () => {
-    const cutoff = new Date(Number(now()) - boundedRetentionDays * 86_400_000).toISOString();
+    const timestamp = Number(now());
+    const cutoff = new Date(timestamp - boundedRetentionDays * 86_400_000).toISOString();
     db.prepare("DELETE FROM audit_events WHERE occurred_at < ?").run(cutoff);
     db.prepare(`DELETE FROM audit_events WHERE id IN (
       SELECT id FROM audit_events ORDER BY occurred_at DESC, id DESC LIMIT -1 OFFSET ?
     )`).run(boundedMaxEvents);
+    recordsSincePrune = 0;
+    lastPrunedAt = timestamp;
   };
 
   const record = (event) => {
@@ -108,7 +114,8 @@ export const createAuditService = ({ db, maxEvents = 10_000, now = () => Date.no
       uuid(), event.eventType, actorKind, bounded(event.actor?.principalId, 128), bounded(event.actor?.role, 32),
       bounded(event.target?.type, 64), safeTargetId(event.target?.id), occurredAt, event.outcome, metadata
     );
-    prune();
+    recordsSincePrune += 1;
+    if (recordsSincePrune >= pruneEvery || Number(now()) - lastPrunedAt >= 3_600_000) prune();
     return true;
   };
 

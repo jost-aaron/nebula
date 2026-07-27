@@ -141,6 +141,9 @@ const startAdminServer = async ({ serviceToken = "admin-service-secret" } = {}) 
       if (handleApiPreflight(request, response)) return;
       if (!(await authGuard.authorize(request, response, url))) return;
       if (await apiHandler(request, response)) return;
+      response.writeHead(404, { "content-type": "application/json; charset=utf-8" });
+      response.end(JSON.stringify({ code: "not_found", error: "API route not found." }));
+      return;
     }
     response.writeHead(404).end();
   });
@@ -231,6 +234,13 @@ test("health and readiness stay public, readiness stays opaque, and online resto
     method: "POST"
   });
   assert.equal(restore.status, 404);
+  assert.deepEqual(await restore.json(), { code: "not_found", error: "API route not found." });
+
+  const unknown = await jsonRequest(`${api.baseUrl}/api/does-not-exist`, {
+    cookie: owner.cookie
+  });
+  assert.equal(unknown.status, 404);
+  assert.deepEqual(await unknown.json(), { code: "not_found", error: "API route not found." });
 });
 
 test("playback policy config and aggregate status allow owners and service admins but deny members", async (t) => {

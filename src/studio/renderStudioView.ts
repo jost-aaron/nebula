@@ -343,7 +343,7 @@ const renderPlaybackHistory = (entries: MusicEntry[], history: Map<string, Playb
   const continueListening = available.filter(({ state }) => !state.completed && state.positionSeconds > 0).slice(0, 8);
   const recent = available.slice(0, 10);
   const rail = (items: typeof available, mode: "continue" | "recent") => items.map(({ entry, state }) => `
-    <button type="button" data-studio-path="${escapeHtml(entry.path)}">
+    <button type="button" data-studio-path="${escapeHtml(entry.path)}"${mode === "continue" ? ' data-studio-resume="true"' : ""}>
       ${renderArtwork(entry, entry.title)}
       <span><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.artist || entry.album || "Local music")}</small></span>
       ${mode === "continue"
@@ -952,7 +952,16 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       miniContent.innerHTML = renderMiniPlayer(entry);
       const remote = !entry.sourceId && Boolean(entry.federation);
       statusMessage = remote ? "Connecting to an available shard…" : "Ready to play.";
-      playerReady = remote
+      const directBrowserStream = !remote && entry.streamUrl && !getApiToken()
+        ? entry.streamUrl
+        : "";
+      if (directBrowserStream) {
+        audioPlayer.src = directBrowserStream;
+        audioPlayer.load();
+      }
+      playerReady = directBrowserStream
+        ? Promise.resolve()
+        : remote
         ? createClusterMusicDelivery({
             capabilities: studioPlaybackCapabilities(audioPlayer, playbackDeviceId),
             federatedItemId: entry.id!,
@@ -1825,7 +1834,8 @@ export const bindStudioView = (container: ParentNode, onHome?: () => void, optio
       const entry = entries.find((candidate) => candidate.path === pathButton.dataset.studioPath);
 
       if (entry) {
-        selectTrack(entry, false);
+        if (pathButton.dataset.studioResume === "true") requestSelectedPlayback(entry, pathButton);
+        else selectTrack(entry, false);
       }
     }
   }, { signal: viewController.signal });
